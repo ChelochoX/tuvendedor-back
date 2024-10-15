@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using System.ComponentModel;
+using tuvendedorback.Models;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
 
@@ -58,7 +59,8 @@ public class MotosController : ControllerBase
     [SwaggerOperation(
     Summary = "Calcula el monto de la cuota para un modelo, basado en una entrega inicial y la cantidad de cuotas.",
     Description = "Permite calcular el monto de la cuota para un modelo específico, utilizando una entrega inicial y la cantidad de cuotas especificadas.")]
-    public async Task<IActionResult> CalcularCuotaProductoAsync([FromBody] CalculoCuotaRequest request)
+    public async Task<IActionResult> CalcularCuotaProductoAsync(
+    [FromBody] CalculoCuotaRequest request)
     {
         // Validamos que el modelo no esté vacío
         if (string.IsNullOrWhiteSpace(request.Modelo))
@@ -75,6 +77,24 @@ public class MotosController : ControllerBase
         var montoCuota = await _motoService.ObtenerMontoCuotaConEntregaMayor(request);
 
         return Ok(montoCuota);       
+    }
+
+
+    [HttpPost("solicitudcredito")]
+    [SwaggerOperation(
+    Summary = "Permite Crear la solicitud de credito en la base de datos",
+    Description = "Permitir Crear la solicitud de credito en la base de datos")]
+    public async Task<IActionResult> CrearSolicitud(
+    [FromBody][Description("Propiedad necesarias para crear la solicitud de credito")] SolicitudCredito solicitud)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+       
+        var solicitudId = await _motoService.GuardarSolicitudCredito(solicitud);
+        return Ok(new { message = "Solicitud creada exitosamente", solicitudId });         
+                
     }
 
 }

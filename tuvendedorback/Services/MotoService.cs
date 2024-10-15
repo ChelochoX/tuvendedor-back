@@ -1,4 +1,10 @@
-﻿using Azure.Core;
+﻿using iText.IO.Font;
+using iText.Kernel.Colors;
+using iText.Kernel.Font;
+using iText.Kernel.Pdf;
+using iText.Layout;
+using iText.Layout.Element;
+using iText.Layout.Properties;
 using tuvendedorback.DTOs;
 using tuvendedorback.Models;
 using tuvendedorback.Repositories.Interfaces;
@@ -147,4 +153,122 @@ public class MotoService : IMotoService
         // Retornamos el monto de la cuota formateado
         return Math.Round(montoCuota, 0);
     }
+
+    public async Task<int> GuardarSolicitudCredito(SolicitudCredito solicitud)
+    {
+        var resultado = await _repository.GuardarSolicitudCredito(solicitud);
+
+        //Generamos el pdf
+        await GenerarPdfSolicitud(solicitud, resultado);
+
+        return resultado;
+    }
+
+    public async Task GenerarPdfSolicitud(SolicitudCredito solicitud, int idSolicitud)
+    {
+        // Define el directorio de salida
+        var pdfDirectory = Path.Combine(Directory.GetCurrentDirectory(), "PDFs");
+        Directory.CreateDirectory(pdfDirectory); // Asegura que la carpeta exista
+
+        // Define el nombre del archivo PDF
+        var outputPath = Path.Combine(pdfDirectory, $"Solicitud_{idSolicitud}.pdf");
+
+        // Carga la fuente Calibri
+        var calibriFont = PdfFontFactory.CreateFont("C:/Windows/Fonts/calibri.ttf", PdfEncodings.IDENTITY_H);
+
+        // Crea el archivo PDF
+        using (var writer = new PdfWriter(outputPath))
+        {
+            using (var pdf = new PdfDocument(writer))
+            {
+                var document = new Document(pdf);
+                document.SetFont(calibriFont).SetFontSize(10); // Configura la fuente global y el tamaño de 10
+
+                // Título del documento subrayado, centrado y en tamaño 18
+                document.Add(new Paragraph("Solicitud de Crédito")
+                    .SetFontSize(18)
+                    .SetBold()
+                    .SetUnderline()
+                    .SetTextAlignment(TextAlignment.CENTER));
+
+                // Añadir detalles del modelo
+                document.Add(new Paragraph($"Modelo Solicitado: {solicitud.ModeloSolicitado}"));
+
+                // Entrega Inicial, Cantidad de Cuotas y Monto por Cuota en una misma línea
+                var entregaCuotasMonto = new Paragraph()
+                    .Add(new Text($"Entrega Inicial: G. {solicitud.EntregaInicial:N0}   "))
+                    .Add(new Text($"Cantidad de Cuotas: {solicitud.CantidadCuotas}   "))
+                    .Add(new Text($"Monto por Cuota: G. {solicitud.MontoPorCuota:N0}"));
+                document.Add(entregaCuotasMonto);
+
+                // Sección: Datos Personales (centrado, subrayado y tamaño 11)
+                document.Add(new Paragraph("Datos Personales")
+                    .SetFontSize(11)
+                    .SetBold()
+                    .SetUnderline()
+                    .SetTextAlignment(TextAlignment.CENTER));
+
+                document.Add(new Paragraph($"Cédula: {solicitud.CedulaIdentidad}"));
+                document.Add(new Paragraph($"Teléfono Móvil: {solicitud.TelefonoMovil}"));
+                document.Add(new Paragraph($"Fecha de Nacimiento: {solicitud.FechaNacimiento:dd/MM/yyyy}"));
+                document.Add(new Paragraph($"Barrio: {solicitud.Barrio}"));
+                document.Add(new Paragraph($"Ciudad: {solicitud.Ciudad}"));
+                document.Add(new Paragraph($"Dirección Particular: {solicitud.DireccionParticular}"));
+
+                // Sección: Datos Laborales (centrado, subrayado y tamaño 11)
+                document.Add(new Paragraph("Datos Laborales")
+                    .SetFontSize(11)
+                    .SetBold()
+                    .SetUnderline()
+                    .SetTextAlignment(TextAlignment.CENTER));
+
+                document.Add(new Paragraph($"Empresa: {solicitud.Empresa}"));
+                document.Add(new Paragraph($"Dirección Laboral: {solicitud.DireccionLaboral}"));
+                document.Add(new Paragraph($"Teléfono Laboral: {solicitud.TelefonoLaboral}"));
+                document.Add(new Paragraph($"Antigüedad: {solicitud.AntiguedadAnios} años"));
+                document.Add(new Paragraph($"Aporta IPS: {(solicitud.AportaIPS ? "Sí" : "No")}"));
+                document.Add(new Paragraph($"Cantidad de Aportes: {solicitud.CantidadAportes}"));
+                document.Add(new Paragraph($"Salario: G. {solicitud.Salario:N0}"));
+
+                // Sección: Referencias Comerciales (centrado, subrayado y tamaño 11)
+                document.Add(new Paragraph("Referencias Comerciales")
+                    .SetFontSize(11)
+                    .SetBold()
+                    .SetUnderline()
+                    .SetTextAlignment(TextAlignment.CENTER));
+
+                foreach (var referencia in solicitud.ReferenciasComerciales)
+                {
+                    // Nombre y Teléfono en una misma línea
+                    var referenciaComercial = new Paragraph()
+                        .Add(new Text($"Nombre del Local: {referencia.NombreLocal}   "))
+                        .Add(new Text($"Teléfono: {referencia.Telefono}"));
+                    document.Add(referenciaComercial);
+                }
+
+                // Sección: Referencias Personales (centrado, subrayado y tamaño 11)
+                document.Add(new Paragraph("Referencias Personales")
+                    .SetFontSize(11)
+                    .SetBold()
+                    .SetUnderline()
+                    .SetTextAlignment(TextAlignment.CENTER));
+
+                foreach (var referencia in solicitud.ReferenciasPersonales)
+                {
+                    // Nombre y Teléfono en una misma línea
+                    var referenciaPersonal = new Paragraph()
+                        .Add(new Text($"Nombre: {referencia.Nombre}   "))
+                        .Add(new Text($"Teléfono: {referencia.Telefono}"));
+                    document.Add(referenciaPersonal);
+                }
+
+                // Cierra el documento
+                document.Close();
+            }
+        }
+    }
 }
+
+
+
+
