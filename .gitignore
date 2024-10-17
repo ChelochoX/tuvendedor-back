@@ -86,3 +86,5 @@ node_modules/
 # Archivos de compilación de .NET
 project.assets.json
 
+# Ignorar todos los archivos PDF en cualquier ubicación
+*.pdf
