@@ -63,7 +63,7 @@ public class MotosController : ControllerBase
     [FromBody] CalculoCuotaRequest request)
     {
         // Validamos que el modelo no esté vacío
-        if (string.IsNullOrWhiteSpace(request.Modelo))
+        if (string.IsNullOrWhiteSpace(request.ModeloSolicitado))
         {
             return BadRequest(new { mensaje = "El campo modelo no puede estar vacío" });
         }
