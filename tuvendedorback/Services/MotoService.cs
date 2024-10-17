@@ -131,7 +131,7 @@ public class MotoService : IMotoService
     public async Task<decimal> ObtenerMontoCuotaConEntregaMayor(CalculoCuotaRequest request)
     {
         //primeramente obtenemos el monto del precio base
-        var precioBase = await _repository.ObtenerPrecioBase(request.Modelo);
+        var precioBase = await _repository.ObtenerPrecioBase(request.ModeloSolicitado);
 
         //realizamos el calculo
         // Precio base menos la entrega inicial
