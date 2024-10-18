@@ -1,8 +1,14 @@
 using tuvendedorback.Configurations;
 
+var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
+
 var configuration = new ConfigurationBuilder()
-    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .SetBasePath(Directory.GetCurrentDirectory()) // Asegúrate de establecer la ruta base correctamente
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true) // Cargar el archivo base
+    .AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: true) // Cargar archivo específico según el entorno
+    .AddEnvironmentVariables() // Cargar variables de entorno si es necesario
     .Build();
+
 
 
 var builder = WebApplication.CreateBuilder(args);
