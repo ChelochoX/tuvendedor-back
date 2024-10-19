@@ -22,6 +22,9 @@ COPY --from=build /app/out .
 # Copiar las imágenes locales desde tu máquina al contenedor
 COPY ImagenesMotos /app/ImagenesMotos
 
+# Configurar ASP.NET Core para escuchar en el puerto 80
+ENV ASPNETCORE_URLS=http://+:80
+
 # Exponer los puertos 80 (HTTP) y 443 (HTTPS)
 EXPOSE 80
 
