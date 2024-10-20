@@ -23,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="assets\fonts\" />
     <Folder Include="PDFs\" />
   </ItemGroup>
 

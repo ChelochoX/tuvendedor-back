@@ -19,8 +19,8 @@ WORKDIR /app
 # Copiar la aplicación compilada desde la etapa de build
 COPY --from=build /app/out .
 
-# Copiar las imágenes locales desde tu máquina al contenedor
-COPY ImagenesMotos /app/ImagenesMotos
+# Copiar las fuentes locales al contenedor
+COPY ./tuvendedorback/assets/fonts /app/assets/fonts
 
 # Configurar ASP.NET Core para escuchar en el puerto 80
 ENV ASPNETCORE_URLS=http://+:80

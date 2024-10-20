@@ -60,7 +60,16 @@ public class ErrorHandlingMiddleware
                 response.Errors.Add(repositoryException.Message);
                 if (showStackTrace)
                 {
-                    response.Errors.Add(repositoryException.InnerException.Message);
+                    response.Errors.Add(repositoryException.InnerException.StackTrace);
+                }
+                break;
+
+            case ServiceException serviceException:
+                response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                response.Errors.Add(serviceException.Message);              
+                if (!showStackTrace)
+                {
+                    response.Errors.Add(serviceException.InnerException.StackTrace);
                 }
                 break;
 
@@ -71,17 +80,7 @@ public class ErrorHandlingMiddleware
             case ReglasdeNegocioException reglasdeNegocioException:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
                 response.Errors.Add(reglasdeNegocioException.Message);
-                break;
-
-            //case ErrorAutorizacionUsuarioException errorAutorizacionException:
-            //    response.StatusCode = (int)HttpStatusCode.Forbidden;
-            //    response.Errors.Add(errorAutorizacionException.Message);
-            //    break;
-
-            //case UnauthorizedAccessException unauthorizedException:
-            //    response.StatusCode = (int)HttpStatusCode.Forbidden;
-            //    response.Errors.Add(unauthorizedException.Message);
-            //    break;
+                break;          
 
             case ParametroFaltanteCadenaConexionException parametrosConexionFaltanteException:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
