@@ -97,4 +97,15 @@ public class MotosController : ControllerBase
                 
     }
 
+    [HttpGet("productopromo")]
+    [SwaggerOperation(
+    Summary = "Permite obtener los productos y sus planes que pertenecen a este modelo que esta en promocion",
+    Description = "Obtener los productos y planes que pertenecen a este modelo que esta en promocion")]
+    public async Task<IActionResult> ObtenerProductosPorModeloenPromo()
+    {      
+        var producto = await _motoService.ObtenerProductosConPlanesPromo();
+
+        return Ok(producto);
+    }
+
 }

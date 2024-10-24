@@ -229,5 +229,82 @@ public class MotoRepository: IMotoRepository
         }
     }
 
+    public async Task<List<ProductoDTOPromo>> ObtenerProductosConPlanesPromo()
+    {
+        _logger.LogInformation("Inicio del proceso para obtener todos los productos con promociones y sus planes promocionales");
+
+        string queryProductos = @"
+        SELECT 
+            p.IdProducto,
+            p.Articulo,
+            p.Modelo,
+            p.PrecioPublicoPromo,
+            p.PrecioMayoristaPromo,
+            p.PrecioBasePromo
+        FROM 
+            Productos p
+        WHERE 
+            p.TienePromocion = 1";
+
+        string queryPlanes = @"
+        SELECT 
+            pl.IdPrecioPlan,
+            pl.IdPlan,
+            pl.EntregaPromo,
+            pl.CuotasPromo,
+            pl.ImportePromo,
+            p.NombrePlan,
+            pl.FechaInicioPromo,
+            pl.FechaFinPromo
+        FROM 
+            PreciosPlan pl 
+            INNER JOIN Planes p ON pl.IdPlan = p.IdPlan
+        WHERE 
+            pl.IdProducto = @idProducto
+            AND pl.ImportePromo IS NOT NULL";
+
+        try
+        {
+            using (var connection = _conexion.CreateSqlConnection())
+            {
+                // Obtener todos los productos con promociones
+                var productos = await connection.QueryAsync<ProductoDTOPromo>(queryProductos);
+
+                if (productos == null || !productos.Any())
+                {
+                    throw new NoDataFoundException("No se encontraron productos con promociones");
+                }
+
+                foreach (var producto in productos)
+                {
+                    // Obtener los planes promocionales asociados a cada producto
+                    var parametros = new DynamicParameters();
+                    parametros.Add("@idProducto", producto.IdProducto);
+
+                    var planesPromo = await connection.QueryAsync<PlanPromo>(queryPlanes, parametros);
+
+                    // Asignar los planes promocionales al producto
+                    producto.Planes = planesPromo.ToList();
+                }
+
+                _logger.LogInformation("Fin del proceso para obtener todos los productos con sus planes promocionales");
+
+                return productos.ToList();
+            }
+        }
+        catch (NoDataFoundException ex)
+        {
+            _logger.LogWarning(ex, "No se encontraron productos con promociones");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrió un error inesperado al obtener los productos con sus planes promocionales");
+            throw new RepositoryException("Ocurrió un error inesperado al obtener los productos con sus planes promocionales", ex);
+        }
+    }
+
+
+
 
 }

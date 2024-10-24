@@ -89,39 +89,7 @@ public class MotoService : IMotoService
         }
 
         return modelos;
-    }
-
-    // Método para obtener la primera imagen dentro de una carpeta de modelo
-    private List<string> ObtenerImagenesDeModelo(string modeloPath, string categoria)
-    {
-        var extensionesPermitidas = new[] { ".jpg", ".jpeg", ".png" };
-        var archivos = Directory.GetFiles(modeloPath)
-                                .Where(archivo => extensionesPermitidas.Contains(Path.GetExtension(archivo).ToLower()));
-
-        var listaDeImagenes = new List<string>();
-
-        foreach (var archivo in archivos)
-        {
-            var nombreArchivo = Path.GetFileName(archivo);
-
-            // Obtener el nombre del modelo (nombre de la carpeta) y reemplazar caracteres especiales y espacios
-            var nombreModelo = Path.GetFileName(modeloPath);
-            var nombreCategoria = categoria;
-
-            // Codificar los nombres de las carpetas y archivos para que sean válidos en una URL
-            var nombreModeloEncoded = Uri.EscapeDataString(nombreModelo);
-            var nombreCategoriaEncoded = Uri.EscapeDataString(nombreCategoria);
-            var nombreArchivoEncoded = Uri.EscapeDataString(nombreArchivo);
-
-            // Construir la URL codificada correctamente
-            var imagenUrl = $"/uploads/{nombreCategoriaEncoded}/{nombreModeloEncoded}/{nombreArchivoEncoded}";
-
-            // Agregar la URL a la lista de imágenes
-            listaDeImagenes.Add(imagenUrl);
-        }
-
-        return listaDeImagenes;
-    }
+    }  
 
     public async Task<ProductoDTO> ObtenerProductoConPlanes(string modelo)
     {
@@ -290,6 +258,150 @@ public class MotoService : IMotoService
             throw new ServiceException("Ocurrió un error inesperado al generar documento pdf", ex);
         }
     }
+
+    public async Task<List<ModeloMotosporCategoria>> ObtenerProductosConPlanesPromo()
+    {
+        //Obtener listado de modelos en promo
+        var modelosEnPromo = await _repository.ObtenerProductosConPlanesPromo();
+
+        //Obtenemos las fotos de los modelos en promo
+        return await ObtenerModelosEnPromoPorCategoria(modelosEnPromo);
+    }
+
+    public async Task<List<ModeloMotosporCategoria>> ObtenerModelosEnPromoPorCategoria(List<ProductoDTOPromo> modelosPromo)
+    {
+        if (string.IsNullOrEmpty(_baseImagesPath))
+        {
+            throw new ArgumentNullException("El valor de la ruta base es nulo");
+        }
+
+        var rutaBase = _baseImagesPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        // Obtén todas las carpetas de categorías excepto 'Promociones'
+        var carpetasCategorias = Directory.GetDirectories(rutaBase)
+                                          .Where(c => !c.EndsWith("Promociones", StringComparison.OrdinalIgnoreCase))
+                                          .ToList();
+
+        if (carpetasCategorias.Count == 0)
+        {
+            _logger.LogInformation("No se encontraron carpetas de categorías.");
+            return null;
+        }
+
+        var modelos = new List<ModeloMotosporCategoria>();
+
+        // Iteramos sobre todas las carpetas de categorías
+        foreach (var categoriaPath in carpetasCategorias)
+        {
+            var subCarpetas = Directory.GetDirectories(categoriaPath);
+
+            foreach (var subCarpeta in subCarpetas)
+            {
+                var nombreModelo = Path.GetFileName(subCarpeta); // El nombre del modelo es el nombre de la carpeta
+
+                // Verificamos si el modelo obtenido del endpoint de promociones existe en esta categoría
+                var modeloPromo = modelosPromo.FirstOrDefault(m => m.Modelo.Equals(nombreModelo, StringComparison.OrdinalIgnoreCase));
+
+                if (modeloPromo != null)
+                {
+                    // Obtener la lista de todas las imágenes del modelo
+                    var imagenes = ObtenerImagenesDeModeloenPromo(subCarpeta, categoriaPath);
+
+                    if (imagenes == null || imagenes.Count == 0)
+                    {
+                        _logger.LogInformation($"No se encontraron imágenes para el modelo: {nombreModelo}");
+                    }
+                    else
+                    {
+                        _logger.LogInformation($"Se encontraron imágenes para el modelo: {nombreModelo}, URLs: {string.Join(", ", imagenes)}");
+
+                        // Agregamos el modelo con las imágenes encontradas a la lista de retorno
+                        modelos.Add(new ModeloMotosporCategoria
+                        {
+                            Nombre = nombreModelo,
+                            Imagenes = imagenes // Asignar la lista de imágenes al modelo
+                        });
+                    }
+                }
+            }
+        }
+
+        if (modelos.Count == 0)
+        {
+            _logger.LogInformation("No se encontraron modelos con imágenes.");
+            return null;
+        }
+
+        return modelos;
+    }
+
+    private List<string> ObtenerImagenesDeModelo(string modeloPath, string categoria)
+    {
+        var extensionesPermitidas = new[] { ".jpg", ".jpeg", ".png" };
+        var archivos = Directory.GetFiles(modeloPath)
+                                .Where(archivo => extensionesPermitidas.Contains(Path.GetExtension(archivo).ToLower()));
+
+        var listaDeImagenes = new List<string>();
+
+        foreach (var archivo in archivos)
+        {
+            var nombreArchivo = Path.GetFileName(archivo);
+
+            // Obtener el nombre del modelo (nombre de la carpeta) y reemplazar caracteres especiales y espacios
+            var nombreModelo = Path.GetFileName(modeloPath);
+            var nombreCategoria = categoria;
+
+            // Codificar los nombres de las carpetas y archivos para que sean válidos en una URL
+            var nombreModeloEncoded = Uri.EscapeDataString(nombreModelo);
+            var nombreCategoriaEncoded = Uri.EscapeDataString(nombreCategoria);
+            var nombreArchivoEncoded = Uri.EscapeDataString(nombreArchivo);
+
+            // Construir la URL codificada correctamente
+            var imagenUrl = $"/uploads/{nombreCategoriaEncoded}/{nombreModeloEncoded}/{nombreArchivoEncoded}";
+
+            // Agregar la URL a la lista de imágenes
+            listaDeImagenes.Add(imagenUrl);
+        }
+
+        return listaDeImagenes;
+    }
+    private List<string> ObtenerImagenesDeModeloenPromo(string modeloPath, string categoriaPath)
+    {
+        var imagenes = new List<string>();
+
+        // Buscamos todos los archivos de imagen en la carpeta del modelo
+        var archivos = Directory.GetFiles(modeloPath, "*.*")
+                                .Where(file => file.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                               file.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                                               file.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+
+        // Obtener el nombre de la categoría y del modelo
+        var nombreCategoria = Path.GetFileName(categoriaPath);
+        var nombreModelo = Path.GetFileName(modeloPath);
+
+        // Codificar los nombres de la categoría y del modelo para que sean válidos en una URL
+        var nombreCategoriaEncoded = Uri.EscapeDataString(nombreCategoria); // Codificar nombre de la categoría
+        var nombreModeloEncoded = Uri.EscapeDataString(nombreModelo);       // Codificar nombre del modelo
+
+        // Convertimos la ruta de los archivos a URLs o rutas accesibles para el frontend
+        foreach (var archivo in archivos)
+        {
+            // Codificamos el nombre del archivo
+            var nombreArchivo = Path.GetFileName(archivo);
+            var nombreArchivoEncoded = Uri.EscapeDataString(nombreArchivo); // Codificar nombre del archivo
+
+            // Construir la URL codificada correctamente
+            var imagenUrl = $"/uploads/{nombreCategoriaEncoded}/{nombreModeloEncoded}/{nombreArchivoEncoded}";
+
+            // Agregar la URL a la lista de imágenes
+            imagenes.Add(imagenUrl);
+        }
+
+        return imagenes;
+    }
+
+
 }
 
 
