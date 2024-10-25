@@ -8,5 +8,6 @@ public interface IMotoRepository
     Task<ProductoDTO> ObtenerProductoConPlanes(string modelo);
     Task<int> ObtenerPrecioBase(string modelo);
     Task<int> GuardarSolicitudCredito(SolicitudCredito solicitud);
-    Task<List<ProductoDTOPromo>> ObtenerProductosConPlanesPromo();
+    Task<List<ProductosDTOPromo>> ListarProductosConPlanesPromo();
+    Task<ProductoDTOPromo> ObtenerProductoConPlanesPromo(string modelo);
 }

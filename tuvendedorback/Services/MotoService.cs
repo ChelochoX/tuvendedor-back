@@ -259,16 +259,16 @@ public class MotoService : IMotoService
         }
     }
 
-    public async Task<List<ModeloMotosporCategoria>> ObtenerProductosConPlanesPromo()
+    public async Task<List<ModeloMotosporCategoria>> ListarProductosConPlanesPromo()
     {
         //Obtener listado de modelos en promo
-        var modelosEnPromo = await _repository.ObtenerProductosConPlanesPromo();
+        var modelosEnPromo = await _repository.ListarProductosConPlanesPromo();
 
         //Obtenemos las fotos de los modelos en promo
         return await ObtenerModelosEnPromoPorCategoria(modelosEnPromo);
     }
 
-    public async Task<List<ModeloMotosporCategoria>> ObtenerModelosEnPromoPorCategoria(List<ProductoDTOPromo> modelosPromo)
+    public async Task<List<ModeloMotosporCategoria>> ObtenerModelosEnPromoPorCategoria(List<ProductosDTOPromo> modelosPromo)
     {
         if (string.IsNullOrEmpty(_baseImagesPath))
         {
@@ -401,6 +401,10 @@ public class MotoService : IMotoService
         return imagenes;
     }
 
+    public async Task<ProductoDTOPromo> ObtenerProductoConPlanesPromo(string modelo)
+    {        
+        return await _repository.ObtenerProductoConPlanesPromo(modelo);       
+    }
 
 }
 

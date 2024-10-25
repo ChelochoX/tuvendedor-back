@@ -229,22 +229,22 @@ public class MotoRepository: IMotoRepository
         }
     }
 
-    public async Task<List<ProductoDTOPromo>> ObtenerProductosConPlanesPromo()
+    public async Task<List<ProductosDTOPromo>> ListarProductosConPlanesPromo()
     {
         _logger.LogInformation("Inicio del proceso para obtener todos los productos con promociones y sus planes promocionales");
 
         string queryProductos = @"
-        SELECT 
-            p.IdProducto,
-            p.Articulo,
-            p.Modelo,
-            p.PrecioPublicoPromo,
-            p.PrecioMayoristaPromo,
-            p.PrecioBasePromo
-        FROM 
-            Productos p
-        WHERE 
-            p.TienePromocion = 1";
+                    SELECT 
+                        p.IdProducto,
+                        p.Articulo,
+                        p.Modelo,
+                        p.PrecioPublicoPromo,
+                        p.PrecioMayoristaPromo,
+                        p.PrecioBasePromo
+                    FROM 
+                        Productos p
+                    WHERE 
+                        p.TienePromocion = 1";
 
         string queryPlanes = @"
         SELECT 
@@ -268,7 +268,7 @@ public class MotoRepository: IMotoRepository
             using (var connection = _conexion.CreateSqlConnection())
             {
                 // Obtener todos los productos con promociones
-                var productos = await connection.QueryAsync<ProductoDTOPromo>(queryProductos);
+                var productos = await connection.QueryAsync<ProductosDTOPromo>(queryProductos);
 
                 if (productos == null || !productos.Any())
                 {
@@ -281,7 +281,7 @@ public class MotoRepository: IMotoRepository
                     var parametros = new DynamicParameters();
                     parametros.Add("@idProducto", producto.IdProducto);
 
-                    var planesPromo = await connection.QueryAsync<PlanPromo>(queryPlanes, parametros);
+                    var planesPromo = await connection.QueryAsync<PlanesPromo>(queryPlanes, parametros);
 
                     // Asignar los planes promocionales al producto
                     producto.Planes = planesPromo.ToList();
@@ -301,6 +301,91 @@ public class MotoRepository: IMotoRepository
         {
             _logger.LogError(ex, "Ocurrió un error inesperado al obtener los productos con sus planes promocionales");
             throw new RepositoryException("Ocurrió un error inesperado al obtener los productos con sus planes promocionales", ex);
+        }
+    }
+
+    public async Task<ProductoDTOPromo> ObtenerProductoConPlanesPromo(string modelo)
+    {
+        _logger.LogInformation("Inicio del proceso para obtener el producto con promocion y sus plan promocional");
+
+        string queryProducto = @"
+                SELECT 
+                    p.IdProducto,
+                    p.Articulo,
+                    p.Modelo,
+                    p.PrecioPublicoPromo,
+                    p.PrecioMayoristaPromo,
+                    p.PrecioBasePromo,
+                    p.PrecioPublico, 
+                    p.PrecioMayorista, 
+                    p.PrecioBase,
+                    p.TienePromocion
+                FROM 
+                    Productos p
+                WHERE 
+                    p.Modelo LIKE @modelo
+                    AND p.TienePromocion = 1";
+
+        string queryPlanes = @"
+                SELECT 
+                    pl.IdPrecioPlan,
+                    pl.IdPlan,
+                    pl.EntregaPromo,
+                    pl.CuotasPromo,
+                    pl.ImportePromo,
+                    pl.Entrega,
+                    pl.Cuotas,
+                    pl.Importe,
+                    p.NombrePlan,
+                    pl.FechaInicioPromo,
+                    pl.FechaFinPromo
+                FROM 
+                    PreciosPlan pl 
+                    INNER JOIN Planes p ON pl.IdPlan = p.IdPlan
+                WHERE 
+                    pl.IdProducto = @idProducto
+                    AND pl.ImportePromo IS NOT NULL";
+
+        try
+        {
+            using (var connection = _conexion.CreateSqlConnection())
+            {
+                string descripcionNormalizada = modelo.Replace("×", "x");
+
+                // Obtener los detalles del producto con promoción
+                var parametros = new DynamicParameters();
+                parametros.Add("@modelo", descripcionNormalizada);
+
+                var producto = await connection.QueryFirstOrDefaultAsync<ProductoDTOPromo>(queryProducto, parametros);
+
+                if (producto == null)
+                {
+                    throw new NoDataFoundException("No se encontró un producto con promoción para el modelo proporcionado");
+                }
+
+                // Obtener los planes promocionales asociados al producto
+                parametros = new DynamicParameters();
+                parametros.Add("@idProducto", producto.IdProducto);
+
+                var planes = await connection.QueryAsync<PlanPromo>(queryPlanes, parametros);
+
+                // Asignar los planes promocionales al producto
+                producto.Planes = planes.ToList();
+
+                _logger.LogInformation("Fin del proceso para obtener el producto con promocion y sus planes promocionales");
+
+                return producto;
+            }
+        }
+        catch (NoDataFoundException ex)
+        {
+            _logger.LogWarning(ex, "No se encontro el producto con promocion para el modelo proporcionado");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrió un error inesperado al obtener el producto con plan promocional");
+            throw new RepositoryException("Ocurrió un error inesperado al obtener el producto con plan promocional", ex);
         }
     }
 

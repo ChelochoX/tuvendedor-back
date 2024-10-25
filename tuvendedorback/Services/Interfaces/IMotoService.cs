@@ -11,7 +11,8 @@ public interface IMotoService
     Task<decimal> ObtenerMontoCuotaConEntregaMayor(CalculoCuotaRequest request);
     Task<int> GuardarSolicitudCredito(SolicitudCredito solicitud);
     Task GenerarPdfSolicitud(SolicitudCredito solicitud, int idSolicitud);
-    Task<List<ModeloMotosporCategoria>> ObtenerProductosConPlanesPromo();
+    Task<List<ModeloMotosporCategoria>> ListarProductosConPlanesPromo();
+    Task<ProductoDTOPromo> ObtenerProductoConPlanesPromo(string modelo);
 
 
 }

@@ -97,13 +97,26 @@ public class MotosController : ControllerBase
                 
     }
 
-    [HttpGet("productopromo")]
+    [HttpGet("listarproductopromo")]
     [SwaggerOperation(
     Summary = "Permite obtener los productos y sus planes que pertenecen a este modelo que esta en promocion",
     Description = "Obtener los productos y planes que pertenecen a este modelo que esta en promocion")]
-    public async Task<IActionResult> ObtenerProductosPorModeloenPromo()
+    public async Task<IActionResult> ListarProductosPorModeloenPromo()
     {      
-        var producto = await _motoService.ObtenerProductosConPlanesPromo();
+        var producto = await _motoService.ListarProductosConPlanesPromo();
+
+        return Ok(producto);
+    }
+
+    [HttpGet("productopromo/{modelo}")]
+    [SwaggerOperation(
+    Summary = "Permite obtener el producto y su plan que pertenecen a este modelo que esta en promocion",
+    Description = "Obtener el producto y su plan que pertenecen a este modelo que esta en promocion")]
+    public async Task<IActionResult> ObtenerProductosPorModeloenPromo(
+    [FromRoute][Description("Propiedad que determina el modelo del producto")]
+    string modelo)
+    {
+        var producto = await _motoService.ObtenerProductoConPlanesPromo(modelo);
 
         return Ok(producto);
     }
