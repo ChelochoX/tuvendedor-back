@@ -14,6 +14,7 @@ public interface IMotoService
     Task<List<ModeloMotosporCategoria>> ListarProductosConPlanesPromo();
     Task<ProductoDTOPromo> ObtenerProductoConPlanesPromo(string modelo);
     Task<List<ImagenHomeCarrusel>> ObtenerImagenesDesdeHomeCarrusel();
+    Task<List<string>> ObtenerImagenesPorModelo(string nombreModelo);
 
 
 }

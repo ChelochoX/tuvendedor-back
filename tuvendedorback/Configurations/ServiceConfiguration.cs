@@ -65,5 +65,15 @@ public static class ServiceConfiguration
         {
             throw new DirectoryNotFoundException($"La ruta de imágenes HomeCarrusel en {homeCarruselPath} no existe.");
         }
+
+        // Nueva configuración para toda la estructura de ImagenesMotos usando un nuevo RequestPath "/imagenes_motos"
+        if (Directory.Exists(externalImagesPath))
+        {
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = new PhysicalFileProvider(externalImagesPath),
+                RequestPath = "/imagenes_motos"
+            });
+        }
     }
 }

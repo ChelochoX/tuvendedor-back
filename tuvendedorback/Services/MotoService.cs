@@ -441,6 +441,61 @@ public class MotoService : IMotoService
         return imagenes;
     }
 
+    public async Task<List<string>> ObtenerImagenesPorModelo(string nombreModelo)
+    {
+        // Usar el path base de las imágenes (por ejemplo: "C:/ImagenesMotos")
+        string rutaBase = _baseImagesPath;
+
+        // Obtener las carpetas de las categorías en la ruta base
+        var categorias = Directory.GetDirectories(rutaBase);
+
+        // Extensiones de archivos de imagen permitidas
+        var extensionesPermitidas = new[] { ".jpg", ".jpeg", ".png", ".gif" };
+
+        // Lista para almacenar las URLs de las imágenes encontradas
+        var imagenes = new List<string>();
+
+        // Iterar sobre cada categoría para buscar el modelo específico
+        foreach (var categoria in categorias)
+        {
+            // Construir la ruta de la subcarpeta del modelo dentro de cada categoría
+            var rutaModelo = Path.Combine(categoria, nombreModelo);
+
+            // Verificar si existe una carpeta para el modelo dentro de esta categoría
+            if (Directory.Exists(rutaModelo))
+            {
+                // Obtener archivos de imagen en la carpeta del modelo
+                var archivos = Directory.GetFiles(rutaModelo)
+                                        .Where(file => extensionesPermitidas.Contains(Path.GetExtension(file).ToLower()));
+
+                // Construir URLs para cada archivo de imagen y agregar a la lista
+                foreach (var archivo in archivos)
+                {
+                    var nombreCategoria = Path.GetFileName(categoria); // Obtener el nombre de la categoría
+                    var nombreArchivo = Path.GetFileName(archivo); // Obtener el nombre del archivo de imagen
+
+                    // Construir la URL relativa con encoding para que sea compatible con URLs
+                    var urlImagen = $"/imagenes_motos/{Uri.EscapeDataString(nombreCategoria)}/{Uri.EscapeDataString(nombreModelo)}/{Uri.EscapeDataString(nombreArchivo)}";
+
+                    imagenes.Add(urlImagen);
+                }
+
+                // Detener la búsqueda en categorías adicionales, ya que el modelo se encontró
+                break;
+            }
+        }
+
+        // Validar si no se encontraron imágenes y lanzar excepción
+        if (imagenes.Count == 0)
+        {
+            throw new NoDataFoundException("No se encontraron imágenes para el modelo especificado.");
+        }
+
+        return imagenes;
+    }
+
+
+
 
 
 

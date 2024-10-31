@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using System.ComponentModel;
+using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
@@ -130,6 +131,24 @@ public class MotosController : ControllerBase
         var imagenes = await _motoService.ObtenerImagenesDesdeHomeCarrusel();      
 
         return Ok(imagenes);
+    }
+
+    [HttpGet("modelo/{nombreModelo}/imagenes")]
+    [SwaggerOperation(
+    Summary = "Obtiene las imágenes de un modelo específico",
+    Description = "Permite obtener todas las imágenes de un modelo especificado por su nombre")]
+    public async Task<IActionResult> ObtenerImagenesPorModelo(
+    [FromRoute][Description("Nombre del modelo")] string nombreModelo)
+    {
+       
+        if (string.IsNullOrWhiteSpace(nombreModelo))
+        {
+            return BadRequest(new { Message = "El nombre del modelo no puede ser nulo o vacío." });
+        }
+
+        var imagenes = await _motoService.ObtenerImagenesPorModelo(nombreModelo);
+        return Ok(imagenes);
+       
     }
 
 
