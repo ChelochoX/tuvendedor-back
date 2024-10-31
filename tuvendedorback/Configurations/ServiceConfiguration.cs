@@ -22,19 +22,21 @@ public static class ServiceConfiguration
     }
     public static void UseStaticFilesConfiguration(this WebApplication app, IConfiguration configuration)
     {
-        string externalImagesPath;
+        // Obtener la ruta base desde la configuración
+        string externalImagesPath = configuration["ImagenesMotosPath"];
 
         if (app.Environment.IsProduction())
         {
-            // Ruta para el contenedor Docker (Producción)
-            externalImagesPath = configuration["ImagenesMotosPath"] ?? "/app/ImagenesMotos";
+            // Valor predeterminado para producción
+            externalImagesPath ??= "/app/ImagenesMotos";
         }
         else
         {
-            // Ruta para el entorno local (Desarrollo)
-            externalImagesPath = configuration["ImagenesMotosPath"] ?? "C:/ImagenesMotos";
+            // Valor predeterminado para desarrollo
+            externalImagesPath ??= "C:/ImagenesMotos";
         }
 
+        // Configuración para la carpeta general de ImagenesMotos
         if (!string.IsNullOrEmpty(externalImagesPath) && Directory.Exists(externalImagesPath))
         {
             app.UseStaticFiles(new StaticFileOptions
@@ -46,6 +48,22 @@ public static class ServiceConfiguration
         else
         {
             throw new DirectoryNotFoundException($"La ruta de imágenes {externalImagesPath} no existe.");
+        }
+
+        // Configuración específica para la carpeta HomeCarrusel dentro de ImagenesMotos
+        var homeCarruselPath = Path.Combine(externalImagesPath, "HomeCarrusel");
+
+        if (!string.IsNullOrEmpty(homeCarruselPath) && Directory.Exists(homeCarruselPath))
+        {
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = new PhysicalFileProvider(homeCarruselPath),
+                RequestPath = "/imagenes/homecarrusel"
+            });
+        }
+        else
+        {
+            throw new DirectoryNotFoundException($"La ruta de imágenes HomeCarrusel en {homeCarruselPath} no existe.");
         }
     }
 }

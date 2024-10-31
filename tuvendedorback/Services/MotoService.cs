@@ -406,6 +406,47 @@ public class MotoService : IMotoService
         return await _repository.ObtenerProductoConPlanesPromo(modelo);       
     }
 
+    public async Task<List<ImagenHomeCarrusel>> ObtenerImagenesDesdeHomeCarrusel()
+    {
+        if (string.IsNullOrEmpty(_baseImagesPath))
+        {
+            throw new ArgumentNullException("La ruta base de imágenes no está configurada.");
+        }
+
+        var homeCarruselPath = Path.Combine(_baseImagesPath, "HomeCarrusel");
+
+        _logger.LogInformation($"Ruta de HomeCarrusel: {homeCarruselPath}");
+
+        if (!Directory.Exists(homeCarruselPath))
+        {
+            _logger.LogInformation($"No se encontró la carpeta en la ruta: {homeCarruselPath}");
+            throw new NoDataFoundException("La carpeta HomeCarrusel no existe o no contiene imágenes.");
+        }
+
+        var extensionesPermitidas = new[] { ".jpg", ".jpeg", ".png", ".gif" };
+        var imagenes = Directory.GetFiles(homeCarruselPath)
+                                .Where(file => extensionesPermitidas.Contains(Path.GetExtension(file).ToLower()))
+                                .Select(file => new ImagenHomeCarrusel
+                                {
+                                    Nombre = Path.GetFileName(file),
+                                    Url = $"/imagenes/homecarrusel/{Uri.EscapeDataString(Path.GetFileName(file))}" // URL relativa con nombre codificado
+                                })
+                                .ToList();
+
+        if (imagenes.Count == 0)
+        {
+            throw new NoDataFoundException("No se encontraron imágenes en la carpeta HomeCarrusel.");
+        }
+
+        return imagenes;
+    }
+
+
+
+
+
+
+
 }
 
 

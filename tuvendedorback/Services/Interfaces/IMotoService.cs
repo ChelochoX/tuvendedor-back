@@ -13,6 +13,7 @@ public interface IMotoService
     Task GenerarPdfSolicitud(SolicitudCredito solicitud, int idSolicitud);
     Task<List<ModeloMotosporCategoria>> ListarProductosConPlanesPromo();
     Task<ProductoDTOPromo> ObtenerProductoConPlanesPromo(string modelo);
+    Task<List<ImagenHomeCarrusel>> ObtenerImagenesDesdeHomeCarrusel();
 
 
 }

@@ -121,4 +121,16 @@ public class MotosController : ControllerBase
         return Ok(producto);
     }
 
+    [HttpGet("homecarrusel/imagenes")]
+    [SwaggerOperation(
+    Summary = "Permite obtener todas las imágenes del carrusel",
+    Description = "Obtiene una lista de nombres de las imágenes en la carpeta HomeCarrusel para mostrarlas en el carrusel de la página principal")]
+    public async Task<IActionResult> ObtenerImagenesCarrusel()
+    {
+        var imagenes = await _motoService.ObtenerImagenesDesdeHomeCarrusel();      
+
+        return Ok(imagenes);
+    }
+
+
 }
