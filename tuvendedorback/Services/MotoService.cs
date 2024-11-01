@@ -195,6 +195,7 @@ public class MotoService : IMotoService
                         .SetTextAlignment(TextAlignment.CENTER));
 
                     document.Add(new Paragraph($"Cédula: {solicitud.CedulaIdentidad}"));
+                    document.Add(new Paragraph($"Nombres y Apellidos: {solicitud.NombresApellidos}"));
                     document.Add(new Paragraph($"Teléfono Móvil: {solicitud.TelefonoMovil}"));
                     document.Add(new Paragraph($"Fecha de Nacimiento: {solicitud.FechaNacimiento:dd/MM/yyyy}"));
                     document.Add(new Paragraph($"Barrio: {solicitud.Barrio}"));

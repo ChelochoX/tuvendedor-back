@@ -140,9 +140,9 @@ public class MotoRepository: IMotoRepository
 
         string queryInsertarSolicitud = @"
             INSERT INTO CreditoSolicitud 
-            (ModeloSolicitado, EntregaInicial, CantidadCuotas, MontoPorCuota, CedulaIdentidad, TelefonoMovil, FechaNacimiento, Barrio, Ciudad, DireccionParticular)
+            (ModeloSolicitado, EntregaInicial, CantidadCuotas, MontoPorCuota, CedulaIdentidad, TelefonoMovil, FechaNacimiento, Barrio, Ciudad, DireccionParticular,NombresApellidos)
             VALUES 
-            (@ModeloSolicitado, @EntregaInicial, @CantidadCuotas, @MontoPorCuota, @Cedula, @TelefonoMovil, @FechaNacimiento, @Barrio, @Ciudad, @DireccionParticular);
+            (@ModeloSolicitado, @EntregaInicial, @CantidadCuotas, @MontoPorCuota, @Cedula, @TelefonoMovil, @FechaNacimiento, @Barrio, @Ciudad, @DireccionParticular,@NombresApellidos);
             SELECT CAST(SCOPE_IDENTITY() as int);";
 
         string queryInsertarDatosLaborales = @"
@@ -178,6 +178,7 @@ public class MotoRepository: IMotoRepository
                     parametrosSolicitud.Add("@Barrio", solicitud.Barrio);
                     parametrosSolicitud.Add("@Ciudad", solicitud.Ciudad);
                     parametrosSolicitud.Add("@DireccionParticular", solicitud.DireccionParticular);
+                    parametrosSolicitud.Add("@NombresApellidos", solicitud.NombresApellidos);
 
                     // Insertar los datos en CreditoSolicitud
                     var solicitudId = await connection.QuerySingleAsync<int>(queryInsertarSolicitud, parametrosSolicitud, transaction);

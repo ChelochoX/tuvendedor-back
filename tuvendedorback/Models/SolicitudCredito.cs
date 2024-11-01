@@ -6,6 +6,7 @@ public class SolicitudCredito
     public decimal EntregaInicial { get; set; }
     public int CantidadCuotas { get; set; }
     public decimal MontoPorCuota { get; set; }
+    public string NombresApellidos { get; set; }
     public string CedulaIdentidad { get; set; }
     public string TelefonoMovil { get; set; }
     public DateTime FechaNacimiento { get; set; }
