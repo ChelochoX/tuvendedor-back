@@ -3,6 +3,10 @@
 # Learn more about .gitignore:
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
+
+# Ignorar todos los archivos de imagen en la carpeta ImagenesMotos
+ImagenesMotos/
+
 # Node artifact files
 node_modules/
 dist/

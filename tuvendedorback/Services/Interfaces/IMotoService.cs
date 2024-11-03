@@ -16,4 +16,5 @@ public interface IMotoService
     Task<List<ImagenHomeCarrusel>> ObtenerImagenesDesdeHomeCarrusel();
     Task<List<string>> ObtenerImagenesPorModelo(string nombreModelo);
     Task RegistrarVisitaAsync(string page);
+    Task<List<string>> GuardarDocumentosAdjuntos(List<IFormFile> archivos, string cedulaCliente);
 }

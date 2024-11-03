@@ -500,6 +500,38 @@ public class MotoService : IMotoService
         await _repository.RegistrarVisitaAsync(page);
     }
 
+    public async Task<List<string>> GuardarDocumentosAdjuntos(List<IFormFile> archivos, string cedulaCliente)
+    {
+        // Ruta base donde se almacenarán los documentos adjuntos
+        string rutaDocumentosAdjuntos = Path.Combine(_baseImagesPath, "DocumentosAdjuntos");
+
+        // Crear la carpeta de documentos adjuntos si no existe
+        Directory.CreateDirectory(rutaDocumentosAdjuntos);
+
+        // Lista para almacenar las rutas de los archivos guardados
+        var rutasGuardadas = new List<string>();
+
+        // Iterar sobre cada archivo adjunto
+        foreach (var archivo in archivos)
+        {
+            // Generar un nombre único para el archivo usando la cédula del cliente y un GUID
+            string nombreArchivo = $"{cedulaCliente}_{Guid.NewGuid()}{Path.GetExtension(archivo.FileName)}";
+            string rutaArchivo = Path.Combine(rutaDocumentosAdjuntos, nombreArchivo);
+
+            // Guardar el archivo en el sistema de archivos
+            using (var stream = new FileStream(rutaArchivo, FileMode.Create))
+            {
+                await archivo.CopyToAsync(stream);
+            }
+
+            // Agregar la ruta del archivo guardado a la lista
+            rutasGuardadas.Add(rutaArchivo);
+        }
+
+        return rutasGuardadas;
+    }
+
+
 }
 
 

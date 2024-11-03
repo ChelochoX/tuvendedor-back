@@ -173,4 +173,28 @@ public class MotosController : ControllerBase
     }
 
 
+    [HttpPost("guardardocumentos")]
+    [SwaggerOperation(
+    Summary = "Sube documentos adjuntos para un cliente",
+    Description = "Recibe archivos adjuntos y los guarda en el servidor, renombrándolos con la cédula del cliente.")]
+    public async Task<IActionResult> SubirDocumentos(
+    [FromQuery][Description("Cédula del cliente")] string cedula,
+    [FromForm][Description("Archivos adjuntos")] List<IFormFile> archivos)
+    {
+        if (string.IsNullOrWhiteSpace(cedula))
+        {
+            throw new ReglasdeNegocioException("La cédula del cliente no puede ser nula o vacía.");
+        }
+
+        if (archivos == null || !archivos.Any())
+        {
+            throw new ReglasdeNegocioException("Debe adjuntar al menos un archivo.");
+        }
+
+        var rutasGuardadas = await _motoService.GuardarDocumentosAdjuntos(archivos, cedula);
+        return Ok(new { Message = "Documentos subidos exitosamente", Rutas = rutasGuardadas });
+    }
+
+
+
 }
