@@ -98,6 +98,7 @@ public class MotosController : ControllerBase
                 
     }
 
+
     [HttpGet("listarproductopromo")]
     [SwaggerOperation(
     Summary = "Permite obtener los productos y sus planes que pertenecen a este modelo que esta en promocion",
@@ -108,6 +109,7 @@ public class MotosController : ControllerBase
 
         return Ok(producto);
     }
+
 
     [HttpGet("productopromo/{modelo}")]
     [SwaggerOperation(
@@ -122,6 +124,7 @@ public class MotosController : ControllerBase
         return Ok(producto);
     }
 
+
     [HttpGet("homecarrusel/imagenes")]
     [SwaggerOperation(
     Summary = "Permite obtener todas las imágenes del carrusel",
@@ -132,6 +135,7 @@ public class MotosController : ControllerBase
 
         return Ok(imagenes);
     }
+
 
     [HttpGet("modelo/{nombreModelo}/imagenes")]
     [SwaggerOperation(
@@ -149,6 +153,23 @@ public class MotosController : ControllerBase
         var imagenes = await _motoService.ObtenerImagenesPorModelo(nombreModelo);
         return Ok(imagenes);
        
+    }
+
+
+    [HttpPost("registrarvisita")]
+    [SwaggerOperation(
+    Summary = "Registra una visita para una página específica",
+    Description = "Registra una visita a la página especificada en el cuerpo de la solicitud")]
+    public async Task<IActionResult> RegistrarVisita(
+    [FromQuery][Description("Nombre de la página visitada")] string page)
+    {
+        if (string.IsNullOrWhiteSpace(page))
+        {
+            throw new ReglasdeNegocioException("El nombre de la página no puede ser nulo o vacío.");
+        }
+
+        await _motoService.RegistrarVisitaAsync(page);
+        return Ok(new { Message = "Visita registrada exitosamente" });
     }
 
 

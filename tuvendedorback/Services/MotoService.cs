@@ -127,7 +127,7 @@ public class MotoService : IMotoService
         var resultado = await _repository.GuardarSolicitudCredito(solicitud);
 
         //Generamos el pdf
-        await GenerarPdfSolicitud(solicitud, resultado);
+        //await GenerarPdfSolicitud(solicitud, resultado);
 
         return resultado;
     }
@@ -495,13 +495,10 @@ public class MotoService : IMotoService
         return imagenes;
     }
 
-
-
-
-
-
-
-
+    public async Task RegistrarVisitaAsync(string page)
+    {
+        await _repository.RegistrarVisitaAsync(page);
+    }
 
 }
 

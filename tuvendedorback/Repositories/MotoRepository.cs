@@ -245,24 +245,27 @@ public class MotoRepository: IMotoRepository
                     FROM 
                         Productos p
                     WHERE 
-                        p.TienePromocion = 1";
+                        p.TienePromocion = 1                      
+                        AND p.FechaInicioPromo IS NOT NULL
+                        AND p.FechaFinPromo IS NOT NULL
+                        AND p.FechaInicioPromo <= GETDATE()
+                        AND p.FechaFinPromo >= GETDATE()";
 
         string queryPlanes = @"
-        SELECT 
-            pl.IdPrecioPlan,
-            pl.IdPlan,
-            pl.EntregaPromo,
-            pl.CuotasPromo,
-            pl.ImportePromo,
-            p.NombrePlan,
-            pl.FechaInicioPromo,
-            pl.FechaFinPromo
-        FROM 
-            PreciosPlan pl 
-            INNER JOIN Planes p ON pl.IdPlan = p.IdPlan
-        WHERE 
-            pl.IdProducto = @idProducto
-            AND pl.ImportePromo IS NOT NULL";
+                    SELECT 
+                        pl.IdPrecioPlan,
+                        pl.IdPlan,
+                        pl.EntregaPromo,
+                        pl.CuotasPromo,
+                        pl.ImportePromo,
+                        p.NombrePlan,
+                        pl.FechaInicioPromo,
+                        pl.FechaFinPromo
+                    FROM 
+                        PreciosPlan pl 
+                        INNER JOIN Planes p ON pl.IdPlan = p.IdPlan
+                    WHERE 
+                        pl.IdProducto = @idProducto";
 
         try
         {
@@ -325,7 +328,11 @@ public class MotoRepository: IMotoRepository
                     Productos p
                 WHERE 
                     p.Modelo LIKE @modelo
-                    AND p.TienePromocion = 1";
+                    AND p.TienePromocion = 1
+                    AND p.FechaInicioPromo IS NOT NULL
+                    AND p.FechaFinPromo IS NOT NULL
+                    AND p.FechaInicioPromo <= GETDATE()
+                    AND p.FechaFinPromo >= GETDATE()";
 
         string queryPlanes = @"
                 SELECT 
@@ -333,10 +340,7 @@ public class MotoRepository: IMotoRepository
                     pl.IdPlan,
                     pl.EntregaPromo,
                     pl.CuotasPromo,
-                    pl.ImportePromo,
-                    pl.Entrega,
-                    pl.Cuotas,
-                    pl.Importe,
+                    pl.ImportePromo,                  
                     p.NombrePlan,
                     pl.FechaInicioPromo,
                     pl.FechaFinPromo
@@ -345,7 +349,8 @@ public class MotoRepository: IMotoRepository
                     INNER JOIN Planes p ON pl.IdPlan = p.IdPlan
                 WHERE 
                     pl.IdProducto = @idProducto
-                    AND pl.ImportePromo IS NOT NULL";
+                    AND pl.ImportePromo IS NOT NULL
+                    AND pl.ImportePromo > 0";
 
         try
         {
@@ -390,7 +395,63 @@ public class MotoRepository: IMotoRepository
         }
     }
 
+    public async Task RegistrarVisitaAsync(string page)
+    {
+        _logger.LogInformation("Inicio del proceso para registrar la visita para la página: {Page}", page);
 
+        string queryBuscarVisita = @"
+                SELECT Id, Count, LastVisited 
+                FROM Visitas 
+                WHERE Page = @page";
+
+        string queryActualizarVisita = @"
+                UPDATE Visitas 
+                SET Count = Count + 1, LastVisited = @lastVisited 
+                WHERE Id = @id";
+
+        string queryInsertarVisita = @"
+                INSERT INTO Visitas (Page, Count, LastVisited) 
+                VALUES (@page, @count, @lastVisited)";
+
+        try
+        {
+            using (var connection = _conexion.CreateSqlConnection())
+            {              
+                // Busca si ya existe un registro de visitas para la página
+                var parametrosBuscar = new DynamicParameters();
+                parametrosBuscar.Add("@page", page);
+
+                var visitaExistente = await connection.QueryFirstOrDefaultAsync<Visita>(queryBuscarVisita, parametrosBuscar);
+
+                if (visitaExistente != null)
+                {
+                    // Si existe, incrementa el contador y actualiza la fecha de la última visita
+                    var parametrosActualizar = new DynamicParameters();
+                    parametrosActualizar.Add("@id", visitaExistente.Id);
+                    parametrosActualizar.Add("@lastVisited", DateTime.Now);
+
+                    await connection.ExecuteAsync(queryActualizarVisita, parametrosActualizar);
+                }
+                else
+                {
+                    // Si no existe, inserta una nueva visita
+                    var parametrosInsertar = new DynamicParameters();
+                    parametrosInsertar.Add("@page", page);
+                    parametrosInsertar.Add("@count", 1);
+                    parametrosInsertar.Add("@lastVisited", DateTime.Now);
+
+                    await connection.ExecuteAsync(queryInsertarVisita, parametrosInsertar);
+                }
+
+                _logger.LogInformation("Fin del proceso para registrar la visita para la página: {Page}", page);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrió un error inesperado al registrar la visita para la página: {Page}", page);
+            throw new RepositoryException("Ocurrió un error inesperado al registrar la visita", ex);
+        }
+    }
 
 
 }
