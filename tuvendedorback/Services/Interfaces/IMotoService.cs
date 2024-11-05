@@ -1,6 +1,7 @@
 ﻿using tuvendedorback.DTOs;
 using tuvendedorback.Models;
 using tuvendedorback.Request;
+using tuvendedorback.Wrappers;
 
 namespace tuvendedorback.Services.Interfaces;
 
@@ -17,4 +18,5 @@ public interface IMotoService
     Task<List<string>> ObtenerImagenesPorModelo(string nombreModelo);
     Task RegistrarVisitaAsync(string page);
     Task<List<string>> GuardarDocumentosAdjuntos(List<IFormFile> archivos, string cedulaCliente);
+    Task<Datos<IEnumerable<SolicitudesdeCreditoDTO>>> ObtenerSolicitudesCredito(SolicitudCreditoRequest request);
 }

@@ -5,6 +5,7 @@ using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
+using tuvendedorback.Wrappers;
 
 namespace tuvendedorback.Controllers;
 
@@ -196,5 +197,26 @@ public class MotosController : ControllerBase
     }
 
 
+    [HttpGet("obtener-solicitudes-credito")]
+    [SwaggerOperation(
+     Summary = "Obtiene una lista de solicitudes de crédito con filtros y paginación",
+     Description = "Permite obtener una lista de solicitudes de crédito aplicando filtros por modelo, fecha de creación y búsqueda avanzada, con soporte de paginación")]
+    public async Task<IActionResult> ObtenerSolicitudesCredito(
+     [FromQuery][Description("Parámetros para filtrar y paginar las solicitudes de crédito")] SolicitudCreditoRequest request)
+    {
+        var validationResult = new SolicitudCreditoRequestValidator().Validate(request);
 
+        if (!validationResult.IsValid)
+        {
+            return BadRequest(new Response<object>
+            {
+                Success = false,
+                Errors = validationResult.Errors.Select(e => e.ErrorMessage).ToList()
+            });
+        }
+
+        var resultado = await _motoService.ObtenerSolicitudesCredito(request);
+        return Ok(resultado);        
+         
+    }
 }

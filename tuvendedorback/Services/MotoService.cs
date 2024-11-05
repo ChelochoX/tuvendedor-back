@@ -10,6 +10,7 @@ using tuvendedorback.Models;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
+using tuvendedorback.Wrappers;
 
 namespace tuvendedorback.Services;
 
@@ -530,8 +531,10 @@ public class MotoService : IMotoService
 
         return rutasGuardadas;
     }
-
-
+    public async Task<Datos<IEnumerable<SolicitudesdeCreditoDTO>>> ObtenerSolicitudesCredito(SolicitudCreditoRequest request)
+    {
+        return await _repository.ObtenerSolicitudesCredito(request);
+    }
 }
 
 

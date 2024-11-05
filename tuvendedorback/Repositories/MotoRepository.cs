@@ -4,6 +4,8 @@ using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
 using tuvendedorback.Repositories.Interfaces;
+using tuvendedorback.Request;
+using tuvendedorback.Wrappers;
 
 namespace tuvendedorback.Repositories;
 
@@ -452,6 +454,115 @@ public class MotoRepository: IMotoRepository
             throw new RepositoryException("Ocurrió un error inesperado al registrar la visita", ex);
         }
     }
+
+    public async Task<Datos<IEnumerable<SolicitudesdeCreditoDTO>>> ObtenerSolicitudesCredito(SolicitudCreditoRequest request)
+    {
+        _logger.LogInformation("Inicio de Proceso de obtener lista de solicitudes de crédito");
+
+        int saltarRegistros = (request.Pagina - 1) * request.CantidadRegistros;
+        string filtro = string.Empty;
+
+        // Filtro de término de búsqueda o modelo solicitado
+        if (!string.IsNullOrEmpty(request.TerminoDeBusqueda))
+        {
+            filtro += @"
+                AND (@terminoBusqueda IS NULL OR @terminoBusqueda = '' OR                            
+                     cs.ModeloSolicitado LIKE '%' + @terminoBusqueda + '%' OR
+                     CONVERT(varchar, cs.FechaCreacion, 23) LIKE '%' + @terminoBusqueda + '%')";
+        }
+        else
+        {
+            if (!string.IsNullOrEmpty(request.ModeloSolicitado))
+            {
+                filtro += " AND (@modeloSolicitado IS NULL OR cs.ModeloSolicitado LIKE '%' + @modeloSolicitado + '%')";
+            }
+
+            // Filtro por una fecha específica
+            if (request.FechaCreacion.HasValue)
+            {
+                filtro += " AND (@fechaCreacion IS NULL OR CONVERT(date, cs.FechaCreacion) = @fechaCreacion)";
+            }
+
+            // Filtro por rango de fechas
+            if (request.FechaInicio.HasValue && request.FechaFin.HasValue)
+            {
+                filtro += " AND (cs.FechaCreacion BETWEEN @fechaInicio AND @fechaFin)";
+            }
+        }
+
+        string query = $@"
+                    SELECT 
+                        cs.Id AS Id, 
+                        cs.CedulaIdentidad AS Cedula, 
+                        cs.ModeloSolicitado AS ModeloSolicitado, 
+                        cs.EntregaInicial AS EntregaInicial, 
+                        cs.CantidadCuotas AS Cuotas, 
+                        cs.MontoPorCuota AS MontoPorCuota, 
+                        cs.TelefonoMovil AS Telefono,
+                        cs.FechaCreacion AS FechaCreacion
+                    FROM 
+                        CreditoSolicitud cs
+                    WHERE 
+                        1=1
+                        {filtro}
+                    ORDER BY cs.FechaCreacion DESC
+                    OFFSET @saltarRegistros ROWS
+                    FETCH NEXT @cantidadRegistros ROWS ONLY";
+
+        string queryCantidad = $@"
+                            SELECT COUNT(*) 
+                            FROM 
+                                CreditoSolicitud cs
+                            WHERE 
+                                1=1
+                                {filtro}";
+
+        try
+        {
+            using (var connection = this._conexion.CreateSqlConnection())
+            {
+                var parametros = new DynamicParameters();
+                parametros.Add("@modeloSolicitado", request.ModeloSolicitado);
+                parametros.Add("@fechaCreacion", request.FechaCreacion);
+                parametros.Add("@fechaInicio", request.FechaInicio);
+                parametros.Add("@fechaFin", request.FechaFin);
+                parametros.Add("@terminoBusqueda", request.TerminoDeBusqueda);
+                parametros.Add("@saltarRegistros", saltarRegistros);
+                parametros.Add("@cantidadRegistros", request.CantidadRegistros);
+
+                var totalRegistros = await connection.ExecuteScalarAsync<int>(queryCantidad, parametros);
+
+                var resultado = await connection.QueryAsync<SolicitudesdeCreditoDTO>(query, parametros);
+
+                if (!resultado.Any())
+                {
+                    throw new NoDataFoundException("No se encontraron solicitudes de crédito con los criterios proporcionados.");
+                }
+
+                var listado = new Datos<IEnumerable<SolicitudesdeCreditoDTO>>
+                {
+                    Items = resultado,
+                    TotalRegistros = totalRegistros
+                };
+
+                _logger.LogInformation("Fin de Proceso de obtener lista de solicitudes de crédito");
+
+                return listado;
+            }
+        }
+        catch (NoDataFoundException ex)
+        {
+            _logger.LogWarning(ex, "No se encontraron solicitudes de crédito con los criterios proporcionados.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrió un error inesperado al obtener lista de solicitudes de crédito");
+            throw new RepositoryException("Ocurrió un error inesperado al obtener lista de solicitudes de crédito", ex);
+        }
+    }
+
+
 
 
 }
