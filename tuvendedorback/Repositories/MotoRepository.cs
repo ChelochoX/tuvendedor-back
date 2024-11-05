@@ -562,6 +562,108 @@ public class MotoRepository: IMotoRepository
         }
     }
 
+    public async Task<CreditoSolicitudDetalleDto> ObtenerDetalleCreditoSolicitudAsync(int id)
+    {
+        _logger.LogInformation("Inicio del proceso para obtener el detalle de la solicitud de crédito con id {Id}", id);
+
+        string queryCreditoSolicitud = @"
+                SELECT 
+                    cs.Id,
+                    cs.CedulaIdentidad,
+                    cs.ModeloSolicitado,
+                    cs.EntregaInicial,
+                    cs.CantidadCuotas,
+                    cs.MontoPorCuota,
+                    cs.TelefonoMovil,
+                    cs.FechaNacimiento,
+                    cs.Barrio,
+                    cs.Ciudad,
+                    cs.DireccionParticular,
+                    cs.FechaCreacion,
+                    cs.NombresApellidos
+                FROM 
+                    CreditoSolicitud cs
+                WHERE 
+                    cs.Id = @id";
+
+        string queryDatosLaborales = @"
+                SELECT 
+                    dl.Empresa,
+                    dl.DireccionLaboral,
+                    dl.TelefonoLaboral,
+                    dl.AntiguedadAnios,
+                    dl.AportaIPS,
+                    dl.CantidadAportes,
+                    dl.Salario
+                FROM 
+                    DatosLaborales dl
+                WHERE 
+                    dl.CreditoSolicitudId = @id";
+
+        string queryReferenciasComerciales = @"
+                SELECT 
+                    rc.NombreLocal,
+                    rc.Telefono
+                FROM 
+                    ReferenciasComerciales rc
+                WHERE 
+                    rc.CreditoSolicitudId = @id";
+
+        string queryReferenciasPersonales = @"
+                SELECT 
+                    rp.Nombre,
+                    rp.Telefono
+                FROM 
+                    ReferenciasPersonales rp
+                WHERE 
+                    rp.CreditoSolicitudId = @id";
+
+        try
+        {
+            using (var connection = _conexion.CreateSqlConnection())
+            {
+                // Parametro para la solicitud de crédito
+                var parametros = new DynamicParameters();
+                parametros.Add("@id", id);
+
+                // Obtener los datos de la solicitud de crédito
+                var creditoSolicitud = await connection.QueryFirstOrDefaultAsync<CreditoSolicitudDetalleDto>(queryCreditoSolicitud, parametros);
+
+                if (creditoSolicitud == null)
+                {
+                    throw new NoDataFoundException($"No se encontró la solicitud de crédito con id {id}");
+                }
+
+                // Obtener los datos laborales
+                var datosLaborales = await connection.QueryFirstOrDefaultAsync<DatosLaboralesDto>(queryDatosLaborales, parametros);
+                creditoSolicitud.DatosLaborales = datosLaborales ?? new DatosLaboralesDto();
+
+                // Obtener las referencias comerciales
+                var referenciasComerciales = await connection.QueryAsync<ReferenciaComercialDto>(queryReferenciasComerciales, parametros);
+                creditoSolicitud.ReferenciasComerciales = referenciasComerciales.ToList();
+
+                // Obtener las referencias personales
+                var referenciasPersonales = await connection.QueryAsync<ReferenciaPersonalDto>(queryReferenciasPersonales, parametros);
+                creditoSolicitud.ReferenciasPersonales = referenciasPersonales.ToList();
+
+                _logger.LogInformation("Fin del proceso para obtener el detalle de la solicitud de crédito con id {Id}", id);
+
+                return creditoSolicitud;
+            }
+        }
+        catch (NoDataFoundException ex)
+        {
+            _logger.LogWarning(ex, "No se encontró la solicitud de crédito con id {Id}", id);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrió un error inesperado al obtener el detalle de la solicitud de crédito");
+            throw new RepositoryException("Ocurrió un error inesperado al obtener el detalle de la solicitud de crédito", ex);
+        }
+    }
+
+
 
 
 

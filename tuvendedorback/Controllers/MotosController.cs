@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using System.ComponentModel;
+using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
 using tuvendedorback.Request;
@@ -202,7 +203,7 @@ public class MotosController : ControllerBase
      Summary = "Obtiene una lista de solicitudes de crédito con filtros y paginación",
      Description = "Permite obtener una lista de solicitudes de crédito aplicando filtros por modelo, fecha de creación y búsqueda avanzada, con soporte de paginación")]
     public async Task<IActionResult> ObtenerSolicitudesCredito(
-     [FromQuery][Description("Parámetros para filtrar y paginar las solicitudes de crédito")] SolicitudCreditoRequest request)
+    [FromQuery][Description("Parámetros para filtrar y paginar las solicitudes de crédito")] SolicitudCreditoRequest request)
     {
         var validationResult = new SolicitudCreditoRequestValidator().Validate(request);
 
@@ -219,4 +220,33 @@ public class MotosController : ControllerBase
         return Ok(resultado);        
          
     }
+
+
+    [HttpGet("obtener-detalle-solicitud-credito/{id}")]
+    [SwaggerOperation(
+    Summary = "Obtiene el detalle completo de una solicitud de crédito por ID",
+    Description = "Permite obtener todos los datos asociados a una solicitud de crédito específica, incluyendo datos personales, laborales y referencias comerciales y personales.")]
+    public async Task<IActionResult> ObtenerDetalleSolicitudCredito(
+    [FromRoute][Description("ID de la solicitud de crédito a obtener")] int id)
+    {
+        if (id <= 0)
+        {
+            return BadRequest(new Response<object>
+            {
+                Success = false,
+                Errors = new List<string> { "El ID de la solicitud debe ser un número positivo." }
+            });
+        }
+        
+        var resultado = await _motoService.ObtenerDetalleCreditoSolicitudAsync(id);           
+
+        return Ok(new Response<CreditoSolicitudDetalleDto>
+        {
+            Success = true,
+            Data = resultado
+        });
+
+       
+    }
+
 }

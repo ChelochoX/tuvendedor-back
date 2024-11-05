@@ -14,4 +14,5 @@ public interface IMotoRepository
     Task<ProductoDTOPromo> ObtenerProductoConPlanesPromo(string modelo);
     Task RegistrarVisitaAsync(string page);
     Task<Datos<IEnumerable<SolicitudesdeCreditoDTO>>> ObtenerSolicitudesCredito(SolicitudCreditoRequest request);
+    Task<CreditoSolicitudDetalleDto> ObtenerDetalleCreditoSolicitudAsync(int id);
 }

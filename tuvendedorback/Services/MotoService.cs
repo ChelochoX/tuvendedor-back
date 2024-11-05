@@ -535,6 +535,11 @@ public class MotoService : IMotoService
     {
         return await _repository.ObtenerSolicitudesCredito(request);
     }
+
+    public async Task<CreditoSolicitudDetalleDto> ObtenerDetalleCreditoSolicitudAsync(int id)
+    {
+        return await _repository.ObtenerDetalleCreditoSolicitudAsync(id);
+    }
 }
 
 
