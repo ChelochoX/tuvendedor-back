@@ -1,4 +1,5 @@
-﻿using tuvendedorback.DTOs;
+﻿using Microsoft.AspNetCore.Mvc;
+using tuvendedorback.DTOs;
 using tuvendedorback.Models;
 using tuvendedorback.Request;
 using tuvendedorback.Wrappers;
@@ -11,7 +12,7 @@ public interface IMotoService
     Task<ProductoDTO> ObtenerProductoConPlanes(string modelo);
     Task<decimal> ObtenerMontoCuotaConEntregaMayor(CalculoCuotaRequest request);
     Task<int> GuardarSolicitudCredito(SolicitudCredito solicitud);
-    Task GenerarPdfSolicitud(SolicitudCredito solicitud, int idSolicitud);
+    Task<byte[]> GenerarPdfSolicitud(SolicitudCredito solicitud, int idSolicitud);
     Task<List<ModeloMotosporCategoria>> ListarProductosConPlanesPromo();
     Task<ProductoDTOPromo> ObtenerProductoConPlanesPromo(string modelo);
     Task<List<ImagenHomeCarrusel>> ObtenerImagenesDesdeHomeCarrusel();
@@ -20,4 +21,5 @@ public interface IMotoService
     Task<List<string>> GuardarDocumentosAdjuntos(List<IFormFile> archivos, string cedulaCliente);
     Task<Datos<IEnumerable<SolicitudesdeCreditoDTO>>> ObtenerSolicitudesCredito(SolicitudCreditoRequest request);
     Task<CreditoSolicitudDetalleDto> ObtenerDetalleCreditoSolicitudAsync(int id);
+    Task<bool> ActualizarSolicitudCredito(int idSolicitud, SolicitudCredito solicitud);
 }

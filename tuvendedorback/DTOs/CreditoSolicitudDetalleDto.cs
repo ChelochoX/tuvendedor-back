@@ -39,12 +39,14 @@ public class DatosLaboralesDto
 
 public class ReferenciaComercialDto
 {
+    public int Id { get; set; }
     public string NombreLocal { get; set; }
     public string Telefono { get; set; }
 }
 
 public class ReferenciaPersonalDto
 {
+    public int Id { get; set; }
     public string Nombre { get; set; }
     public string Telefono { get; set; }
 }

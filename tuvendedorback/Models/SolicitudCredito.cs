@@ -30,12 +30,14 @@ public class SolicitudCredito
 
 public class ReferenciaComercial
 {
+    public int Id { get; set; }
     public string NombreLocal { get; set; }
     public string Telefono { get; set; }
 }
 
 public class ReferenciaPersonal
 {
+    public int Id { get; set; }
     public string Nombre { get; set; }
     public string Telefono { get; set; }
 }

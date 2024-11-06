@@ -101,6 +101,23 @@ public class MotosController : ControllerBase
     }
 
 
+    [HttpPost("solicitudcredito/generarpdf")]
+    [SwaggerOperation(
+    Summary = "Genera el PDF de una solicitud de crédito",
+    Description = "Genera un documento PDF con los datos de la solicitud de crédito específica")]
+    public async Task<IActionResult> GenerarPdfSolicitud(
+    [FromBody][Description("Datos necesarios para generar el PDF de la solicitud de crédito")] SolicitudCredito solicitud,
+    [FromQuery][Description("ID de la solicitud de crédito")] int idSolicitud)
+    {
+        // Llama al servicio para generar el PDF y obtener los bytes
+        var archivoBytes = await _motoService.GenerarPdfSolicitud(solicitud,idSolicitud);
+        var nombreArchivo = $"Solicitud_{idSolicitud}.pdf";
+
+        // Retorna el archivo PDF como respuesta
+        return File(archivoBytes, "application/pdf", nombreArchivo);
+    }
+
+
     [HttpGet("listarproductopromo")]
     [SwaggerOperation(
     Summary = "Permite obtener los productos y sus planes que pertenecen a este modelo que esta en promocion",
@@ -248,5 +265,24 @@ public class MotosController : ControllerBase
 
        
     }
+
+    [HttpPut("solicitudcredito/actualizar/{id}")]
+    [SwaggerOperation(
+    Summary = "Actualiza una solicitud de crédito",
+    Description = "Actualiza los datos de una solicitud de crédito específica")]
+    public async Task<IActionResult> ActualizarSolicitudCredito(int id, [FromBody] SolicitudCredito solicitud)
+    {
+        var resultado = await _motoService.ActualizarSolicitudCredito(id, solicitud);
+
+        if (resultado)
+        {
+            return Ok(new { message = "Solicitud de crédito actualizada exitosamente" });
+        }
+        else
+        {
+            return BadRequest(new { message = "No se pudo actualizar la solicitud de crédito" });
+        }
+    }
+
 
 }

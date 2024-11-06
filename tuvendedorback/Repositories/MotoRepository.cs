@@ -602,6 +602,7 @@ public class MotoRepository: IMotoRepository
 
         string queryReferenciasComerciales = @"
                 SELECT 
+                    rc.Id,
                     rc.NombreLocal,
                     rc.Telefono
                 FROM 
@@ -611,6 +612,7 @@ public class MotoRepository: IMotoRepository
 
         string queryReferenciasPersonales = @"
                 SELECT 
+                    rp.Id,
                     rp.Nombre,
                     rp.Telefono
                 FROM 
@@ -663,8 +665,121 @@ public class MotoRepository: IMotoRepository
         }
     }
 
+    public async Task<bool> ActualizarSolicitudCredito(int idSolicitud, SolicitudCredito solicitud)
+    {
+        _logger.LogInformation("Inicio del proceso para actualizar la solicitud de crédito");
 
+        string queryActualizarSolicitud = @"
+        UPDATE CreditoSolicitud 
+        SET ModeloSolicitado = @ModeloSolicitado,
+            EntregaInicial = @EntregaInicial,
+            CantidadCuotas = @CantidadCuotas,
+            MontoPorCuota = @MontoPorCuota,
+            CedulaIdentidad = @Cedula,
+            TelefonoMovil = @TelefonoMovil,
+            FechaNacimiento = @FechaNacimiento,
+            Barrio = @Barrio,
+            Ciudad = @Ciudad,
+            DireccionParticular = @DireccionParticular,
+            NombresApellidos = @NombresApellidos
+        WHERE Id = @IdSolicitud;";
 
+        string queryActualizarDatosLaborales = @"
+        UPDATE DatosLaborales 
+        SET Empresa = @Empresa,
+            DireccionLaboral = @DireccionLaboral,
+            TelefonoLaboral = @TelefonoLaboral,
+            AntiguedadAnios = @AntiguedadAnios,
+            AportaIPS = @AportaIPS,
+            CantidadAportes = @CantidadAportes,
+            Salario = @Salario
+        WHERE CreditoSolicitudId = @CreditoSolicitudId;";
+
+        string queryActualizarReferenciaComercial = @"
+        UPDATE ReferenciasComerciales 
+        SET NombreLocal = @NombreLocal,
+            Telefono = @Telefono
+        WHERE CreditoSolicitudId = @CreditoSolicitudId AND Id = @IdReferencia;";
+
+        string queryActualizarReferenciaPersonal = @"
+        UPDATE ReferenciasPersonales 
+        SET Nombre = @Nombre,
+            Telefono = @Telefono
+        WHERE CreditoSolicitudId = @CreditoSolicitudId AND Id = @IdReferencia;";
+
+        try
+        {
+            using (var connection = _conexion.CreateSqlConnection())
+            {
+                connection.Open();
+
+                using (var transaction = connection.BeginTransaction())
+                {
+                    var parametrosSolicitud = new DynamicParameters();
+                    parametrosSolicitud.Add("@IdSolicitud", idSolicitud);
+                    parametrosSolicitud.Add("@ModeloSolicitado", solicitud.ModeloSolicitado);
+                    parametrosSolicitud.Add("@EntregaInicial", solicitud.EntregaInicial);
+                    parametrosSolicitud.Add("@CantidadCuotas", solicitud.CantidadCuotas);
+                    parametrosSolicitud.Add("@MontoPorCuota", solicitud.MontoPorCuota);
+                    parametrosSolicitud.Add("@Cedula", solicitud.CedulaIdentidad);
+                    parametrosSolicitud.Add("@TelefonoMovil", solicitud.TelefonoMovil);
+                    parametrosSolicitud.Add("@FechaNacimiento", solicitud.FechaNacimiento);
+                    parametrosSolicitud.Add("@Barrio", solicitud.Barrio);
+                    parametrosSolicitud.Add("@Ciudad", solicitud.Ciudad);
+                    parametrosSolicitud.Add("@DireccionParticular", solicitud.DireccionParticular);
+                    parametrosSolicitud.Add("@NombresApellidos", solicitud.NombresApellidos);
+
+                    // Actualizar los datos en CreditoSolicitud
+                    await connection.ExecuteAsync(queryActualizarSolicitud, parametrosSolicitud, transaction);
+
+                    // Actualizar Datos Laborales
+                    var parametrosLaborales = new DynamicParameters();
+                    parametrosLaborales.Add("@CreditoSolicitudId", idSolicitud);
+                    parametrosLaborales.Add("@Empresa", solicitud.Empresa);
+                    parametrosLaborales.Add("@DireccionLaboral", solicitud.DireccionLaboral);
+                    parametrosLaborales.Add("@TelefonoLaboral", solicitud.TelefonoLaboral);
+                    parametrosLaborales.Add("@AntiguedadAnios", solicitud.AntiguedadAnios);
+                    parametrosLaborales.Add("@AportaIPS", solicitud.AportaIPS);
+                    parametrosLaborales.Add("@CantidadAportes", solicitud.CantidadAportes);
+                    parametrosLaborales.Add("@Salario", solicitud.Salario);
+
+                    await connection.ExecuteAsync(queryActualizarDatosLaborales, parametrosLaborales, transaction);
+
+                    // Actualizar Referencias Comerciales
+                    foreach (var referenciaComercial in solicitud.ReferenciasComerciales)
+                    {
+                        var parametrosReferenciaComercial = new DynamicParameters();
+                        parametrosReferenciaComercial.Add("@CreditoSolicitudId", idSolicitud);
+                        parametrosReferenciaComercial.Add("@NombreLocal", referenciaComercial.NombreLocal);
+                        parametrosReferenciaComercial.Add("@Telefono", referenciaComercial.Telefono);
+                        parametrosReferenciaComercial.Add("@IdReferencia", referenciaComercial.Id); // Asegúrate de que Id esté en el modelo
+                        await connection.ExecuteAsync(queryActualizarReferenciaComercial, parametrosReferenciaComercial, transaction);
+                    }
+
+                    // Actualizar Referencias Personales
+                    foreach (var referenciaPersonal in solicitud.ReferenciasPersonales)
+                    {
+                        var parametrosReferenciaPersonal = new DynamicParameters();
+                        parametrosReferenciaPersonal.Add("@CreditoSolicitudId", idSolicitud);
+                        parametrosReferenciaPersonal.Add("@Nombre", referenciaPersonal.Nombre);
+                        parametrosReferenciaPersonal.Add("@Telefono", referenciaPersonal.Telefono);
+                        parametrosReferenciaPersonal.Add("@IdReferencia", referenciaPersonal.Id); // Asegúrate de que Id esté en el modelo
+                        await connection.ExecuteAsync(queryActualizarReferenciaPersonal, parametrosReferenciaPersonal, transaction);
+                    }
+
+                    transaction.Commit();
+                    _logger.LogInformation("Fin del proceso para actualizar la solicitud de crédito");
+
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrió un error inesperado al actualizar la solicitud de crédito");
+            throw new RepositoryException("Ocurrió un error inesperado al actualizar la solicitud de crédito", ex);
+        }
+    }
 
 
 }

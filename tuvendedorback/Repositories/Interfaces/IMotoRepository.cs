@@ -15,4 +15,5 @@ public interface IMotoRepository
     Task RegistrarVisitaAsync(string page);
     Task<Datos<IEnumerable<SolicitudesdeCreditoDTO>>> ObtenerSolicitudesCredito(SolicitudCreditoRequest request);
     Task<CreditoSolicitudDetalleDto> ObtenerDetalleCreditoSolicitudAsync(int id);
+    Task<bool> ActualizarSolicitudCredito(int idSolicitud, SolicitudCredito solicitud);
 }

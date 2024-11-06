@@ -1,4 +1,5 @@
 ﻿using iText.IO.Font;
+using iText.Kernel.Colors;
 using iText.Kernel.Font;
 using iText.Kernel.Pdf;
 using iText.Layout;
@@ -125,136 +126,127 @@ public class MotoService : IMotoService
 
     public async Task<int> GuardarSolicitudCredito(SolicitudCredito solicitud)
     {
-        var resultado = await _repository.GuardarSolicitudCredito(solicitud);
-
-        //Generamos el pdf
-        //await GenerarPdfSolicitud(solicitud, resultado);
+        var resultado = await _repository.GuardarSolicitudCredito(solicitud); 
 
         return resultado;
     }
 
-    public async Task GenerarPdfSolicitud(SolicitudCredito solicitud, int idSolicitud)
+    public async Task<byte[]> GenerarPdfSolicitud(SolicitudCredito solicitud, int idSolicitud)
     {
         try
         {
-            // Define el directorio de salida
-            var pdfDirectory = Path.Combine(Directory.GetCurrentDirectory(), "PDFs");
-           Directory.CreateDirectory(pdfDirectory); // Asegura que la carpeta exista
-
-            // Define el nombre del archivo PDF
-            var outputPath = Path.Combine(pdfDirectory, $"Solicitud_{idSolicitud}.pdf");
-
-            // Obtener entorno actual desde las variables de entorno
-            string env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-
-            // Definir la ruta de la fuente dependiendo del entorno
-            string fontPath;
-            if (env == "Development")
+            using (var memoryStream = new MemoryStream())
             {
-                // Ruta en entorno de desarrollo (local)
-                fontPath = "C:/Windows/Fonts/Arial.ttf"; // O la fuente que tengas en local
-            }
-            else
-            {
-                fontPath = Path.Combine(Directory.GetCurrentDirectory(), "assets", "fonts", "calibri.ttf");
-            }
+                string env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+                string fontPath = env == "Development"
+                    ? "C:/Windows/Fonts/Arial.ttf"
+                    : Path.Combine(Directory.GetCurrentDirectory(), "assets", "fonts", "calibri.ttf");
 
+                var customFont = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
 
-            // Cargar la fuente de manera dinámica
-            var customFont = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
-
-            // Crea el archivo PDF
-            using (var writer = new PdfWriter(outputPath))
-            {
-                using (var pdf = new PdfDocument(writer))
+                using (var writer = new PdfWriter(memoryStream))
                 {
-                    var document = new Document(pdf);
-                    document.SetFont(customFont).SetFontSize(10); // Configura la fuente global y el tamaño de 10
-
-                    // Título del documento subrayado, centrado y en tamaño 18
-                    document.Add(new Paragraph("Solicitud de Crédito")
-                        .SetFontSize(18)
-                        .SetBold()
-                        .SetUnderline()
-                        .SetTextAlignment(TextAlignment.CENTER));
-
-                    // Añadir detalles del modelo
-                    document.Add(new Paragraph($"Modelo Solicitado: {solicitud.ModeloSolicitado}"));
-
-                    // Entrega Inicial, Cantidad de Cuotas y Monto por Cuota en una misma línea
-                    var entregaCuotasMonto = new Paragraph()
-                        .Add(new Text($"Entrega Inicial: G. {solicitud.EntregaInicial:N0}   "))
-                        .Add(new Text($"Cantidad de Cuotas: {solicitud.CantidadCuotas}   "))
-                        .Add(new Text($"Monto por Cuota: G. {solicitud.MontoPorCuota:N0}"));
-                    document.Add(entregaCuotasMonto);
-
-                    // Sección: Datos Personales (centrado, subrayado y tamaño 11)
-                    document.Add(new Paragraph("Datos Personales")
-                        .SetFontSize(11)
-                        .SetBold()
-                        .SetUnderline()
-                        .SetTextAlignment(TextAlignment.CENTER));
-
-                    document.Add(new Paragraph($"Cédula: {solicitud.CedulaIdentidad}"));
-                    document.Add(new Paragraph($"Nombres y Apellidos: {solicitud.NombresApellidos}"));
-                    document.Add(new Paragraph($"Teléfono Móvil: {solicitud.TelefonoMovil}"));
-                    document.Add(new Paragraph($"Fecha de Nacimiento: {solicitud.FechaNacimiento:dd/MM/yyyy}"));
-                    document.Add(new Paragraph($"Barrio: {solicitud.Barrio}"));
-                    document.Add(new Paragraph($"Ciudad: {solicitud.Ciudad}"));
-                    document.Add(new Paragraph($"Dirección Particular: {solicitud.DireccionParticular}"));
-
-                    // Sección: Datos Laborales (centrado, subrayado y tamaño 11)
-                    document.Add(new Paragraph("Datos Laborales")
-                        .SetFontSize(11)
-                        .SetBold()
-                        .SetUnderline()
-                        .SetTextAlignment(TextAlignment.CENTER));
-
-                    document.Add(new Paragraph($"Empresa: {solicitud.Empresa}"));
-                    document.Add(new Paragraph($"Dirección Laboral: {solicitud.DireccionLaboral}"));
-                    document.Add(new Paragraph($"Teléfono Laboral: {solicitud.TelefonoLaboral}"));
-                    document.Add(new Paragraph($"Antigüedad: {solicitud.AntiguedadAnios} años"));
-                    document.Add(new Paragraph($"Aporta IPS: {(solicitud.AportaIPS ? "Sí" : "No")}"));
-                    document.Add(new Paragraph($"Cantidad de Aportes: {solicitud.CantidadAportes}"));
-                    document.Add(new Paragraph($"Salario: G. {solicitud.Salario:N0}"));
-
-                    // Sección: Referencias Comerciales (centrado, subrayado y tamaño 11)
-                    document.Add(new Paragraph("Referencias Comerciales")
-                        .SetFontSize(11)
-                        .SetBold()
-                        .SetUnderline()
-                        .SetTextAlignment(TextAlignment.CENTER));
-
-                    foreach (var referencia in solicitud.ReferenciasComerciales)
+                    using (var pdf = new PdfDocument(writer))
                     {
-                        // Nombre y Teléfono en una misma línea
-                        var referenciaComercial = new Paragraph()
-                            .Add(new Text($"Nombre del Local: {referencia.NombreLocal}   "))
-                            .Add(new Text($"Teléfono: {referencia.Telefono}"));
-                        document.Add(referenciaComercial);
+                        var document = new Document(pdf);
+                        document.SetFont(customFont).SetFontSize(10);
+
+                        // Título principal
+                        document.Add(new Paragraph("Detalles de la Solicitud de Crédito")
+                            .SetFontSize(16)
+                            .SetBold()
+                            .SetBackgroundColor(new DeviceRgb(144, 238, 144))
+                            .SetTextAlignment(TextAlignment.CENTER)
+                            .SetMarginBottom(15));
+
+                        // Sección: Modelo Solicitado
+                        document.Add(new Paragraph("Modelo Solicitado").SetFontSize(12).SetBold());
+                        document.Add(new Paragraph(solicitud.ModeloSolicitado));
+
+                        // Plan Solicitado
+                        document.Add(new Paragraph("Plan Solicitado").SetFontSize(12).SetBold());
+                        var planTable = new Table(UnitValue.CreatePercentArray(3)).UseAllAvailableWidth();
+                        planTable.AddCell(new Cell().Add(new Paragraph("Entrega").SetBold()));
+                        planTable.AddCell(new Cell().Add(new Paragraph("Cuotas").SetBold()));
+                        planTable.AddCell(new Cell().Add(new Paragraph("Monto Cuota").SetBold()));
+                        planTable.AddCell(new Cell().Add(new Paragraph($"G. {solicitud.EntregaInicial:N0}")));
+                        planTable.AddCell(new Cell().Add(new Paragraph($"{solicitud.CantidadCuotas}")));
+                        planTable.AddCell(new Cell().Add(new Paragraph($"G. {solicitud.MontoPorCuota:N0}")));
+                        document.Add(planTable);
+
+                        // Sección: Datos Personales
+                        document.Add(new Paragraph("\nDatos Personales").SetFontSize(12).SetBold().SetUnderline());
+                        var personalTable = new Table(UnitValue.CreatePercentArray(new float[] { 1, 1, 1 })).UseAllAvailableWidth();
+
+                        // Primera Fila
+                        personalTable.AddCell(new Cell().Add(new Paragraph("Nombre y Apellidos").SetBold()));
+                        personalTable.AddCell(new Cell().Add(new Paragraph("Cédula").SetBold()));
+                        personalTable.AddCell(new Cell().Add(new Paragraph("Teléfono Móvil").SetBold()));
+                        personalTable.AddCell(new Cell().Add(new Paragraph(solicitud.NombresApellidos)));
+                        personalTable.AddCell(new Cell().Add(new Paragraph(solicitud.CedulaIdentidad)));
+                        personalTable.AddCell(new Cell().Add(new Paragraph(solicitud.TelefonoMovil)));
+
+                        // Segunda Fila
+                        personalTable.AddCell(new Cell().Add(new Paragraph("Fecha de Nacimiento").SetBold()));
+                        personalTable.AddCell(new Cell().Add(new Paragraph("Barrio").SetBold()));
+                        personalTable.AddCell(new Cell().Add(new Paragraph("Ciudad").SetBold()));
+                        personalTable.AddCell(new Cell().Add(new Paragraph(solicitud.FechaNacimiento.ToString("dd/MM/yyyy"))));
+                        personalTable.AddCell(new Cell().Add(new Paragraph(solicitud.Barrio)));
+                        personalTable.AddCell(new Cell().Add(new Paragraph(solicitud.Ciudad)));
+
+                        // Tercera Fila
+                        personalTable.AddCell(new Cell(1, 3).Add(new Paragraph("Dirección Particular").SetBold()));
+                        personalTable.AddCell(new Cell(1, 3).Add(new Paragraph(solicitud.DireccionParticular)));
+                        document.Add(personalTable);
+
+                        // Sección: Datos Laborales
+                        document.Add(new Paragraph("\nDatos Laborales").SetFontSize(12).SetBold().SetUnderline());
+                        var laboralesTable = new Table(UnitValue.CreatePercentArray(new float[] { 1, 1, 1 })).UseAllAvailableWidth();
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph("Empresa").SetBold()));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph("Dirección Laboral").SetBold()));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph("Teléfono Laboral").SetBold()));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph(solicitud.Empresa)));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph(solicitud.DireccionLaboral)));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph(solicitud.TelefonoLaboral)));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph("Antigüedad (Años)").SetBold()));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph("Aporta IPS").SetBold()));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph("Cantidad de Aportes").SetBold()));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph($"{solicitud.AntiguedadAnios}")));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph(solicitud.AportaIPS ? "Sí" : "No")));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph($"{solicitud.CantidadAportes}")));
+                        laboralesTable.AddCell(new Cell().Add(new Paragraph("Salario Percibido").SetBold()));
+                        laboralesTable.AddCell(new Cell(2, 1).Add(new Paragraph($"G. {solicitud.Salario:N0}")));
+                        document.Add(laboralesTable);
+
+                        // Sección: Referencias Personales
+                        document.Add(new Paragraph("\nReferencias Personales").SetFontSize(12).SetBold().SetUnderline());
+                        var referenciasPersonalesTable = new Table(UnitValue.CreatePercentArray(new float[] { 1, 1 })).UseAllAvailableWidth();
+                        for (int i = 0; i < solicitud.ReferenciasPersonales.Count; i++)
+                        {
+                            var refPersonal = solicitud.ReferenciasPersonales[i];
+                            referenciasPersonalesTable.AddCell(new Cell().Add(new Paragraph($"Nombre {i + 1}: {refPersonal.Nombre}")));
+                            referenciasPersonalesTable.AddCell(new Cell().Add(new Paragraph($"Teléfono: {refPersonal.Telefono}")));
+                        }
+                        document.Add(referenciasPersonalesTable);
+
+                        // Sección: Referencias Comerciales
+                        document.Add(new Paragraph("\nReferencias Comerciales").SetFontSize(12).SetBold().SetUnderline());
+                        var referenciasComercialesTable = new Table(UnitValue.CreatePercentArray(new float[] { 1, 1 })).UseAllAvailableWidth();
+                        for (int i = 0; i < solicitud.ReferenciasComerciales.Count; i++)
+                        {
+                            var refComercial = solicitud.ReferenciasComerciales[i];
+                            referenciasComercialesTable.AddCell(new Cell().Add(new Paragraph($"Nombre Local {i + 1}: {refComercial.NombreLocal}")));
+                            referenciasComercialesTable.AddCell(new Cell().Add(new Paragraph($"Teléfono: {refComercial.Telefono}")));
+                        }
+                        document.Add(referenciasComercialesTable);
+
+                        document.Close();
                     }
-
-                    // Sección: Referencias Personales (centrado, subrayado y tamaño 11)
-                    document.Add(new Paragraph("Referencias Personales")
-                        .SetFontSize(11)
-                        .SetBold()
-                        .SetUnderline()
-                        .SetTextAlignment(TextAlignment.CENTER));
-
-                    foreach (var referencia in solicitud.ReferenciasPersonales)
-                    {
-                        // Nombre y Teléfono en una misma línea
-                        var referenciaPersonal = new Paragraph()
-                            .Add(new Text($"Nombre: {referencia.Nombre}   "))
-                            .Add(new Text($"Teléfono: {referencia.Telefono}"));
-                        document.Add(referenciaPersonal);
-                    }
-
-                    // Cierra el documento
-                    document.Close();
                 }
+
+                return memoryStream.ToArray(); // Retorna el PDF como un arreglo de bytes
             }
-        }      
+        }
         catch (Exception ex)
         {
             throw new ServiceException("Ocurrió un error inesperado al generar documento pdf", ex);
@@ -539,6 +531,11 @@ public class MotoService : IMotoService
     public async Task<CreditoSolicitudDetalleDto> ObtenerDetalleCreditoSolicitudAsync(int id)
     {
         return await _repository.ObtenerDetalleCreditoSolicitudAsync(id);
+    }
+
+    public async Task<bool> ActualizarSolicitudCredito(int idSolicitud, SolicitudCredito solicitud)
+    {
+        return await _repository.ActualizarSolicitudCredito(idSolicitud, solicitud);    
     }
 }
 
