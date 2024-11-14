@@ -5,6 +5,8 @@ using iText.Kernel.Pdf;
 using iText.Layout;
 using iText.Layout.Element;
 using iText.Layout.Properties;
+using System.Globalization;
+using System.Text;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
@@ -36,6 +38,10 @@ public class MotoService : IMotoService
         {
             throw new ArgumentNullException("El valor de la ruta base o la categoría es nulo");
         }
+
+        //Sacarle acentos a las palabras
+        // Sacarle acentos a la categoría
+        categoria = RemoverAcentos(categoria);
 
         var rutaBase = _baseImagesPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var categoriaPath = Path.Combine(rutaBase, categoria);
@@ -91,7 +97,23 @@ public class MotoService : IMotoService
         }
 
         return modelos;
-    }  
+    }
+
+    private string RemoverAcentos(string texto)
+    {
+        var textoNormalizado = texto.Normalize(NormalizationForm.FormD);
+        var caracteresSinAcentos = new StringBuilder();
+
+        foreach (var c in textoNormalizado)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+            {
+                caracteresSinAcentos.Append(c);
+            }
+        }
+
+        return caracteresSinAcentos.ToString().Normalize(NormalizationForm.FormC);
+    }
 
     public async Task<ProductoDTO> ObtenerProductoConPlanes(string modelo)
     {
