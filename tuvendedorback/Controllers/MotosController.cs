@@ -261,9 +261,7 @@ public class MotosController : ControllerBase
         {
             Success = true,
             Data = resultado
-        });
-
-       
+        });       
     }
 
     [HttpPut("solicitudcredito/actualizar/{id}")]
@@ -285,4 +283,35 @@ public class MotosController : ControllerBase
     }
 
 
+    [HttpGet("obtener-estadisticas-acceso")]
+    [SwaggerOperation(
+    Summary = "Obtiene las estadísticas de acceso por página",
+    Description = "Permite obtener la cantidad de accesos y la última fecha de visita para cada página registrada, o filtrar por el nombre de una página específica.")]
+    public async Task<IActionResult> ObtenerEstadisticasAcceso()
+    {    
+        
+        var resultado = await _motoService.ObtenerEstadisticasDeAcceso();
+
+        return Ok(new Response<IEnumerable<VisitaPagina>>
+        {
+            Success = true,
+            Data = resultado
+        });                
+    }
+
+
+    [HttpGet("obtener-estadisticas-creditos")]
+    [SwaggerOperation(
+    Summary = "Obtiene estadísticas de créditos",
+    Description = "Permite obtener la cantidad total de créditos cargados, cantidad de créditos por modelo, por mes y por modelo en cada mes.")]
+    public async Task<IActionResult> ObtenerEstadisticasCreditos()
+    {     
+        var resultado = await _motoService.ObtenerEstadisticasCreditos();
+
+        return Ok(new Response<IEnumerable<CreditoEstadisticasDto>>
+        {
+            Success = true,
+            Data = resultado
+        });       
+    }
 }

@@ -781,5 +781,96 @@ public class MotoRepository: IMotoRepository
         }
     }
 
+    public async Task<IEnumerable<VisitaPagina>> ObtenerEstadisticasDeAcceso()
+    {
+        _logger.LogInformation("Inicio del proceso para obtener estadísticas de acceso por página");
+
+        string query = @"
+        SELECT 
+            Id as Id,
+            Page as Pagina,
+            Count as Cantidad,
+            LastVisited as FechaUltimaVisita
+        FROM 
+            Visitas";
+
+        try
+        {
+            using (var connection = _conexion.CreateSqlConnection())
+            {           
+
+                var resultado = await connection.QueryAsync<VisitaPagina>(query);
+
+                if (!resultado.Any())
+                {
+                    throw new NoDataFoundException("No se encontraron registros para las visitas de la página solicitada");
+                }
+
+                _logger.LogInformation("Fin del proceso para obtener estadísticas de acceso por página");
+
+                return resultado;
+            }
+        }
+        catch (NoDataFoundException ex)
+        {
+            _logger.LogWarning(ex, "No se encontraron datos para la página solicitada");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrió un error inesperado al obtener estadísticas de acceso por página");
+            throw new RepositoryException("Ocurrió un error inesperado al obtener estadísticas de acceso por página", ex);
+        }
+    }
+
+    public async Task<IEnumerable<CreditoEstadisticasDto>> ObtenerEstadisticasCreditos()
+    {
+        _logger.LogInformation("Inicio del proceso para obtener estadísticas de créditos");
+
+        string query = @"
+        SELECT 
+            SUM(COUNT(*)) OVER() AS TotalCreditosGenerales,                 -- Total general de créditos cargados
+            COUNT(*) AS TotalCreditos,                                      -- Cantidad total de créditos por combinación
+            ModeloSolicitado,                                               -- Modelo solicitado
+            COUNT(ModeloSolicitado) AS CreditosPorModelo,                   -- Cantidad de créditos por modelo
+            FORMAT(FechaCreacion, 'yyyy-MM') AS Mes,                        -- Mes de creación en formato 'yyyy-MM'
+            COUNT(FORMAT(FechaCreacion, 'yyyy-MM')) AS CreditosPorMes,      -- Cantidad de créditos por mes
+            COUNT(*) OVER(PARTITION BY ModeloSolicitado, FORMAT(FechaCreacion, 'yyyy-MM')) AS CreditosPorModeloPorMes -- Créditos por modelo y por mes
+        FROM 
+            [tuvendedor].[dbo].[CreditoSolicitud]
+        GROUP BY 
+            ModeloSolicitado,
+            FORMAT(FechaCreacion, 'yyyy-MM')
+        ORDER BY 
+            Mes DESC, ModeloSolicitado;";
+
+        try
+        {
+            using (var connection = _conexion.CreateSqlConnection())
+            {
+                var resultado = await connection.QueryAsync<CreditoEstadisticasDto>(query);
+
+                if (!resultado.Any())
+                {
+                    throw new NoDataFoundException("No se encontraron registros para las estadísticas de créditos.");
+                }
+
+                _logger.LogInformation("Fin del proceso para obtener estadísticas de créditos");
+
+                return resultado;
+            }
+        }
+        catch (NoDataFoundException ex)
+        {
+            _logger.LogWarning(ex, "No se encontraron datos para las estadísticas de créditos");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ocurrió un error inesperado al obtener las estadísticas de créditos");
+            throw new RepositoryException("Ocurrió un error inesperado al obtener las estadísticas de créditos", ex);
+        }
+    }
+
 
 }

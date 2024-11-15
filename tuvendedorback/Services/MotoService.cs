@@ -49,7 +49,7 @@ public class MotoService : IMotoService
         _logger.LogInformation($"Ruta base: {rutaBase}");
         _logger.LogInformation($"Categoría: {categoria}");
         _logger.LogInformation($"Ruta completa de la categoría: {categoriaPath}");
-
+              
         if (!Directory.Exists(categoriaPath))
         {
             _logger.LogInformation($"No se encontró la carpeta en la ruta: {categoriaPath}");
@@ -558,6 +558,16 @@ public class MotoService : IMotoService
     public async Task<bool> ActualizarSolicitudCredito(int idSolicitud, SolicitudCredito solicitud)
     {
         return await _repository.ActualizarSolicitudCredito(idSolicitud, solicitud);    
+    }
+
+    public async Task<IEnumerable<VisitaPagina>> ObtenerEstadisticasDeAcceso()
+    {
+        return await _repository.ObtenerEstadisticasDeAcceso();
+    }
+
+    public async Task<IEnumerable<CreditoEstadisticasDto>> ObtenerEstadisticasCreditos()
+    {
+        return await _repository.ObtenerEstadisticasCreditos();
     }
 }
 

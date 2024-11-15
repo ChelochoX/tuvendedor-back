@@ -22,4 +22,6 @@ public interface IMotoService
     Task<Datos<IEnumerable<SolicitudesdeCreditoDTO>>> ObtenerSolicitudesCredito(SolicitudCreditoRequest request);
     Task<CreditoSolicitudDetalleDto> ObtenerDetalleCreditoSolicitudAsync(int id);
     Task<bool> ActualizarSolicitudCredito(int idSolicitud, SolicitudCredito solicitud);
+    Task<IEnumerable<VisitaPagina>> ObtenerEstadisticasDeAcceso();
+    Task<IEnumerable<CreditoEstadisticasDto>> ObtenerEstadisticasCreditos();
 }
