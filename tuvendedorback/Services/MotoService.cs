@@ -32,71 +32,79 @@ public class MotoService : IMotoService
         _config = config;
     }
 
-    public async Task<List<ModeloMotosporCategoria>> ObtenerModelosPorCategoriaAsync(string categoria)
+    public async Task<List<ModeloMotosporCategoria>> ObtenerModelosPorDefaultAsync()
     {
-        if (string.IsNullOrEmpty(_baseImagesPath) || string.IsNullOrEmpty(categoria))
+        if (string.IsNullOrEmpty(_baseImagesPath))
         {
-            throw new ArgumentNullException("El valor de la ruta base o la categoría es nulo");
+            throw new ArgumentNullException("El valor de la ruta base es nulo");
         }
 
-        //Sacarle acentos a las palabras
-        // Sacarle acentos a la categoría
-        categoria = RemoverAcentos(categoria);
+        // Lista de categorías con sus nombres específicos
+        string[] categorias = { "ATV-Cuaci", "Automaticas", "DocumentosAdjuntos", "Electricas", "Motocargas", "Motonetas", "Trail", "Utilitaria" };
+
+        // Lista de modelos que queremos buscar
+        string[] modelosBuscados = { "C-110 DLX", "GL 150", "FORZA 150", "GTR 150 LTD", "SHARK 150", "DAKAR 150", "TRANSPORTER 150 HD" };
 
         var rutaBase = _baseImagesPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var categoriaPath = Path.Combine(rutaBase, categoria);
 
         _logger.LogInformation($"Ruta base: {rutaBase}");
-        _logger.LogInformation($"Categoría: {categoria}");
-        _logger.LogInformation($"Ruta completa de la categoría: {categoriaPath}");
-              
-        if (!Directory.Exists(categoriaPath))
+
+        if (!Directory.Exists(rutaBase))
         {
-            _logger.LogInformation($"No se encontró la carpeta en la ruta: {categoriaPath}");
-            return null; // Retornar null si la categoría no existe
+            _logger.LogInformation($"No se encontró la carpeta base en la ruta: {rutaBase}");
+            return null; // Retornar null si la ruta base no existe
         }
 
-        var subCarpetas = Directory.GetDirectories(categoriaPath);
+        var modelosEncontrados = new List<ModeloMotosporCategoria>();
 
-        if (subCarpetas.Length == 0)
+        foreach (var categoria in categorias)
         {
-            _logger.LogInformation("No se encontraron subcarpetas dentro de la categoría.");
-            return null; // Retornar null si no hay subcarpetas
-        }
+            var categoriaPath = Path.Combine(rutaBase, categoria);
+            _logger.LogInformation($"Procesando categoría: {categoria}");
 
-        var modelos = new List<ModeloMotosporCategoria>();
-
-        foreach (var subCarpeta in subCarpetas)
-        {
-            var nombreModelo = Path.GetFileName(subCarpeta);
-            _logger.LogInformation($"Procesando modelo: {nombreModelo} en la subcarpeta: {subCarpeta}");
-
-            // Obtener la lista de todas las imágenes del modelo
-            var imagenes = ObtenerImagenesDeModelo(subCarpeta, categoria);
-
-            if (imagenes == null || imagenes.Count == 0)
+            if (!Directory.Exists(categoriaPath))
             {
-                _logger.LogInformation($"No se encontraron imágenes para el modelo: {nombreModelo}");
-            }
-            else
-            {
-                _logger.LogInformation($"Se encontraron imágenes para el modelo: {nombreModelo}, URLs: {string.Join(", ", imagenes)}");
+                _logger.LogInformation($"No se encontró la carpeta de categoría: {categoria}");
+                continue;
             }
 
-            modelos.Add(new ModeloMotosporCategoria
+            var subCarpetas = Directory.GetDirectories(categoriaPath);
+
+            foreach (var subCarpeta in subCarpetas)
             {
-                Nombre = nombreModelo,
-                Imagenes = imagenes // Asignar la lista de imágenes al modelo
-            });
+                var nombreModelo = Path.GetFileName(subCarpeta);
+                if (modelosBuscados.Contains(nombreModelo, StringComparer.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation($"Modelo encontrado: {nombreModelo} en la categoría: {categoria}");
+
+                    // Obtener la lista de todas las imágenes del modelo
+                    var imagenes = ObtenerImagenesDeModelo(subCarpeta, categoria);
+
+                    if (imagenes == null || imagenes.Count == 0)
+                    {
+                        _logger.LogInformation($"No se encontraron imágenes para el modelo: {nombreModelo}");
+                    }
+                    else
+                    {
+                        _logger.LogInformation($"Se encontraron imágenes para el modelo: {nombreModelo}, URLs: {string.Join(", ", imagenes)}");
+                    }
+
+                    modelosEncontrados.Add(new ModeloMotosporCategoria
+                    {
+                        Nombre = nombreModelo,
+                        Imagenes = imagenes // Asignar la lista de imágenes al modelo
+                    });
+                }
+            }
         }
 
-        if (modelos.Count == 0)
+        if (modelosEncontrados.Count == 0)
         {
             _logger.LogInformation("No se encontraron modelos con imágenes.");
             return null;
         }
 
-        return modelos;
+        return modelosEncontrados;
     }
 
     private string RemoverAcentos(string texto)
@@ -471,44 +479,41 @@ public class MotoService : IMotoService
         // Lista para almacenar las URLs de las imágenes encontradas
         var imagenes = new List<string>();
 
-        // Iterar sobre cada categoría para buscar el modelo específico
+        // Iterar sobre cada categoría para buscar modelos que coincidan parcialmente
         foreach (var categoria in categorias)
         {
-            // Construir la ruta de la subcarpeta del modelo dentro de cada categoría
-            var rutaModelo = Path.Combine(categoria, nombreModelo);
+            // Obtener las subcarpetas de modelos dentro de cada categoría
+            var carpetasModelos = Directory.GetDirectories(categoria);
 
-            // Verificar si existe una carpeta para el modelo dentro de esta categoría
-            if (Directory.Exists(rutaModelo))
+            // Filtrar las carpetas que contengan el nombre buscado (coincidencias parciales, sin distinguir mayúsculas)
+            var carpetasCoincidentes = carpetasModelos.Where(carpeta =>
+                Path.GetFileName(carpeta).ToLower().Contains(nombreModelo.ToLower()));
+
+            // Iterar sobre las carpetas coincidentes
+            foreach (var carpeta in carpetasCoincidentes)
             {
                 // Obtener archivos de imagen en la carpeta del modelo
-                var archivos = Directory.GetFiles(rutaModelo)
+                var archivos = Directory.GetFiles(carpeta)
                                         .Where(file => extensionesPermitidas.Contains(Path.GetExtension(file).ToLower()));
 
                 // Construir URLs para cada archivo de imagen y agregar a la lista
                 foreach (var archivo in archivos)
                 {
                     var nombreCategoria = Path.GetFileName(categoria); // Obtener el nombre de la categoría
+                    var nombreModeloCarpeta = Path.GetFileName(carpeta); // Obtener el nombre del modelo
                     var nombreArchivo = Path.GetFileName(archivo); // Obtener el nombre del archivo de imagen
 
                     // Construir la URL relativa con encoding para que sea compatible con URLs
-                    var urlImagen = $"/imagenes_motos/{Uri.EscapeDataString(nombreCategoria)}/{Uri.EscapeDataString(nombreModelo)}/{Uri.EscapeDataString(nombreArchivo)}";
+                    var urlImagen = $"/imagenes_motos/{Uri.EscapeDataString(nombreCategoria)}/{Uri.EscapeDataString(nombreModeloCarpeta)}/{Uri.EscapeDataString(nombreArchivo)}";
 
                     imagenes.Add(urlImagen);
                 }
-
-                // Detener la búsqueda en categorías adicionales, ya que el modelo se encontró
-                break;
             }
-        }
-
-        // Validar si no se encontraron imágenes y lanzar excepción
-        if (imagenes.Count == 0)
-        {
-            throw new NoDataFoundException("No se encontraron imágenes para el modelo especificado.");
         }
 
         return imagenes;
     }
+
 
     public async Task RegistrarVisitaAsync(string page)
     {
@@ -569,7 +574,117 @@ public class MotoService : IMotoService
     {
         return await _repository.ObtenerEstadisticasCreditos();
     }
+
+
+    public async Task<List<ModeloMotosporCategoria>> ObtenerModelosPorCoincidenciaAsync(string expresionBusqueda)
+    {
+        if (string.IsNullOrWhiteSpace(expresionBusqueda))
+        {
+            throw new ArgumentException("La expresión de búsqueda no puede estar vacía", nameof(expresionBusqueda));
+        }
+
+        // Resolver alias: Obtener todos los posibles nombres reales asociados
+        List<string> expresionesResueltas = ResolverAlias(expresionBusqueda);
+
+        var categorias = new[] { "ATV-Cuaci", "Automaticas", "Electricas", "Motocargas", "Motonetas", "Trail", "Utilitaria" };
+        var rutaBase = _baseImagesPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        _logger.LogInformation($"Buscando modelos con las expresiones resueltas: {string.Join(", ", expresionesResueltas)}");
+
+        if (!Directory.Exists(rutaBase))
+        {
+            _logger.LogInformation($"No se encontró la carpeta base en la ruta: {rutaBase}");
+            return null;
+        }
+
+        var modelosEncontrados = new List<ModeloMotosporCategoria>();
+
+        foreach (var categoria in categorias)
+        {
+            var categoriaPath = Path.Combine(rutaBase, categoria);
+
+            if (!Directory.Exists(categoriaPath))
+            {
+                _logger.LogInformation($"No se encontró la carpeta de categoría: {categoria}");
+                continue;
+            }
+
+            var subCarpetas = Directory.GetDirectories(categoriaPath);
+
+            // Filtrar carpetas que coincidan con cualquiera de las expresiones resueltas
+            var carpetasCoincidentes = subCarpetas.Where(subCarpeta =>
+                expresionesResueltas.Any(expresion =>
+                    Path.GetFileName(subCarpeta).IndexOf(expresion, StringComparison.OrdinalIgnoreCase) >= 0));
+
+            foreach (var carpeta in carpetasCoincidentes)
+            {
+                var nombreModelo = Path.GetFileName(carpeta);
+
+                _logger.LogInformation($"Modelo encontrado: {nombreModelo} en la categoría: {categoria}");
+
+                // Obtener la lista de todas las imágenes del modelo
+                var imagenes = ObtenerImagenesDeModelo(carpeta, categoria);
+
+                if (imagenes == null || imagenes.Count == 0)
+                {
+                    _logger.LogInformation($"No se encontraron imágenes para el modelo: {nombreModelo}");
+                }
+                else
+                {
+                    _logger.LogInformation($"Se encontraron imágenes para el modelo: {nombreModelo}, URLs: {string.Join(", ", imagenes)}");
+                }
+
+                modelosEncontrados.Add(new ModeloMotosporCategoria
+                {
+                    Nombre = nombreModelo,
+                    Imagenes = imagenes
+                });
+            }
+        }
+
+        if (modelosEncontrados.Count == 0)
+        {
+            _logger.LogInformation("No se encontraron modelos que coincidan con la búsqueda.");
+            return null;
+        }
+
+        return modelosEncontrados;
+    }
+
+    // Diccionario de alias dentro de la clase
+    private readonly Dictionary<string, List<string>> AliasDeModelos = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+    {
+        { "motocarga", new List<string> { "Transporter" } },
+        { "triciclo", new List<string> { "Transporter" } },
+        { "motocarro", new List<string> { "Transporter", "TR 200" } },
+        { "cuatrimoto", new List<string> { "ATV" } },
+        { "cuasi", new List<string> { "Quest", "T-BOSS", "Volkano" } },
+        { "cuaci", new List<string> { "Quest", "T-BOSS", "Volkano" } },
+        { "automatica", new List<string> { "Bravo", "Elegance", "Road" } },
+        { "scooter", new List<string> { "Bravo", "Elegance" } },
+        { "scoter", new List<string> { "Bravo" } },
+        { "scuter", new List<string> { "Bravo", "Elegance", "Road" } },
+        { "c110", new List<string> { "C-110" } }
+    };
+
+
+    // Método que usa el diccionario
+    private List<string> ResolverAlias(string expresionBusqueda)
+    {
+        if (AliasDeModelos.TryGetValue(expresionBusqueda, out var nombresReales))
+        {
+            _logger.LogInformation($"Alias encontrado: '{expresionBusqueda}' se resolvió como: {string.Join(", ", nombresReales)}");
+            return nombresReales; // Devuelve la lista de nombres reales asociados al alias
+        }
+
+        _logger.LogInformation($"No se encontró alias para: '{expresionBusqueda}', usando la expresión original.");
+        return new List<string> { expresionBusqueda }; // Retorna la expresión original como única entrada
+    }
 }
+
+
+
+
 
 
 

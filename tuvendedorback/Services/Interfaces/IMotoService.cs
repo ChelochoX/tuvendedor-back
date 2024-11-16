@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using tuvendedorback.DTOs;
+﻿using tuvendedorback.DTOs;
 using tuvendedorback.Models;
 using tuvendedorback.Request;
 using tuvendedorback.Wrappers;
@@ -8,7 +7,7 @@ namespace tuvendedorback.Services.Interfaces;
 
 public interface IMotoService
 {
-    Task<List<ModeloMotosporCategoria>> ObtenerModelosPorCategoriaAsync(string categoria);
+    Task<List<ModeloMotosporCategoria>> ObtenerModelosPorDefaultAsync();
     Task<ProductoDTO> ObtenerProductoConPlanes(string modelo);
     Task<decimal> ObtenerMontoCuotaConEntregaMayor(CalculoCuotaRequest request);
     Task<int> GuardarSolicitudCredito(SolicitudCredito solicitud);
@@ -24,4 +23,5 @@ public interface IMotoService
     Task<bool> ActualizarSolicitudCredito(int idSolicitud, SolicitudCredito solicitud);
     Task<IEnumerable<VisitaPagina>> ObtenerEstadisticasDeAcceso();
     Task<IEnumerable<CreditoEstadisticasDto>> ObtenerEstadisticasCreditos();
+    Task<List<ModeloMotosporCategoria>> ObtenerModelosPorCoincidenciaAsync(string expresionBusqueda);
 }

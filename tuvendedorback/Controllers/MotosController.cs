@@ -21,15 +21,13 @@ public class MotosController : ControllerBase
         _motoService = motoService;
     }
 
-    [HttpGet("modelo/{categoria}")]
+    [HttpGet("modelo")]
     [SwaggerOperation(
     Summary = "Permite obtener los modelos que pertenecen a esta categoria",
     Description = "Obtener los modelos que pertenecen a esta categoria")]
-    public async Task<IActionResult> ObtenerModelosPorCategoriaAsync(
-    [FromRoute][Description("Propiedad que determina la categoria al que pertenece la moto")]
-    string categoria)
+    public async Task<IActionResult> ObtenerModelosPorCategoriaAsync() 
     {
-        var modelos = await _motoService.ObtenerModelosPorCategoriaAsync(categoria);
+        var modelos = await _motoService.ObtenerModelosPorDefaultAsync();
 
         if (modelos == null || !modelos.Any())
         {
@@ -313,5 +311,23 @@ public class MotosController : ControllerBase
             Success = true,
             Data = resultado
         });       
+    }
+
+
+    [HttpGet("modelo/buscar/{expresionBusqueda}")]
+    [SwaggerOperation(
+    Summary = "Busca modelos que coincidan con una expresión y obtiene sus imágenes",
+    Description = "Permite buscar modelos por coincidencia parcial y devuelve una lista de modelos con sus imágenes asociadas")]
+    public async Task<IActionResult> ObtenerModelosPorCoincidenciaAsync([FromRoute] string expresionBusqueda)
+    {      
+        var modelos = await _motoService.ObtenerModelosPorCoincidenciaAsync(expresionBusqueda);
+
+        if (modelos == null || !modelos.Any())
+        {
+            return NotFound(new { mensaje = "No se encontraron modelos que coincidan con la búsqueda." });
+        }
+
+        return Ok(modelos);
+             
     }
 }
