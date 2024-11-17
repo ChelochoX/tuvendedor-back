@@ -837,7 +837,7 @@ public class MotoRepository: IMotoRepository
             COUNT(FORMAT(FechaCreacion, 'yyyy-MM')) AS CreditosPorMes,      -- Cantidad de créditos por mes
             COUNT(*) OVER(PARTITION BY ModeloSolicitado, FORMAT(FechaCreacion, 'yyyy-MM')) AS CreditosPorModeloPorMes -- Créditos por modelo y por mes
         FROM 
-            [tuvendedor].[dbo].[CreditoSolicitud]
+            CreditoSolicitud
         GROUP BY 
             ModeloSolicitado,
             FORMAT(FechaCreacion, 'yyyy-MM')
