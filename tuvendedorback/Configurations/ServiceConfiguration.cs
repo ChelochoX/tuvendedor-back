@@ -44,36 +44,16 @@ public static class ServiceConfiguration
                 FileProvider = new PhysicalFileProvider(externalImagesPath),
                 RequestPath = "/uploads"
             });
-        }
-        else
-        {
-            throw new DirectoryNotFoundException($"La ruta de imágenes {externalImagesPath} no existe.");
-        }
 
-        // Configuración específica para la carpeta HomeCarrusel dentro de ImagenesMotos
-        var homeCarruselPath = Path.Combine(externalImagesPath, "HomeCarrusel");
-
-        if (!string.IsNullOrEmpty(homeCarruselPath) && Directory.Exists(homeCarruselPath))
-        {
-            app.UseStaticFiles(new StaticFileOptions
-            {
-                FileProvider = new PhysicalFileProvider(homeCarruselPath),
-                RequestPath = "/imagenes/homecarrusel"
-            });
-        }
-        else
-        {
-            throw new DirectoryNotFoundException($"La ruta de imágenes HomeCarrusel en {homeCarruselPath} no existe.");
-        }
-
-        // Nueva configuración para toda la estructura de ImagenesMotos usando un nuevo RequestPath "/imagenes_motos"
-        if (Directory.Exists(externalImagesPath))
-        {
             app.UseStaticFiles(new StaticFileOptions
             {
                 FileProvider = new PhysicalFileProvider(externalImagesPath),
                 RequestPath = "/imagenes_motos"
             });
+        }
+        else
+        {
+            throw new DirectoryNotFoundException($"La ruta de imágenes {externalImagesPath} no existe.");
         }
     }
 }
