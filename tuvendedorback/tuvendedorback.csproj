@@ -8,6 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="PDFs\**" />
+    <Content Remove="PDFs\**" />
+    <EmbeddedResource Remove="PDFs\**" />
+    <None Remove="PDFs\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.35" />
     <PackageReference Include="FluentValidation" Version="11.10.0" />
     <PackageReference Include="itext.bouncy-castle-adapter" Version="8.0.5" />
@@ -24,7 +31,9 @@
 
   <ItemGroup>
     <Folder Include="assets\fonts\" />
-    <Folder Include="PDFs\" />
+    <Folder Include="DTOs\" />
+    <Folder Include="Repositories\Interfaces\" />
+    <Folder Include="Services\Interfaces\" />
   </ItemGroup>
 
 	<PropertyGroup>
