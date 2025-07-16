@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using tuvendedorback.Services.Interfaces;
 
 namespace tuvendedorback.Middlewares.Filters;
 

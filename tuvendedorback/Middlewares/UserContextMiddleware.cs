@@ -33,7 +33,7 @@ public class UserContextMiddleware
                 return;
             }
 
-            userContext.IdUsuario = usuarioDb.IdUsuario;
+            userContext.IdUsuario = usuarioDb.Id;
             userContext.NombreUsuario = usuarioDb.NombreUsuario;
             // Aquí podrías agregar también IdRol si lo necesitás más adelante
         }

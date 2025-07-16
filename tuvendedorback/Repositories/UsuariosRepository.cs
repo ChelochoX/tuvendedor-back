@@ -12,7 +12,7 @@ public class UsuariosRepository : IUsuariosRepository
 {
     private readonly IDbConnection _conexion;
     private readonly ILogger<UsuariosRepository> _logger;
-    private readonly PasswordHasher<string> _hasher;
+    public readonly PasswordHasher<string> _hasher;
 
     public UsuariosRepository(IDbConnection conexion, ILogger<UsuariosRepository> logger)
     {
@@ -25,36 +25,37 @@ public class UsuariosRepository : IUsuariosRepository
     {
         try
         {
-            _logger.LogInformation("Validando credenciales para el usuario: {Usuario}", request.);
+            _logger.LogInformation("Validando credenciales para el email: {Email}", request.Email);
 
-            var query = @"SELECT Id, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro 
-                          FROM Usuarios 
-                          WHERE NombreUsuario = @Usuario AND Estado = 'Activo'";
+            const string query = @"SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro 
+                               FROM Usuarios 
+                               WHERE Email = @Email AND Estado = 'Activo'";
 
-            var usuarioDb = await _conexion.QueryFirstOrDefaultAsync<Usuario>(query, new { Usuario = usuario });
+            var usuarioDb = await _conexion.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = request.Email });
 
             if (usuarioDb == null)
             {
-                _logger.LogWarning("No se encontró usuario con nombre: {Usuario}", usuario);
+                _logger.LogWarning("No se encontró usuario con email: {Email}", request.Email);
                 return null;
             }
 
-            var resultado = _hasher.VerifyHashedPassword(null, usuarioDb.ClaveHash, clave);
+            var resultado = _hasher.VerifyHashedPassword(null, usuarioDb.ClaveHash, request.Clave);
             if (resultado == PasswordVerificationResult.Success)
             {
-                _logger.LogInformation("Autenticación exitosa para el usuario: {Usuario}", usuario);
+                _logger.LogInformation("Autenticación exitosa para el usuario con email: {Email}", request.Email);
                 return usuarioDb;
             }
 
-            _logger.LogWarning("Contraseña incorrecta para el usuario: {Usuario}", usuario);
+            _logger.LogWarning("Contraseña incorrecta para el usuario con email: {Email}", request.Email);
             return null;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al validar credenciales para el usuario: {Usuario}", usuario);
+            _logger.LogError(ex, "Error al validar credenciales para el email: {Email}", request.Email);
             throw new RepositoryException("Error al validar credenciales", ex);
         }
     }
+
 
     public async Task<List<string>> ObtenerRolesPorUsuario(int idUsuario)
     {
@@ -194,6 +195,33 @@ public class UsuariosRepository : IUsuariosRepository
         {
             _logger.LogError(ex, "Error al buscar usuario con email: {Email}", email);
             throw new RepositoryException("Error al obtener usuario por email", ex);
+        }
+    }
+
+    public async Task<Usuario?> ObtenerUsuarioActivoPorId(int id)
+    {
+        _logger.LogInformation("Buscando usuario activo por ID: {Id}", id);
+
+        const string query = @"
+        SELECT Id AS IdUsuario, NombreUsuario, Email, Estado
+        FROM Usuarios
+        WHERE Id = @Id AND Estado = 'Activo'";
+
+        try
+        {
+            var usuario = await _conexion.QueryFirstOrDefaultAsync<Usuario>(query, new { Id = id });
+
+            if (usuario == null)
+                _logger.LogWarning("No se encontró usuario activo con ID: {Id}", id);
+            else
+                _logger.LogInformation("Usuario activo encontrado: {IdUsuario} - {NombreUsuario}", usuario.Id, usuario.NombreUsuario);
+
+            return usuario;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener usuario activo con ID: {Id}", id);
+            throw new RepositoryException("Error al obtener usuario activo por ID", ex);
         }
     }
 

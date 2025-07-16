@@ -12,9 +12,9 @@ public class UsuarioService : IUsuarioService
     private readonly IUsuariosRepository _usuarioRepository;
     private readonly ILogger<UsuarioService> _logger;
     private readonly IServiceProvider _serviceProvider;
-    private readonly PasswordHasher<string> _hasher;
+    private readonly IPasswordHasher<string> _hasher;
 
-    public UsuarioService(IUsuariosRepository usuarioRepository, ILogger<UsuarioService> logger, IServiceProvider serviceProvider, PasswordHasher<string> hasher)
+    public UsuarioService(IUsuariosRepository usuarioRepository, ILogger<UsuarioService> logger, IServiceProvider serviceProvider, IPasswordHasher<string> hasher)
     {
         _usuarioRepository = usuarioRepository;
         _logger = logger;
