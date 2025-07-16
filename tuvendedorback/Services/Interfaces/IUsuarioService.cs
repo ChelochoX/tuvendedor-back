@@ -8,3 +8,6 @@ public interface IUsuarioService
     Task<Usuario?> ValidarCredenciales(LoginRequest request);
     Task<List<string>> ObtenerRolesPorUsuario(int idUsuario);
     Task<int> RegistrarUsuario(RegistroRequest request);
+    Task<bool> CambiarClave(CambiarClaveRequest request);
+
+}

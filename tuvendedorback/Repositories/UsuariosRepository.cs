@@ -144,6 +144,59 @@ public class UsuariosRepository : IUsuariosRepository
         }
     }
 
+    public async Task<bool> ActualizarClaveUsuario(int idUsuario, string nuevaClaveHash)
+    {
+        _logger.LogInformation("Intentando actualizar la clave para el usuario ID: {IdUsuario}", idUsuario);
+
+        const string query = @"UPDATE Usuarios SET ClaveHash = @ClaveHash WHERE Id = @IdUsuario";
+
+        try
+        {
+            var filas = await _conexion.ExecuteAsync(query, new { ClaveHash = nuevaClaveHash, IdUsuario = idUsuario });
+
+            if (filas > 0)
+            {
+                _logger.LogInformation("Clave actualizada correctamente para el usuario ID: {IdUsuario}", idUsuario);
+                return true;
+            }
+            else
+            {
+                _logger.LogWarning("No se actualizó ninguna fila al intentar cambiar la clave del usuario ID: {IdUsuario}", idUsuario);
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al intentar actualizar la clave del usuario ID: {IdUsuario}", idUsuario);
+            throw new RepositoryException("Error al actualizar la clave del usuario", ex);
+        }
+    }
+
+    public async Task<Usuario?> ObtenerUsuarioPorEmail(string email)
+    {
+        _logger.LogInformation("Buscando usuario por email: {Email}", email);
+
+        const string query = @"SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro
+                           FROM Usuarios WHERE Email = @Email";
+
+        try
+        {
+            var usuario = await _conexion.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = email });
+
+            if (usuario == null)
+                _logger.LogWarning("No se encontró ningún usuario con email: {Email}", email);
+            else
+                _logger.LogInformation("Usuario encontrado con ID: {IdUsuario}", usuario.Id);
+
+            return usuario;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al buscar usuario con email: {Email}", email);
+            throw new RepositoryException("Error al obtener usuario por email", ex);
+        }
+    }
+
 
 }
 

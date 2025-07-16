@@ -93,4 +93,28 @@ public class AuthController : ControllerBase
         });
     }
 
+
+    [HttpPost("cambiar-clave")]
+    [SwaggerOperation(Summary = "Permite a un usuario cambiar su contraseña")]
+    public async Task<IActionResult> CambiarClave([FromBody] CambiarClaveRequest request)
+    {
+        var exito = await _usuarioService.CambiarClave(request);
+
+        if (!exito)
+        {
+            return BadRequest(new Response<object>
+            {
+                Success = false,
+                Errors = new List<string> { "No se pudo cambiar la contraseña. Verifique sus datos." }
+            });
+        }
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Data = new { Mensaje = "Contraseña actualizada correctamente." }
+        });
+    }
+
+
 }
