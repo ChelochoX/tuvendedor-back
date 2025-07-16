@@ -1,4 +1,5 @@
 using tuvendedorback.Configurations;
+using tuvendedorback.Middlewares;
 
 var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
 
@@ -9,11 +10,12 @@ var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables() // Cargar variables de entorno si es necesario
     .Build();
 
-
-
 var builder = WebApplication.CreateBuilder(args);
 
+// Configuración de Logs
+builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
+builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 // Add services to the container.
 builder.Services.AddRepositories();
@@ -26,9 +28,9 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
     {
-        Title = "Documentacion API Venta de Motos",
+        Title = "Documentacion API Market Place de Tu Vendedor",
         Version = "v1",
-        Description = "REST API de Venta de motos"
+        Description = "REST API Market Place de Tu Vendedor"
     });
     c.EnableAnnotations();
 
@@ -40,7 +42,7 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-app.UseStaticFilesConfiguration(configuration);
+//app.UseStaticFilesConfiguration(configuration);
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -48,15 +50,17 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-var logger = app.Services.GetRequiredService<ILogger<Program>>();
+ILogger<Program> logger = app.Services.GetRequiredService<ILogger<Program>>();
 logger.LogInformation("Aplicacion Iniciada Correctamente");
 
+app.UseHttpsRedirection();
+app.UseHandlingMiddleware();
 app.UseCors("AllowFrontend");
 
-app.UseHttpsRedirection();
-
+app.UseAuthentication();
 app.UseAuthorization();
-app.UseHandlingMiddleware();
+
+app.UseMiddleware<UserContextMiddleware>();
 
 app.MapControllers();
 

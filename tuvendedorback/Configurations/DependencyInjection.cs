@@ -9,13 +9,13 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddRepositories(this IServiceCollection services)
     {
-        services.AddSingleton<IMotoRepository, MotoRepository>();
+        services.AddSingleton<IUsuariosRepository, UsuariosRepository>();
         return services;
     }
 
     public static IServiceCollection AddServices(this IServiceCollection services)
     {
-        services.AddSingleton<IMotoService, MotoService>();
+        services.AddSingleton<IUsuarioService, UsuarioService>();
         return services;
     }
 }
