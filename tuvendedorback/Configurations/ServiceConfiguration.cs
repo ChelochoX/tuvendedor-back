@@ -18,7 +18,7 @@ public static class ServiceConfiguration
         _ = services.AddTransient<IDbConnection>(sp =>
         {
             var dbConnections = sp.GetRequiredService<DbConnections>();
-            return dbConnections.CreateSqlConnection();  // Usar la conexión creada por DbConnections
+            return dbConnections.CreateSqlConnection();
         });
 
         _ = services.AddCors(options =>
