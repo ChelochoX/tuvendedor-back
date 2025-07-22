@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
+using tuvendedorback.Models;
 using tuvendedorback.Request;
 using tuvendedorback.Services;
 using tuvendedorback.Services.Interfaces;
@@ -24,49 +25,84 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [SwaggerOperation(
-        Summary = "Inicia sesión con email y clave",
-        Description = "Valida las credenciales del usuario, verifica su estado y retorna un JWT si todo es válido")]
+       Summary = "Inicia sesión con email y clave o con proveedor externo",
+       Description = "Valida las credenciales o identifica si el usuario existe, y retorna el token o indica si es nuevo.")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        _logger.LogInformation("Intento de login para el email: {Email}", request.Email);
+        _logger.LogInformation("Intento de login para el email: {Email} usando {TipoLogin}", request.Email, request.TipoLogin);
 
-        var usuario = await _usuarioService.ValidarCredenciales(request);
+        Usuario? usuario;
 
-        if (usuario == null)
+        if (request.TipoLogin == "google" || request.TipoLogin == "facebook")
         {
-            _logger.LogWarning("Login fallido: credenciales inválidas para {Email}", request.Email);
-            return Unauthorized(new Response<object>
+            usuario = await _usuarioService.ObtenerUsuarioPorEmail(request);
+
+            if (usuario == null)
+            {
+                // Usuario nuevo -> se devuelve para mostrar modal registrar
+                return Ok(new Response<object>
+                {
+                    Success = true,
+                    Data = new
+                    {
+                        esNuevo = true,
+                        datosPrevios = new
+                        {
+                            Email = request.Email,
+                            Nombre = request.Nombre ?? "",
+                            FotoUrl = request.FotoUrl ?? "",
+                            TipoLogin = request.TipoLogin
+                        }
+                    },
+                    Message = "Usuario nuevo detectado por proveedor externo",
+                    StatusCode = 200
+                });
+            }
+        }
+        else if (request.TipoLogin == "clasico")
+        {
+            usuario = await _usuarioService.ValidarCredenciales(request);
+
+            if (usuario == null)
+            {
+                return Unauthorized(new Response<object>
+                {
+                    Success = false,
+                    Errors = new List<string> { "Credenciales inválidas." },
+                    StatusCode = 401
+                });
+            }
+
+            if (usuario.Estado != "Activo")
+            {
+                return Unauthorized(new Response<object>
+                {
+                    Success = false,
+                    Errors = new List<string> { "Usuario inactivo. Contacte al administrador." },
+                    StatusCode = 401
+                });
+            }
+        }
+        else
+        {
+            return BadRequest(new Response<object>
             {
                 Success = false,
-                Errors = new List<string> { "Credenciales inválidas." }
+                Errors = new List<string> { "TipoLogin no soportado." },
+                StatusCode = 400
             });
         }
 
-        if (usuario.Estado != "Activo")
-        {
-            _logger.LogWarning("Usuario inactivo: {Email}", request.Email);
-            return Unauthorized(new Response<object>
-            {
-                Success = false,
-                Errors = new List<string> { "Usuario inactivo. Contacte al administrador." }
-            });
-        }
-
+        // Si llegamos acá, el usuario ya está registrado y activo (proveedor o clásico)
         var roles = await _usuarioService.ObtenerRolesPorUsuario(usuario.Id);
-
-        var token = _jwtService.GenerarToken(
-            usuario.Id,
-            usuario.NombreUsuario,
-            roles
-        );
-
-        _logger.LogInformation("Login exitoso para {Email}, roles: {Roles}", request.Email, string.Join(", ", roles));
+        var token = _jwtService.GenerarToken(usuario.Id, usuario.NombreUsuario, roles);
 
         return Ok(new Response<object>
         {
             Success = true,
             Data = new
             {
+                esNuevo = false,
                 parTokens = new { bearerToken = token },
                 parUsuario = new
                 {
@@ -75,9 +111,13 @@ public class AuthController : ControllerBase
                     usuario.Email,
                     usuario.Estado
                 }
-            }
+            },
+            Message = "Login exitoso",
+            StatusCode = 200
         });
     }
+
+
 
 
     [HttpPost("registro")]

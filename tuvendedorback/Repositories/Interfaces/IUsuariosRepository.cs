@@ -5,7 +5,7 @@ namespace tuvendedorback.Repositories.Interfaces;
 
 public interface IUsuariosRepository
 {
-    Task<Usuario?> ValidarCredenciales(LoginRequest request);
+    Task<Usuario?> ValidarCredencialesPorEmailYClave(string email, string clave);
     Task<List<string>> ObtenerRolesPorUsuario(int idUsuario);
     Task<int> InsertarUsuarioConRol(RegistroRequest request);
     Task<bool> ActualizarClaveUsuario(int idUsuario, string nuevaClaveHash);

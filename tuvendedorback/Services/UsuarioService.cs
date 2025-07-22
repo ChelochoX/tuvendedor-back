@@ -26,8 +26,13 @@ public class UsuarioService : IUsuarioService
     {
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
-        return await _usuarioRepository.ValidarCredenciales(request);
+        return await _usuarioRepository.ValidarCredencialesPorEmailYClave(request.Email, request.Clave);
+    }
+    public async Task<Usuario?> ObtenerUsuarioPorEmail(LoginRequest request)
+    {
+        await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
+        return await _usuarioRepository.ObtenerUsuarioPorEmail(request.Email);
     }
     public async Task<List<string>> ObtenerRolesPorUsuario(int idUsuario)
     {

@@ -1,6 +1,5 @@
 ﻿using FluentValidation;
 using Microsoft.IdentityModel.Tokens;
-using System.Data;
 using System.Reflection;
 using System.Text;
 using tuvendedorback.Common;
@@ -15,11 +14,7 @@ public static class ServiceConfiguration
     {
         _ = services.AddSingleton<DbConnections>();
 
-        _ = services.AddTransient<IDbConnection>(sp =>
-        {
-            var dbConnections = sp.GetRequiredService<DbConnections>();
-            return dbConnections.CreateSqlConnection();
-        });
+        _ = services.AddSingleton<DbConnections>();
 
         _ = services.AddCors(options =>
         {

@@ -1,6 +1,6 @@
 ﻿using Dapper;
 using Microsoft.AspNetCore.Identity;
-using System.Data;
+using tuvendedorback.Data;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
 using tuvendedorback.Repositories.Interfaces;
@@ -10,52 +10,52 @@ namespace tuvendedorback.Repositories;
 
 public class UsuariosRepository : IUsuariosRepository
 {
-    private readonly IDbConnection _conexion;
+    private readonly DbConnections _conexion;
     private readonly ILogger<UsuariosRepository> _logger;
     public readonly PasswordHasher<string> _hasher;
 
-    public UsuariosRepository(IDbConnection conexion, ILogger<UsuariosRepository> logger)
+    public UsuariosRepository(DbConnections conexion, ILogger<UsuariosRepository> logger)
     {
         _conexion = conexion;
         _logger = logger;
         _hasher = new PasswordHasher<string>();
     }
 
-    public async Task<Usuario?> ValidarCredenciales(LoginRequest request)
+    public async Task<Usuario?> ValidarCredencialesPorEmailYClave(string email, string clave)
     {
         try
         {
-            _logger.LogInformation("Validando credenciales para el email: {Email}", request.Email);
+            _logger.LogInformation("Validando credenciales para el email: {Email}", email);
 
             const string query = @"SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro 
                                FROM Usuarios 
                                WHERE Email = @Email AND Estado = 'Activo'";
 
-            var usuarioDb = await _conexion.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = request.Email });
+            using var connection = _conexion.CreateSqlConnection();
+            var usuarioDb = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = email });
 
             if (usuarioDb == null)
             {
-                _logger.LogWarning("No se encontró usuario con email: {Email}", request.Email);
+                _logger.LogWarning("No se encontró usuario con email: {Email}", email);
                 return null;
             }
 
-            var resultado = _hasher.VerifyHashedPassword(null, usuarioDb.ClaveHash, request.Clave);
+            var resultado = _hasher.VerifyHashedPassword(null, usuarioDb.ClaveHash, clave);
             if (resultado == PasswordVerificationResult.Success)
             {
-                _logger.LogInformation("Autenticación exitosa para el usuario con email: {Email}", request.Email);
+                _logger.LogInformation("Autenticación exitosa para el usuario con email: {Email}", email);
                 return usuarioDb;
             }
 
-            _logger.LogWarning("Contraseña incorrecta para el usuario con email: {Email}", request.Email);
+            _logger.LogWarning("Contraseña incorrecta para el usuario con email: {Email}", email);
             return null;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al validar credenciales para el email: {Email}", request.Email);
+            _logger.LogError(ex, "Error al validar credenciales para el email: {Email}", email);
             throw new RepositoryException("Error al validar credenciales", ex);
         }
     }
-
 
     public async Task<List<string>> ObtenerRolesPorUsuario(int idUsuario)
     {
@@ -70,7 +70,8 @@ public class UsuariosRepository : IUsuariosRepository
 
         try
         {
-            var roles = (await _conexion.QueryAsync<string>(query, new { IdUsuario = idUsuario })).ToList();
+            using var connection = _conexion.CreateSqlConnection();
+            var roles = (await connection.QueryAsync<string>(query, new { IdUsuario = idUsuario })).ToList();
 
             if (!roles.Any())
             {
@@ -95,7 +96,8 @@ public class UsuariosRepository : IUsuariosRepository
     {
         _logger.LogInformation("Iniciando registro de nuevo usuario: {NombreUsuario}, Email: {Email}", request.NombreUsuario, request.Email);
 
-        using var transaction = _conexion.BeginTransaction();
+        using var connection = _conexion.CreateSqlConnection();
+        using var transaction = connection.BeginTransaction();
 
         try
         {
@@ -109,7 +111,7 @@ public class UsuariosRepository : IUsuariosRepository
             SELECT SCOPE_IDENTITY();
             ";
 
-            var idUsuario = await _conexion.ExecuteScalarAsync<int>(insertUsuario, new
+            var idUsuario = await connection.ExecuteScalarAsync<int>(insertUsuario, new
             {
                 request.NombreUsuario,
                 request.Email,
@@ -123,7 +125,7 @@ public class UsuariosRepository : IUsuariosRepository
             VALUES (@IdUsuario, @IdRol);
             ";
 
-            await _conexion.ExecuteAsync(insertRol, new
+            await connection.ExecuteAsync(insertRol, new
             {
                 IdUsuario = idUsuario,
                 IdRol = request.IdRol
@@ -153,7 +155,8 @@ public class UsuariosRepository : IUsuariosRepository
 
         try
         {
-            var filas = await _conexion.ExecuteAsync(query, new { ClaveHash = nuevaClaveHash, IdUsuario = idUsuario });
+            using var connection = _conexion.CreateSqlConnection();
+            var filas = await connection.ExecuteAsync(query, new { ClaveHash = nuevaClaveHash, IdUsuario = idUsuario });
 
             if (filas > 0)
             {
@@ -178,11 +181,13 @@ public class UsuariosRepository : IUsuariosRepository
         _logger.LogInformation("Buscando usuario por email: {Email}", email);
 
         const string query = @"SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro
-                           FROM Usuarios WHERE Email = @Email";
+                       FROM Usuarios 
+                       WHERE Email = @Email";
 
         try
         {
-            var usuario = await _conexion.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = email });
+            using var connection = _conexion.CreateSqlConnection();
+            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = email });
 
             if (usuario == null)
                 _logger.LogWarning("No se encontró ningún usuario con email: {Email}", email);
@@ -209,7 +214,8 @@ public class UsuariosRepository : IUsuariosRepository
 
         try
         {
-            var usuario = await _conexion.QueryFirstOrDefaultAsync<Usuario>(query, new { Id = id });
+            using var connection = _conexion.CreateSqlConnection();
+            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { Id = id });
 
             if (usuario == null)
                 _logger.LogWarning("No se encontró usuario activo con ID: {Id}", id);

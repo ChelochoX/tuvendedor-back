@@ -1,5 +1,5 @@
 ﻿using Dapper;
-using System.Data;
+using tuvendedorback.Data;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Repositories.Interfaces;
 
@@ -7,10 +7,10 @@ namespace tuvendedorback.Repositories;
 
 public class PermisosRepository : IPermisosRepository
 {
-    private readonly IDbConnection _conexion;
+    private readonly DbConnections _conexion;
     private readonly ILogger<PermisosRepository> _logger;
 
-    public PermisosRepository(ILogger<PermisosRepository> logger, IDbConnection conexion)
+    public PermisosRepository(ILogger<PermisosRepository> logger, DbConnections conexion)
     {
         _logger = logger;
         _conexion = conexion;
@@ -33,7 +33,8 @@ public class PermisosRepository : IPermisosRepository
 
         try
         {
-            var result = await _conexion.ExecuteScalarAsync<int?>(query, new
+            using var connection = _conexion.CreateSqlConnection();
+            var result = await connection.ExecuteScalarAsync<int?>(query, new
             {
                 IdUsuario = idUsuario,
                 Entidad = entidad,
