@@ -35,7 +35,7 @@ public class AuthController : ControllerBase
 
         if (request.TipoLogin == "google" || request.TipoLogin == "facebook")
         {
-            usuario = await _usuarioService.ObtenerUsuarioPorEmail(request);
+            usuario = await _usuarioService.ObtenerUsuarioPorProveedor(request);
 
             if (usuario == null)
             {
@@ -51,7 +51,9 @@ public class AuthController : ControllerBase
                             Email = request.Email,
                             Nombre = request.Nombre ?? "",
                             FotoUrl = request.FotoUrl ?? "",
-                            TipoLogin = request.TipoLogin
+                            TipoLogin = request.TipoLogin,
+                            Proveedor = request.TipoLogin,
+                            ProveedorId = request.ProveedorId
                         }
                     },
                     Message = "Usuario nuevo detectado por proveedor externo",
@@ -116,7 +118,6 @@ public class AuthController : ControllerBase
             StatusCode = 200
         });
     }
-
 
 
 

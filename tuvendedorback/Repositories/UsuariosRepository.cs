@@ -94,55 +94,71 @@ public class UsuariosRepository : IUsuariosRepository
 
     public async Task<int> InsertarUsuarioConRol(RegistroRequest request)
     {
-        _logger.LogInformation("Iniciando registro de nuevo usuario: {NombreUsuario}, Email: {Email}", request.NombreUsuario, request.Email);
-
         using var connection = _conexion.CreateSqlConnection();
+        connection.Open();
         using var transaction = connection.BeginTransaction();
 
         try
         {
-            var claveHash = _hasher.HashPassword(null, request.Clave);
+            var esLoginExterno = !string.IsNullOrEmpty(request.Proveedor);
 
-            _logger.LogDebug("Clave hasheada correctamente para el usuario: {NombreUsuario}", request.NombreUsuario);
+            var claveHash = esLoginExterno
+                ? null
+                : _hasher.HashPassword(null, request.Clave);
 
             const string insertUsuario = @"
-            INSERT INTO Usuarios (NombreUsuario, Email, ClaveHash, Estado, FechaRegistro)
-            VALUES (@NombreUsuario, @Email, @ClaveHash, 'Activo', GETDATE());
-            SELECT SCOPE_IDENTITY();
-            ";
+                INSERT INTO Usuarios 
+                (NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, Telefono, Ciudad, Direccion, FotoPerfil)
+                VALUES 
+                (@NombreUsuario, @Email, @ClaveHash, 'Activo', GETDATE(), @Proveedor, @ProveedorId, @Telefono, @Ciudad, @Direccion, @FotoPerfil);
+                SELECT SCOPE_IDENTITY();";
 
             var idUsuario = await connection.ExecuteScalarAsync<int>(insertUsuario, new
             {
                 request.NombreUsuario,
                 request.Email,
-                ClaveHash = claveHash
+                ClaveHash = claveHash,
+                request.Proveedor,
+                request.ProveedorId,
+                request.Telefono,
+                request.Ciudad,
+                request.Direccion,
+                request.FotoPerfil
             }, transaction);
 
-            _logger.LogInformation("Usuario insertado correctamente en la base de datos con ID: {IdUsuario}", idUsuario);
-
-            const string insertRol = @"
-            INSERT INTO UsuarioRoles (IdUsuario, IdRol)
-            VALUES (@IdUsuario, @IdRol);
-            ";
-
-            await connection.ExecuteAsync(insertRol, new
+            // Rol comprador (siempre)
+            await connection.ExecuteAsync("INSERT INTO UsuarioRoles (IdUsuario, IdRol) VALUES (@IdUsuario, 2);", new
             {
-                IdUsuario = idUsuario,
-                IdRol = request.IdRol
+                IdUsuario = idUsuario
             }, transaction);
 
-            _logger.LogInformation("Rol (ID: {IdRol}) asignado al usuario (ID: {IdUsuario})", request.IdRol, idUsuario);
+            // Rol vendedor (opcional)
+            if (request.EsVendedor)
+            {
+                await connection.ExecuteAsync("INSERT INTO UsuarioRoles (IdUsuario, IdRol) VALUES (@IdUsuario, 3);", new
+                {
+                    IdUsuario = idUsuario
+                }, transaction);
+
+                // Registrar detalles del vendedor si tenés una tabla aparte como `Vendedores`
+                await connection.ExecuteAsync(@"
+                INSERT INTO Vendedores (IdUsuario, NombreNegocio, Ruc, Rubro)
+                VALUES (@IdUsuario, @NombreNegocio, @Ruc, @Rubro);", new
+                {
+                    IdUsuario = idUsuario,
+                    request.NombreNegocio,
+                    request.Ruc,
+                    request.Rubro
+                }, transaction);
+            }
 
             transaction.Commit();
-
-            _logger.LogInformation("Transacción completada con éxito para el usuario {NombreUsuario}", request.NombreUsuario);
-
             return idUsuario;
         }
         catch (Exception ex)
         {
             transaction.Rollback();
-            _logger.LogError(ex, "Error al registrar el usuario {NombreUsuario}, se realizó rollback", request.NombreUsuario);
+            _logger.LogError(ex, "Error al registrar el usuario");
             throw new RepositoryException("Error al registrar el usuario", ex);
         }
     }
@@ -176,21 +192,28 @@ public class UsuariosRepository : IUsuariosRepository
         }
     }
 
-    public async Task<Usuario?> ObtenerUsuarioPorEmail(string email)
+    public async Task<Usuario?> ObtenerUsuarioPorProveedor(LoginRequest request)
     {
-        _logger.LogInformation("Buscando usuario por email: {Email}", email);
+        _logger.LogInformation("Buscando usuario externo: {Email} - Proveedor: {Proveedor} - ID: {ProveedorId}",
+                                request.Email, request.TipoLogin, request.ProveedorId);
 
-        const string query = @"SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro
-                       FROM Usuarios 
-                       WHERE Email = @Email";
+        const string query = @"
+        SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, FotoPerfil
+        FROM Usuarios
+        WHERE Email = @Email AND Proveedor = @Proveedor AND ProveedorId = @ProveedorId";
 
         try
         {
             using var connection = _conexion.CreateSqlConnection();
-            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = email });
+            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new
+            {
+                Email = request.Email,
+                Proveedor = request.TipoLogin,
+                request.ProveedorId
+            });
 
             if (usuario == null)
-                _logger.LogWarning("No se encontró ningún usuario con email: {Email}", email);
+                _logger.LogWarning("No se encontró usuario externo con email: {Email}", request.Email);
             else
                 _logger.LogInformation("Usuario encontrado con ID: {IdUsuario}", usuario.Id);
 
@@ -198,10 +221,11 @@ public class UsuariosRepository : IUsuariosRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al buscar usuario con email: {Email}", email);
-            throw new RepositoryException("Error al obtener usuario por email", ex);
+            _logger.LogError(ex, "Error al buscar usuario por proveedor");
+            throw new RepositoryException("Error al obtener usuario por proveedor", ex);
         }
     }
+
 
     public async Task<Usuario?> ObtenerUsuarioActivoPorId(int id)
     {

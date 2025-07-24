@@ -9,7 +9,7 @@ public interface IUsuariosRepository
     Task<List<string>> ObtenerRolesPorUsuario(int idUsuario);
     Task<int> InsertarUsuarioConRol(RegistroRequest request);
     Task<bool> ActualizarClaveUsuario(int idUsuario, string nuevaClaveHash);
-    Task<Usuario?> ObtenerUsuarioPorEmail(string email);
+    Task<Usuario?> ObtenerUsuarioPorProveedor(LoginRequest request);
     Task<Usuario?> ObtenerUsuarioActivoPorId(int id);
 
 

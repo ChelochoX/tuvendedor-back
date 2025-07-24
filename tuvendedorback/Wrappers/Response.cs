@@ -19,9 +19,6 @@ public class Response<T>
     [JsonPropertyName("Message")]
     public string Message { get; set; }
 
-    [JsonPropertyName("EsNuevo")]
-    public bool EsNuevo { get; set; }
-
 
     public Response()
     {

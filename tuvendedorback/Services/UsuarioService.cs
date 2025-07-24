@@ -28,11 +28,11 @@ public class UsuarioService : IUsuarioService
 
         return await _usuarioRepository.ValidarCredencialesPorEmailYClave(request.Email, request.Clave);
     }
-    public async Task<Usuario?> ObtenerUsuarioPorEmail(LoginRequest request)
+    public async Task<Usuario?> ObtenerUsuarioPorProveedor(LoginRequest request)
     {
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
-        return await _usuarioRepository.ObtenerUsuarioPorEmail(request.Email);
+        return await _usuarioRepository.ObtenerUsuarioPorProveedor(request);
     }
     public async Task<List<string>> ObtenerRolesPorUsuario(int idUsuario)
     {
@@ -51,7 +51,9 @@ public class UsuarioService : IUsuarioService
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
         _logger.LogDebug("Validación Fluent completada para: {Email}", request.Email);
 
-        var usuario = await _usuarioRepository.ObtenerUsuarioPorEmail(request.Email);
+        //var usuario = await _usuarioRepository.ObtenerUsuarioPorEmail(request.Email);
+
+        var usuario = new Usuario();
 
         if (usuario == null)
         {
