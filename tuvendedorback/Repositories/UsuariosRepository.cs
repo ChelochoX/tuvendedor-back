@@ -198,7 +198,7 @@ public class UsuariosRepository : IUsuariosRepository
                                 request.Email, request.TipoLogin, request.ProveedorId);
 
         const string query = @"
-        SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, FotoPerfil
+        SELECT Id AS Id, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, FotoPerfil
         FROM Usuarios
         WHERE Email = @Email AND Proveedor = @Proveedor AND ProveedorId = @ProveedorId";
 

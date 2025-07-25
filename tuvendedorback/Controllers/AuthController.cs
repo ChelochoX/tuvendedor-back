@@ -111,7 +111,11 @@ public class AuthController : ControllerBase
                     usuario.Id,
                     usuario.NombreUsuario,
                     usuario.Email,
-                    usuario.Estado
+                    usuario.Estado,
+                    usuario.FotoPerfil,
+                    usuario.Telefono,
+                    usuario.Ciudad,
+                    usuario.Direccion
                 }
             },
             Message = "Login exitoso",
