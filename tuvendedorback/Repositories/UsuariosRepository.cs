@@ -232,7 +232,7 @@ public class UsuariosRepository : IUsuariosRepository
         _logger.LogInformation("Buscando usuario activo por ID: {Id}", id);
 
         const string query = @"
-        SELECT Id AS IdUsuario, NombreUsuario, Email, Estado
+        SELECT Id AS Id, NombreUsuario, Email, Estado
         FROM Usuarios
         WHERE Id = @Id AND Estado = 'Activo'";
 

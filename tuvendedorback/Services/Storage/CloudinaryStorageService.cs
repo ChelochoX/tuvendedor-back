@@ -1,4 +1,7 @@
-﻿using tuvendedorback.Common;
+﻿using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
+using System.Net;
+using tuvendedorback.Common;
 using tuvendedorback.Services.Interfaces;
 
 namespace tuvendedorback.Services.Storage;
@@ -18,25 +21,75 @@ public class CloudinaryStorageService : IImageStorageService
         _cloudinary = new Cloudinary(account) { Api = { Secure = true } };
     }
 
-    public async Task<string> SubirImagenWebP(IFormFile imagenFile, string carpetaDestino = "publicaciones")
+    public async Task<string> SubirArchivo(IFormFile archivo, string carpetaDestino = "publicaciones")
     {
-        var webpBytes = await ImagenHelper.ConvertirAWebPAsync(imagenFile);
+        var extension = Path.GetExtension(archivo.FileName).ToLower();
 
-        using var ms = new MemoryStream(webpBytes);
-
-        var uploadParams = new RawUploadParams
+        // Detectamos el tipo de archivo
+        var resourceType = extension switch
         {
-            File = new FileDescription($"{Guid.NewGuid()}.webp", ms),
-            Folder = carpetaDestino,
-            ResourceType = ResourceType.Image,
-            Format = "webp"
+            ".jpg" or ".jpeg" or ".png" or ".webp" => ResourceType.Image,
+            ".mp4" or ".mov" or ".avi" => ResourceType.Video,
+            _ => ResourceType.Raw
         };
 
-        var result = await _cloudinary.UploadAsync(uploadParams);
+        using var stream = new MemoryStream();
 
-        if (result.StatusCode == System.Net.HttpStatusCode.OK)
-            return result.SecureUrl.ToString();
+        if (resourceType == ResourceType.Image)
+        {
+            var webpBytes = await ImagenHelper.ConvertirAWebPAsync(archivo);
+            stream.Write(webpBytes, 0, webpBytes.Length);
+            stream.Position = 0;
 
-        throw new Exception("Error al subir imagen a Cloudinary");
+            var uploadParams = new ImageUploadParams
+            {
+                File = new FileDescription($"{Guid.NewGuid()}.webp", stream),
+                Folder = carpetaDestino,
+                UseFilename = true,
+                UniqueFilename = true,
+            };
+
+            var result = await _cloudinary.UploadAsync(uploadParams);
+            if (result.StatusCode == HttpStatusCode.OK)
+                return result.SecureUrl.ToString();
+        }
+        else if (resourceType == ResourceType.Video)
+        {
+            await archivo.CopyToAsync(stream);
+            stream.Position = 0;
+
+            var uploadParams = new VideoUploadParams
+            {
+                File = new FileDescription(archivo.FileName, stream),
+                Folder = carpetaDestino,
+                UseFilename = true,
+                UniqueFilename = true,
+            };
+
+            var result = await _cloudinary.UploadAsync(uploadParams);
+            if (result.StatusCode == HttpStatusCode.OK)
+                return result.SecureUrl.ToString();
+        }
+        else // ResourceType.Raw
+        {
+            await archivo.CopyToAsync(stream);
+            stream.Position = 0;
+
+            var uploadParams = new RawUploadParams
+            {
+                File = new FileDescription(archivo.FileName, stream),
+                Folder = carpetaDestino,
+                UseFilename = true,
+                UniqueFilename = true,
+            };
+
+            var result = await _cloudinary.UploadAsync(uploadParams);
+            if (result.StatusCode == HttpStatusCode.OK)
+                return result.SecureUrl.ToString();
+        }
+
+        throw new Exception("Error al subir archivo a Cloudinary");
     }
+
+
 }

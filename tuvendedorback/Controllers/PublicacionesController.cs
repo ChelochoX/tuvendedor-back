@@ -7,6 +7,8 @@ using tuvendedorback.Wrappers;
 
 namespace tuvendedorback.Controllers;
 
+[ApiController]
+[Route("api/[controller]")]
 public class PublicacionesController : ControllerBase
 {
     private readonly IPublicacionService _service;

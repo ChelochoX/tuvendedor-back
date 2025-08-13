@@ -2,5 +2,5 @@
 
 public interface IImageStorageService
 {
-    Task<string> SubirImagenWebP(IFormFile imagenFile, string carpetaDestino = "publicaciones");
+    Task<string> SubirArchivo(IFormFile imagenFile, string carpetaDestino = "publicaciones");
 }
