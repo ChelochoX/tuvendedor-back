@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
 using tuvendedorback.Common;
+using tuvendedorback.DTOs;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
 using tuvendedorback.Wrappers;
@@ -21,6 +22,7 @@ public class PublicacionesController : ControllerBase
         _logger = logger;
         _userContext = userContext;
     }
+
 
     [HttpPost("crear-publicacion")]
     [Consumes("multipart/form-data")]
@@ -48,6 +50,26 @@ public class PublicacionesController : ControllerBase
             Success = true,
             Message = "Publicación creada correctamente",
             Data = new { Id = publicacionId }
+        });
+    }
+
+
+    [HttpGet("obtener-publicaciones")]
+    [SwaggerOperation(
+        Summary = "Obtiene el listado de publicaciones",
+        Description = "Devuelve las publicaciones creadas por los vendedores incluyendo imágenes, información del vendedor y planes de crédito. "
+                    + "Permite filtrar opcionalmente por categoría y por nombre del producto."
+    )]
+    public async Task<IActionResult> ObtenerPublicaciones(
+        [FromQuery] string? categoria = null, string? nombre = null)
+    {
+        var publicaciones = await _service.ObtenerPublicaciones(categoria, nombre);
+
+        return Ok(new Response<List<ProductoDto>>
+        {
+            Success = true,
+            Data = publicaciones,
+            Message = "Publicaciones obtenidas correctamente"
         });
     }
 }

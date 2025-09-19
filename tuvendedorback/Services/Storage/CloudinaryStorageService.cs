@@ -46,7 +46,7 @@ public class CloudinaryStorageService : IImageStorageService
                 File = new FileDescription($"{Guid.NewGuid()}.webp", stream),
                 Folder = carpetaDestino,
                 UseFilename = true,
-                UniqueFilename = true,
+                UniqueFilename = false,
             };
 
             var result = await _cloudinary.UploadAsync(uploadParams);
@@ -63,7 +63,7 @@ public class CloudinaryStorageService : IImageStorageService
                 File = new FileDescription(archivo.FileName, stream),
                 Folder = carpetaDestino,
                 UseFilename = true,
-                UniqueFilename = true,
+                UniqueFilename = false,
             };
 
             var result = await _cloudinary.UploadAsync(uploadParams);
@@ -80,7 +80,7 @@ public class CloudinaryStorageService : IImageStorageService
                 File = new FileDescription(archivo.FileName, stream),
                 Folder = carpetaDestino,
                 UseFilename = true,
-                UniqueFilename = true,
+                UniqueFilename = false,
             };
 
             var result = await _cloudinary.UploadAsync(uploadParams);

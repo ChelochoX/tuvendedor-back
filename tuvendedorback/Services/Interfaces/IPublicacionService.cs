@@ -1,8 +1,10 @@
-﻿using tuvendedorback.Request;
+﻿using tuvendedorback.DTOs;
+using tuvendedorback.Request;
 
 namespace tuvendedorback.Services.Interfaces;
 
 public interface IPublicacionService
 {
     Task<int> CrearPublicacion(CrearPublicacionRequest request, int idUsuario);
+    Task<List<ProductoDto>> ObtenerPublicaciones(string? categoria, string? nombre);
 }

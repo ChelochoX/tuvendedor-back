@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using tuvendedorback.Data;
 using tuvendedorback.Exceptions;
+using tuvendedorback.Models;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Request;
 
@@ -70,4 +71,68 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al insertar la publicación", ex);
         }
     }
+
+    public async Task<List<Publicacion>> ObtenerPublicaciones(string? categoria, string? nombre)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            var sql = @"
+        SELECT 
+            p.Id               AS Id,
+            p.Titulo           AS Titulo,
+            p.Descripcion      AS Descripcion,
+            p.Precio           AS Precio,
+            p.Categoria        AS Categoria,
+            p.Ubicacion        AS Ubicacion,
+            p.MostrarBotonesCompra AS MostrarBotonesCompra,
+            v.NombreNegocio    AS VendedorNombre,
+            NULL               AS VendedorAvatar
+        FROM Publicaciones p
+        LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
+        WHERE (@Categoria IS NULL OR p.Categoria = @Categoria)
+          AND (@Nombre IS NULL OR p.Titulo LIKE '%' + @Nombre + '%')
+        ORDER BY p.Fecha DESC";
+
+            var publicaciones = (await conn.QueryAsync<Publicacion>(
+                sql,
+                new { Categoria = categoria, Nombre = nombre }
+            )).ToList();
+
+            foreach (var pub in publicaciones)
+            {
+                // 📸 Imágenes
+                var imagenes = await conn.QueryAsync<ImagenPublicacion>(@"
+                SELECT 
+                    i.Id           AS Id,
+                    i.Url          AS Url,
+                    i.IdPublicacion AS PublicacionId
+                FROM ImagenesPublicacion i
+                WHERE i.IdPublicacion = @Id",
+                    new { Id = pub.Id });
+
+                // 💳 Planes de crédito
+                var planes = await conn.QueryAsync<PlanCredito>(@"
+                SELECT 
+                    pc.Id            AS Id,
+                    pc.IdPublicacion AS PublicacionId,
+                    pc.Cuotas        AS Cuotas,
+                    pc.ValorCuota    AS ValorCuota
+                FROM PlanesCredito pc
+                WHERE pc.IdPublicacion = @Id",
+                    new { Id = pub.Id });
+
+                pub.Imagenes = imagenes.ToList();
+                pub.PlanCredito = planes.ToList();
+            }
+
+            return publicaciones;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener publicaciones");
+            throw new RepositoryException("Error al obtener publicaciones", ex);
+        }
+    }
+
 }
