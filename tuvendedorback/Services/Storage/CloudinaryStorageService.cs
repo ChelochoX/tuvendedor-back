@@ -47,6 +47,14 @@ public class CloudinaryStorageService : IImageStorageService
                 Folder = carpetaDestino,
                 UseFilename = true,
                 UniqueFilename = false,
+
+                Transformation = new Transformation()
+                    .Width(1080)
+                    .Height(1080)
+                    .Crop("pad")          // Mantiene proporciones, agrega relleno
+                    .Background("white")  // Fondo blanco (puedes usar "black" o "auto")
+                    .Format("webp")       // Forzamos salida en WebP
+
             };
 
             var result = await _cloudinary.UploadAsync(uploadParams);
