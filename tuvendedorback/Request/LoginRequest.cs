@@ -18,8 +18,11 @@ public class LoginRequestValidator : AbstractValidator<LoginRequest>
     public LoginRequestValidator()
     {
         RuleFor(x => x.Email)
-                  .NotEmpty().WithMessage("El correo electrónico es obligatorio.")
-                  .EmailAddress().WithMessage("El correo electrónico no tiene un formato válido.");
+            .NotEmpty()
+            .When(x => x.TipoLogin != "clasico")
+            .WithMessage("El correo electrónico es obligatorio.")
+            .EmailAddress().When(x => x.TipoLogin != "clasico")
+            .WithMessage("El correo electrónico no tiene un formato válido.");
 
         RuleFor(x => x.Clave)
             .NotEmpty()

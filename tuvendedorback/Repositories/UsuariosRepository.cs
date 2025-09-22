@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
 using tuvendedorback.Data;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
@@ -127,7 +128,7 @@ public class UsuariosRepository : IUsuariosRepository
             }, transaction);
 
             // Rol comprador (siempre)
-            await connection.ExecuteAsync("INSERT INTO UsuarioRoles (IdUsuario, IdRol) VALUES (@IdUsuario, 2);", new
+            await connection.ExecuteAsync("INSERT INTO UsuarioRoles (IdUsuario, IdRol) VALUES (@IdUsuario, 3);", new
             {
                 IdUsuario = idUsuario
             }, transaction);
@@ -135,7 +136,7 @@ public class UsuariosRepository : IUsuariosRepository
             // Rol vendedor (opcional)
             if (request.EsVendedor)
             {
-                await connection.ExecuteAsync("INSERT INTO UsuarioRoles (IdUsuario, IdRol) VALUES (@IdUsuario, 3);", new
+                await connection.ExecuteAsync("INSERT INTO UsuarioRoles (IdUsuario, IdRol) VALUES (@IdUsuario, 2);", new
                 {
                     IdUsuario = idUsuario
                 }, transaction);
@@ -155,11 +156,21 @@ public class UsuariosRepository : IUsuariosRepository
             transaction.Commit();
             return idUsuario;
         }
-        catch (Exception ex)
+        catch (SqlException sqlEx)
         {
             transaction.Rollback();
-            _logger.LogError(ex, "Error al registrar el usuario");
-            throw new RepositoryException("Error al registrar el usuario", ex);
+            _logger.LogError(sqlEx, "Error SQL al registrar el usuario");
+
+            if (sqlEx.Number == 2601 || sqlEx.Number == 2627)
+            {
+                if (sqlEx.Message.Contains("UQ__Usuarios__A9D10534")) // Email duplicado
+                {
+                    throw new RepositoryException("Error_Usuario_EmailDuplicado", "Ya existe un usuario con ese correo.", sqlEx);
+                }
+            }
+
+            // No coincide con ningún caso controlado → error genérico
+            throw new RepositoryException("Error_Registro_Usuario_SQL", "Error inesperado al registrar el usuario.", sqlEx);
         }
     }
 

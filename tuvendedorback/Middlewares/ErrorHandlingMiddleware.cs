@@ -1,6 +1,7 @@
 ﻿using FluentValidation;
 using System.Net;
 using System.Text.Json;
+using tuvendedorback.Common;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Wrappers;
 
@@ -55,10 +56,29 @@ public class ErrorHandlingMiddleware
                 response.Errors.AddRange(validationException.Errors.Select(e => e.ErrorMessage));
                 break;
 
+            case CredencialesInvalidasException credencialesEx:
+                response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                response.Errors.Add(credencialesEx.Message);
+                break;
+
             case RepositoryException repositoryException:
-                response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                response.Errors.Add(repositoryException.Message);
-                if (showStackTrace)
+                // ⚠️ Usar 400 si es validación → si no, se queda como 500
+                var marca = repositoryException.Marca;
+
+                if (!string.IsNullOrEmpty(marca) && DiccionarioErrores.ErroresPorModulo.ContainsKey(marca))
+                {
+                    response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    response.Message = DiccionarioErrores.ErroresPorModulo[marca];
+                    response.Errors.Add(marca);
+                }
+                else
+                {
+                    response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                    response.Message = repositoryException.Message;
+                    response.Errors.Add(repositoryException.Message);
+                }
+
+                if (showStackTrace && repositoryException.InnerException != null)
                 {
                     response.Errors.Add(repositoryException.InnerException.StackTrace);
                 }
@@ -66,7 +86,7 @@ public class ErrorHandlingMiddleware
 
             case ServiceException serviceException:
                 response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                response.Errors.Add(serviceException.Message);              
+                response.Errors.Add(serviceException.Message);
                 if (!showStackTrace)
                 {
                     response.Errors.Add(serviceException.InnerException.StackTrace);
@@ -80,7 +100,7 @@ public class ErrorHandlingMiddleware
             case ReglasdeNegocioException reglasdeNegocioException:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
                 response.Errors.Add(reglasdeNegocioException.Message);
-                break;          
+                break;
 
             case ParametroFaltanteCadenaConexionException parametrosConexionFaltanteException:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;

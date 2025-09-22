@@ -53,8 +53,9 @@ if (app.Environment.IsDevelopment())
 ILogger<Program> logger = app.Services.GetRequiredService<ILogger<Program>>();
 logger.LogInformation("Aplicacion Iniciada Correctamente");
 
-app.UseHttpsRedirection();
 app.UseHandlingMiddleware();
+
+app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 
 app.UseAuthentication();

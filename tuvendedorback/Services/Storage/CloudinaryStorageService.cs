@@ -34,45 +34,42 @@ public class CloudinaryStorageService : IImageStorageService
             _ => ResourceType.Raw
         };
 
-        using var stream = new MemoryStream();
-
         if (resourceType == ResourceType.Image)
         {
             var webpBytes = await ImagenHelper.ConvertirAWebPAsync(archivo);
-            stream.Write(webpBytes, 0, webpBytes.Length);
-            stream.Position = 0;
+
+            using var mainStream = new MemoryStream(webpBytes);
 
             // 📌 Imagen principal 1080x1080
             var mainParams = new ImageUploadParams
             {
-                File = new FileDescription($"{Guid.NewGuid()}.webp", stream),
+                File = new FileDescription($"{Guid.NewGuid()}.webp", mainStream),
                 Folder = carpetaDestino,
                 UseFilename = true,
                 UniqueFilename = false,
                 Format = "webp",
                 Transformation = new Transformation()
-                  .Width(1080).Height(1080)
-                  .Crop("pad")
-                  .Background("white")
+                 .Width(1080).Height(1080).Crop("pad").Background("white").FetchFormat("webp")
             };
 
-            stream.Position = 0;
+            var mainResult = await _cloudinary.UploadAsync(mainParams);
+
+            using var thumbStream = new MemoryStream(webpBytes);
 
             // 📌 Miniatura 300x300
             var thumbParams = new ImageUploadParams
             {
-                File = new FileDescription($"{Guid.NewGuid()}_thumb.webp", stream),
+                File = new FileDescription($"{Guid.NewGuid()}_thumb.webp", thumbStream),
                 Folder = carpetaDestino,
                 UseFilename = true,
                 UniqueFilename = false,
                 Format = "webp",
                 Transformation = new Transformation()
-                    .Width(300).Height(300)
-                    .Crop("fill").Gravity("auto")
+                .Width(400).Height(300)
+                .Crop("fill").Gravity("auto")
+                .FetchFormat("webp")
             };
 
-
-            var mainResult = await _cloudinary.UploadAsync(mainParams);
             var thumbResult = await _cloudinary.UploadAsync(thumbParams);
 
 
@@ -87,6 +84,8 @@ public class CloudinaryStorageService : IImageStorageService
         }
         else if (resourceType == ResourceType.Video)
         {
+            using var stream = new MemoryStream();
+
             await archivo.CopyToAsync(stream);
             stream.Position = 0;
 
@@ -110,6 +109,8 @@ public class CloudinaryStorageService : IImageStorageService
         }
         else // ResourceType.Raw
         {
+            using var stream = new MemoryStream();
+
             await archivo.CopyToAsync(stream);
             stream.Position = 0;
 

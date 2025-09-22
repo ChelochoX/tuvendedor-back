@@ -28,8 +28,8 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             const string insertPub = @"
-            INSERT INTO Publicaciones (Titulo, Descripcion, Precio, Categoria, IdUsuario, MostrarBotonesCompra, Fecha)
-            VALUES (@Titulo, @Descripcion, @Precio, @Categoria, @IdUsuario, @MostrarBotonesCompra, GETDATE());
+            INSERT INTO Publicaciones (Titulo, Descripcion, Precio, Categoria, IdUsuario, MostrarBotonesCompra, Fecha,Ubicacion)
+            VALUES (@Titulo, @Descripcion, @Precio, @Categoria, @IdUsuario, @MostrarBotonesCompra, GETDATE(), @Ubicacion);
             SELECT SCOPE_IDENTITY();";
 
             var publicacionId = await conn.ExecuteScalarAsync<int>(insertPub, new
@@ -39,7 +39,8 @@ public class PublicacionRepository : IPublicacionRepository
                 request.Precio,
                 request.Categoria,
                 IdUsuario = idUsuario,
-                request.MostrarBotonesCompra
+                request.MostrarBotonesCompra,
+                request.Ubicacion
             }, tran);
 
             foreach (var img in imagenes)

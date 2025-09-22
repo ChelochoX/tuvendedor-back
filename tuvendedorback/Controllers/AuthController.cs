@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
+using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
 using tuvendedorback.Request;
 using tuvendedorback.Services;
@@ -66,33 +67,15 @@ public class AuthController : ControllerBase
             usuario = await _usuarioService.ValidarCredenciales(request);
 
             if (usuario == null)
-            {
-                return Unauthorized(new Response<object>
-                {
-                    Success = false,
-                    Errors = new List<string> { "Credenciales inválidas." },
-                    StatusCode = 401
-                });
-            }
+                throw new CredencialesInvalidasException();
 
             if (usuario.Estado != "Activo")
-            {
-                return Unauthorized(new Response<object>
-                {
-                    Success = false,
-                    Errors = new List<string> { "Usuario inactivo. Contacte al administrador." },
-                    StatusCode = 401
-                });
-            }
+                throw new ReglasdeNegocioException("Usuario inactivo. Contacte al administrador.");
+
         }
         else
         {
-            return BadRequest(new Response<object>
-            {
-                Success = false,
-                Errors = new List<string> { "TipoLogin no soportado." },
-                StatusCode = 400
-            });
+            throw new ReglasdeNegocioException("TipoLogin no soportado.");
         }
 
         // Si llegamos acá, el usuario ya está registrado y activo (proveedor o clásico)
@@ -134,7 +117,11 @@ public class AuthController : ControllerBase
         return Ok(new Response<object>
         {
             Success = true,
-            Data = new { IdUsuario = idUsuario, Mensaje = "Usuario registrado correctamente." }
+            Data = new
+            {
+                IdUsuario = idUsuario,
+                Mensaje = "Usuario registrado correctamente."
+            }
         });
     }
 
