@@ -7,7 +7,10 @@ public class ProductoDto
     public decimal Precio { get; set; }
     public string Categoria { get; set; }
     public string Ubicacion { get; set; }
-    public string Imagen { get; set; }
+
+    public string Imagen { get; set; }   // Imagen principal
+    public string Miniatura { get; set; } // Nueva propiedad thumbnail 👈
+
     public List<string> Imagenes { get; set; } = new();
     public string Descripcion { get; set; }
     public bool MostrarBotonesCompra { get; set; }

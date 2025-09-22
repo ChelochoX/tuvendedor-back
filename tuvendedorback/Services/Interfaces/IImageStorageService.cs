@@ -1,6 +1,8 @@
-﻿namespace tuvendedorback.Services.Interfaces;
+﻿using tuvendedorback.DTOs;
+
+namespace tuvendedorback.Services.Interfaces;
 
 public interface IImageStorageService
 {
-    Task<string> SubirArchivo(IFormFile imagenFile, string carpetaDestino = "publicaciones");
+    Task<UploadResultDto> SubirArchivo(IFormFile imagenFile, string carpetaDestino = "publicaciones");
 }

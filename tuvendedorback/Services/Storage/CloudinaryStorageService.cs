@@ -2,6 +2,7 @@
 using CloudinaryDotNet.Actions;
 using System.Net;
 using tuvendedorback.Common;
+using tuvendedorback.DTOs;
 using tuvendedorback.Services.Interfaces;
 
 namespace tuvendedorback.Services.Storage;
@@ -21,7 +22,7 @@ public class CloudinaryStorageService : IImageStorageService
         _cloudinary = new Cloudinary(account) { Api = { Secure = true } };
     }
 
-    public async Task<string> SubirArchivo(IFormFile archivo, string carpetaDestino = "publicaciones")
+    public async Task<UploadResultDto> SubirArchivo(IFormFile archivo, string carpetaDestino = "publicaciones")
     {
         var extension = Path.GetExtension(archivo.FileName).ToLower();
 
@@ -41,25 +42,48 @@ public class CloudinaryStorageService : IImageStorageService
             stream.Write(webpBytes, 0, webpBytes.Length);
             stream.Position = 0;
 
-            var uploadParams = new ImageUploadParams
+            // 📌 Imagen principal 1080x1080
+            var mainParams = new ImageUploadParams
             {
                 File = new FileDescription($"{Guid.NewGuid()}.webp", stream),
                 Folder = carpetaDestino,
                 UseFilename = true,
                 UniqueFilename = false,
-
+                Format = "webp",
                 Transformation = new Transformation()
-                    .Width(1080)
-                    .Height(1080)
-                    .Crop("pad")          // Mantiene proporciones, agrega relleno
-                    .Background("white")  // Fondo blanco (puedes usar "black" o "auto")
-                    .Format("webp")       // Forzamos salida en WebP
-
+                  .Width(1080).Height(1080)
+                  .Crop("pad")
+                  .Background("white")
             };
 
-            var result = await _cloudinary.UploadAsync(uploadParams);
-            if (result.StatusCode == HttpStatusCode.OK)
-                return result.SecureUrl.ToString();
+            stream.Position = 0;
+
+            // 📌 Miniatura 300x300
+            var thumbParams = new ImageUploadParams
+            {
+                File = new FileDescription($"{Guid.NewGuid()}_thumb.webp", stream),
+                Folder = carpetaDestino,
+                UseFilename = true,
+                UniqueFilename = false,
+                Format = "webp",
+                Transformation = new Transformation()
+                    .Width(300).Height(300)
+                    .Crop("fill").Gravity("auto")
+            };
+
+
+            var mainResult = await _cloudinary.UploadAsync(mainParams);
+            var thumbResult = await _cloudinary.UploadAsync(thumbParams);
+
+
+            if (mainResult.StatusCode == HttpStatusCode.OK && thumbResult.StatusCode == HttpStatusCode.OK)
+            {
+                return new UploadResultDto
+                {
+                    MainUrl = mainResult.SecureUrl.ToString(),
+                    ThumbUrl = thumbResult.SecureUrl.ToString()
+                };
+            }
         }
         else if (resourceType == ResourceType.Video)
         {
@@ -76,7 +100,13 @@ public class CloudinaryStorageService : IImageStorageService
 
             var result = await _cloudinary.UploadAsync(uploadParams);
             if (result.StatusCode == HttpStatusCode.OK)
-                return result.SecureUrl.ToString();
+            {
+                return new UploadResultDto
+                {
+                    MainUrl = result.SecureUrl?.ToString() ?? string.Empty,
+                    ThumbUrl = string.Empty // no hay miniatura generada aquí
+                };
+            }
         }
         else // ResourceType.Raw
         {
@@ -93,7 +123,13 @@ public class CloudinaryStorageService : IImageStorageService
 
             var result = await _cloudinary.UploadAsync(uploadParams);
             if (result.StatusCode == HttpStatusCode.OK)
-                return result.SecureUrl.ToString();
+            {
+                return new UploadResultDto
+                {
+                    MainUrl = result.SecureUrl?.ToString() ?? string.Empty,
+                    ThumbUrl = string.Empty
+                };
+            }
         }
 
         throw new Exception("Error al subir archivo a Cloudinary");

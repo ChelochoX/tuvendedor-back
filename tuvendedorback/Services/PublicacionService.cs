@@ -26,15 +26,20 @@ public class PublicacionService : IPublicacionService
     {
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
-        var urls = new List<string>();
+        var imagenes = new List<ImagenDto>();
 
         foreach (var img in request.Imagenes)
         {
-            var url = await _imageStorage.SubirArchivo(img);
-            urls.Add(url);
+            var result = await _imageStorage.SubirArchivo(img);
+            imagenes.Add(new ImagenDto
+            {
+                MainUrl = result.MainUrl,
+                ThumbUrl = result.ThumbUrl
+            });
         }
 
-        return await _repository.InsertarPublicacion(request, idUsuario, urls);
+        return await _repository.InsertarPublicacion(request, idUsuario, imagenes);
+
     }
 
     public async Task<List<ProductoDto>> ObtenerPublicaciones(string? categoria, string? nombre)

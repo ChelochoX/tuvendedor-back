@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using tuvendedorback.Data;
+using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
 using tuvendedorback.Repositories.Interfaces;
@@ -18,7 +19,7 @@ public class PublicacionRepository : IPublicacionRepository
         _logger = logger;
     }
 
-    public async Task<int> InsertarPublicacion(CrearPublicacionRequest request, int idUsuario, List<string> imagenes)
+    public async Task<int> InsertarPublicacion(CrearPublicacionRequest request, int idUsuario, List<ImagenDto> imagenes)
     {
         using var conn = _conexion.CreateSqlConnection();
         conn.Open();
@@ -41,10 +42,13 @@ public class PublicacionRepository : IPublicacionRepository
                 request.MostrarBotonesCompra
             }, tran);
 
-            foreach (var url in imagenes)
+            foreach (var img in imagenes)
             {
-                await conn.ExecuteAsync("INSERT INTO ImagenesPublicacion (IdPublicacion, Url) VALUES (@Id, @Url);",
-                    new { Id = publicacionId, Url = url }, tran);
+                await conn.ExecuteAsync(
+                    "INSERT INTO ImagenesPublicacion (IdPublicacion, Url, ThumbUrl) VALUES (@Id, @Url, @ThumbUrl);",
+                    new { Id = publicacionId, Url = img.MainUrl, ThumbUrl = img.ThumbUrl },
+                    tran
+                );
             }
 
             if (request.MostrarBotonesCompra && request.PlanCredito != null)
