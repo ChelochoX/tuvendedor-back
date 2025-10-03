@@ -67,7 +67,12 @@ public class AuthController : ControllerBase
             usuario = await _usuarioService.ValidarCredenciales(request);
 
             if (usuario == null)
-                throw new CredencialesInvalidasException();
+                return Ok(new Response<object>
+                {
+                    Success = false,
+                    StatusCode = 401,
+                    Message = "Usuario o contraseña incorrectos."
+                });
 
             if (usuario.Estado != "Activo")
                 throw new ReglasdeNegocioException("Usuario inactivo. Contacte al administrador.");
@@ -148,5 +153,27 @@ public class AuthController : ControllerBase
         });
     }
 
+    [HttpGet("verificar-usuario-login")]
+    [SwaggerOperation(Summary = "Verifica si un usuarioLogin ya existe en el sistema")]
+    public async Task<IActionResult> VerificarUsuarioLogin([FromQuery] string usuarioLogin)
+    {
+        if (string.IsNullOrWhiteSpace(usuarioLogin))
+            throw new ReglasdeNegocioException("El nombre de usuario no puede estar vacío.");
 
+        var existe = await _usuarioService.ExisteUsuarioLogin(usuarioLogin);
+        var disponible = !existe; // 👈 invertir la lógica
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Data = new
+            {
+                UsuarioLogin = usuarioLogin,
+                Disponible = disponible
+            },
+            Message = disponible
+                ? "El nombre de usuario está disponible."
+                : "El nombre de usuario ya está en uso."
+        });
+    }
 }

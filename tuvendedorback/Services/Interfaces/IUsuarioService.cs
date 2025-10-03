@@ -10,5 +10,5 @@ public interface IUsuarioService
     Task<List<string>> ObtenerRolesPorUsuario(int idUsuario);
     Task<int> RegistrarUsuario(RegistroRequest request);
     Task<bool> CambiarClave(CambiarClaveRequest request);
-
+    Task<bool> ExisteUsuarioLogin(string usuarioLogin);
 }

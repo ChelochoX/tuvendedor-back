@@ -26,7 +26,17 @@ public class UsuarioService : IUsuarioService
     {
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
-        return await _usuarioRepository.ValidarCredencialesPorEmailYClave(request.Email, request.Clave);
+        // Detectamos si es un email o un nombre de usuario
+        if (!string.IsNullOrEmpty(request.Email) && request.Email.Contains("@"))
+        {
+            return await _usuarioRepository.ValidarCredencialesPorEmailYClave(request.Email, request.Clave);
+        }
+        else if (!string.IsNullOrEmpty(request.UsuarioLogin))
+        {
+            return await _usuarioRepository.ValidarCredencialesPorUsuarioLoginYClave(request.UsuarioLogin, request.Clave);
+        }
+
+        return null;
     }
     public async Task<Usuario?> ObtenerUsuarioPorProveedor(LoginRequest request)
     {
@@ -86,5 +96,8 @@ public class UsuarioService : IUsuarioService
         return cambio;
     }
 
-
+    public async Task<bool> ExisteUsuarioLogin(string usuarioLogin)
+    {
+        return await _usuarioRepository.ExisteUsuarioLogin(usuarioLogin);
+    }
 }

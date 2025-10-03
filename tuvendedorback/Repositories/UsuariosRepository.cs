@@ -58,6 +58,43 @@ public class UsuariosRepository : IUsuariosRepository
         }
     }
 
+    public async Task<Usuario?> ValidarCredencialesPorUsuarioLoginYClave(string usuarioLogin, string clave)
+    {
+        try
+        {
+            _logger.LogInformation("Validando credenciales para el usuarioLogin: {UsuarioLogin}", usuarioLogin);
+
+            const string query = @"SELECT Id AS IdUsuario, NombreUsuario, UsuarioLogin, Email, ClaveHash, Estado, FechaRegistro, Ciudad 
+                               FROM Usuarios 
+                               WHERE UsuarioLogin = @UsuarioLogin AND Estado = 'Activo'";
+
+            using var connection = _conexion.CreateSqlConnection();
+            var usuarioDb = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { UsuarioLogin = usuarioLogin });
+
+            if (usuarioDb == null)
+            {
+                _logger.LogWarning("No se encontró usuario con usuarioLogin: {UsuarioLogin}", usuarioLogin);
+                return null;
+            }
+
+            var resultado = _hasher.VerifyHashedPassword(null, usuarioDb.ClaveHash, clave);
+            if (resultado == PasswordVerificationResult.Success)
+            {
+                _logger.LogInformation("Autenticación exitosa para el usuarioLogin: {UsuarioLogin}", usuarioLogin);
+                return usuarioDb;
+            }
+
+            _logger.LogWarning("Contraseña incorrecta para el usuarioLogin: {UsuarioLogin}", usuarioLogin);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al validar credenciales para el usuarioLogin: {UsuarioLogin}", usuarioLogin);
+            throw new RepositoryException("Error al validar credenciales", ex);
+        }
+    }
+
+
     public async Task<List<string>> ObtenerRolesPorUsuario(int idUsuario)
     {
         const string query = @"
@@ -109,14 +146,15 @@ public class UsuariosRepository : IUsuariosRepository
 
             const string insertUsuario = @"
                 INSERT INTO Usuarios 
-                (NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, Telefono, Ciudad, Direccion, FotoPerfil)
+                (NombreUsuario, UsuarioLogin, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, Telefono, Ciudad, Direccion, FotoPerfil)
                 VALUES 
-                (@NombreUsuario, @Email, @ClaveHash, 'Activo', GETDATE(), @Proveedor, @ProveedorId, @Telefono, @Ciudad, @Direccion, @FotoPerfil);
+                (@NombreUsuario, @UsuarioLogin, @Email, @ClaveHash, 'Activo', GETDATE(), @Proveedor, @ProveedorId, @Telefono, @Ciudad, @Direccion, @FotoPerfil);
                 SELECT SCOPE_IDENTITY();";
 
             var idUsuario = await connection.ExecuteScalarAsync<int>(insertUsuario, new
             {
                 request.NombreUsuario,
+                request.UsuarioLogin,
                 request.Email,
                 ClaveHash = claveHash,
                 request.Proveedor,
@@ -278,6 +316,34 @@ public class UsuariosRepository : IUsuariosRepository
         }
     }
 
+    public async Task<bool> ExisteUsuarioLogin(string usuarioLogin)
+    {
+        _logger.LogInformation("Consultando en la base de datos si existe usuarioLogin: {UsuarioLogin}", usuarioLogin);
+
+        const string query = @"SELECT COUNT(1) 
+                           FROM Usuarios 
+                           WHERE UsuarioLogin = @UsuarioLogin";
+
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var count = await connection.ExecuteScalarAsync<int>(query, new { UsuarioLogin = usuarioLogin });
+
+            var existe = count > 0;
+
+            if (existe)
+                _logger.LogWarning("El usuarioLogin {UsuarioLogin} ya existe en la base de datos", usuarioLogin);
+            else
+                _logger.LogInformation("El usuarioLogin {UsuarioLogin} está disponible", usuarioLogin);
+
+            return existe;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al verificar la existencia del usuarioLogin: {UsuarioLogin}", usuarioLogin);
+            throw new RepositoryException("Error al verificar existencia de usuarioLogin", ex);
+        }
+    }
 
 }
 

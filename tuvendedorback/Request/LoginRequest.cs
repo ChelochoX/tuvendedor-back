@@ -4,9 +4,10 @@ namespace tuvendedorback.Request;
 
 public class LoginRequest
 {
-    public string Email { get; set; }
-    public string Clave { get; set; }
-    public string TipoLogin { get; set; }
+    public string? Email { get; set; }
+    public string? Clave { get; set; }
+    public string? TipoLogin { get; set; }
+    public string? UsuarioLogin { get; set; }
 
     // Datos opcionales desde proveedor
     public string? Nombre { get; set; }
@@ -17,21 +18,26 @@ public class LoginRequestValidator : AbstractValidator<LoginRequest>
 {
     public LoginRequestValidator()
     {
-        RuleFor(x => x.Email)
-            .NotEmpty()
-            .When(x => x.TipoLogin != "clasico")
-            .WithMessage("El correo electrónico es obligatorio.")
-            .EmailAddress().When(x => x.TipoLogin != "clasico")
-            .WithMessage("El correo electrónico no tiene un formato válido.");
+        // Para login clásico: debe venir Email o UsuarioLogin
+        When(x => x.TipoLogin == "clasico", () =>
+        {
+            RuleFor(x => x.Clave)
+                .NotEmpty().WithMessage("La contraseña es obligatoria para login clásico.");
 
-        RuleFor(x => x.Clave)
-            .NotEmpty()
-            .When(x => x.TipoLogin == "clasico")
-            .WithMessage("La contraseña es obligatoria para login clásico.");
+            RuleFor(x => x)
+                .Must(x => !string.IsNullOrEmpty(x.Email) || !string.IsNullOrEmpty(x.UsuarioLogin))
+                .WithMessage("Debe ingresar correo o usuario.");
+        });
 
-        RuleFor(x => x.ProveedorId)
-            .NotEmpty()
-            .When(x => x.TipoLogin == "google" || x.TipoLogin == "facebook")
-            .WithMessage("El identificador del proveedor es obligatorio para login externo.");
+        // Para login externo: Email obligatorio y válido
+        When(x => x.TipoLogin != "clasico", () =>
+        {
+            RuleFor(x => x.Email)
+                .NotEmpty().WithMessage("El correo electrónico es obligatorio.")
+                .EmailAddress().WithMessage("El correo electrónico no tiene un formato válido.");
+
+            RuleFor(x => x.ProveedorId)
+                .NotEmpty().WithMessage("El identificador del proveedor es obligatorio para login externo.");
+        });
     }
 }

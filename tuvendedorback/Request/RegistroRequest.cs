@@ -5,6 +5,7 @@ namespace tuvendedorback.Request;
 public class RegistroRequest
 {
     public string NombreUsuario { get; set; } = null!;
+    public string UsuarioLogin { get; set; }
     public string Email { get; set; } = null!;
     public string? Clave { get; set; } = null!;
     public string? Proveedor { get; set; }
