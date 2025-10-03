@@ -8,7 +8,7 @@ public class CrearPublicacionRequest
     public string Descripcion { get; set; }
     public decimal Precio { get; set; }
     public string Categoria { get; set; }
-    public string Ubicacion { get; set; }
+    public string? Ubicacion { get; set; } = "";
     public bool MostrarBotonesCompra { get; set; }
     public List<IFormFile> Imagenes { get; set; }
     public List<PlanCreditoDto>? PlanCredito { get; set; }

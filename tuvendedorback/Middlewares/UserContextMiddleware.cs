@@ -35,6 +35,8 @@ public class UserContextMiddleware
 
             userContext.IdUsuario = usuarioDb.Id;
             userContext.NombreUsuario = usuarioDb.NombreUsuario;
+            userContext.Ubicacion = usuarioDb.Ciudad;
+            userContext.Vendedor = usuarioDb.NombreUsuario;
             // Aquí podrías agregar también IdRol si lo necesitás más adelante
         }
 

@@ -28,7 +28,7 @@ public class UsuariosRepository : IUsuariosRepository
         {
             _logger.LogInformation("Validando credenciales para el email: {Email}", email);
 
-            const string query = @"SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro 
+            const string query = @"SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Ciudad 
                                FROM Usuarios 
                                WHERE Email = @Email AND Estado = 'Activo'";
 
@@ -243,9 +243,21 @@ public class UsuariosRepository : IUsuariosRepository
         _logger.LogInformation("Buscando usuario activo por ID: {Id}", id);
 
         const string query = @"
-        SELECT Id AS Id, NombreUsuario, Email, Estado
-        FROM Usuarios
-        WHERE Id = @Id AND Estado = 'Activo'";
+                SELECT 
+                u.Id            AS Id,
+                u.NombreUsuario AS NombreUsuario,
+                u.Email         AS Email,
+                u.Estado        AS Estado,
+                u.FotoPerfil    AS FotoPerfil,
+                u.Telefono      AS Telefono,
+                u.Ciudad        AS Ciudad,
+                u.Direccion     AS Direccion,
+                v.NombreNegocio AS NombreNegocio,
+                v.Ruc           AS Ruc,
+                v.Rubro         AS Rubro
+            FROM Usuarios u
+            LEFT JOIN Vendedores v ON v.IdUsuario = u.Id
+            WHERE u.Id = @Id AND u.Estado = 'Activo'";
 
         try
         {

@@ -42,7 +42,7 @@ public class PublicacionesController : ControllerBase
                 StatusCode = 401
             });
         }
-
+        request.Ubicacion = _userContext.Ubicacion ?? "";
         var publicacionId = await _service.CrearPublicacion(request, idUsuario.Value);
 
         return Ok(new Response<object>
