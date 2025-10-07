@@ -14,6 +14,7 @@ public static class DependencyInjection
         services.AddScoped<IUsuariosRepository, UsuariosRepository>();
         services.AddScoped<IPermisosRepository, PermisosRepository>();
         services.AddScoped<IPublicacionRepository, PublicacionRepository>();
+        services.AddScoped<IClientesRepository, ClientesRepository>();
         return services;
     }
 
@@ -24,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<IPasswordHasher<string>, PasswordHasher<string>>();
         services.AddScoped<IPublicacionService, PublicacionService>();
         services.AddScoped<IImageStorageService, CloudinaryStorageService>();
+        services.AddScoped<IClientesService, ClientesService>();
         return services;
     }
 }
