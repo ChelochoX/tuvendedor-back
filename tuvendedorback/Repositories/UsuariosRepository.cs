@@ -28,7 +28,7 @@ public class UsuariosRepository : IUsuariosRepository
         {
             _logger.LogInformation("Validando credenciales para el email: {Email}", email);
 
-            const string query = @"SELECT Id AS IdUsuario, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Ciudad 
+            const string query = @"SELECT Id, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Ciudad 
                                FROM Usuarios 
                                WHERE Email = @Email AND Estado = 'Activo'";
 
@@ -64,7 +64,7 @@ public class UsuariosRepository : IUsuariosRepository
         {
             _logger.LogInformation("Validando credenciales para el usuarioLogin: {UsuarioLogin}", usuarioLogin);
 
-            const string query = @"SELECT Id AS IdUsuario, NombreUsuario, UsuarioLogin, Email, ClaveHash, Estado, FechaRegistro, Ciudad 
+            const string query = @"SELECT Id, NombreUsuario, UsuarioLogin, Email, ClaveHash, Estado, FechaRegistro, Ciudad 
                                FROM Usuarios 
                                WHERE UsuarioLogin = @UsuarioLogin AND Estado = 'Activo'";
 

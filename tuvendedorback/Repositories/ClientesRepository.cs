@@ -104,10 +104,10 @@ public class ClientesRepository : IClientesRepository
                 sql.AppendLine("AND i.Estado = @Estado");
 
             if (filtro.FechaDesde.HasValue)
-                sql.AppendLine("AND i.FechaRegistro >= @FechaDesde");
+                sql.AppendLine("AND CONVERT(date, i.FechaRegistro) >= CONVERT(date, @FechaDesde)");
 
             if (filtro.FechaHasta.HasValue)
-                sql.AppendLine("AND i.FechaRegistro <= @FechaHasta");
+                sql.AppendLine("AND CONVERT(date, i.FechaRegistro) <= CONVERT(date, @FechaHasta)");
 
             // 🔹 Conteo total
             var sqlCount = $"SELECT COUNT(1) FROM ({sql}) AS Conteo";
