@@ -9,4 +9,6 @@ public interface IClientesRepository
     Task<int> InsertarSeguimiento(SeguimientoDto seguimiento);
     Task<(List<InteresadoDto> Items, int TotalRegistros)> ObtenerInteresados(FiltroInteresadosRequest filtro);
     Task<List<SeguimientoDto>> ObtenerSeguimientosPorInteresado(int idInteresado);
+    Task<InteresadoDto?> ObtenerInteresadoPorId(int id);
+    Task ActualizarInteresado(InteresadoDto dto);
 }

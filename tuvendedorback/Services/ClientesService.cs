@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using tuvendedorback.Common;
 using tuvendedorback.DTOs;
+using tuvendedorback.Exceptions;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
@@ -70,4 +71,50 @@ public class ClientesService : IClientesService
     {
         return await _repository.ObtenerSeguimientosPorInteresado(idInteresado);
     }
+
+    public async Task ActualizarInteresado(int id, InteresadoRequest request, int idUsuario)
+    {
+        await ValidationHelper.ValidarAsync(request, _serviceProvider);
+
+        // Obtener el registro actual
+        var existente = await _repository.ObtenerInteresadoPorId(id);
+        if (existente == null)
+            throw new RepositoryException($"No se encontró el interesado con Id {id}");
+
+        string? nuevaUrl = existente.ArchivoUrl;
+
+        // 📁 Si hay nuevo archivo, reemplazar
+        if (request.ArchivoConversacion != null)
+        {
+            // Eliminar el anterior si existía
+            if (!string.IsNullOrEmpty(existente.ArchivoUrl))
+            {
+                try
+                {
+                    await _imageStorage.EliminarArchivo(existente.ArchivoUrl);
+                    _logger.LogInformation("Archivo anterior eliminado correctamente para Id {Id}", id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "No se pudo eliminar el archivo anterior de Id {Id}", id);
+                }
+            }
+
+            // Subir el nuevo archivo
+            var uploadResult = await _imageStorage.SubirArchivo(request.ArchivoConversacion, "interesados");
+            nuevaUrl = uploadResult.MainUrl;
+        }
+
+        // Mapear actualización
+        var dto = _mapper.Map<InteresadoDto>(request);
+        dto.Id = id;
+        dto.ArchivoUrl = nuevaUrl;
+        dto.UsuarioResponsable = idUsuario.ToString();
+
+        await _repository.ActualizarInteresado(dto);
+
+        _logger.LogInformation("Interesado {Id} actualizado por usuario {Usuario}", id, idUsuario);
+    }
+
+
 }

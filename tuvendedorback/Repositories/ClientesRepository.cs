@@ -154,8 +154,7 @@ public class ClientesRepository : IClientesRepository
                 s.Usuario
             FROM Seguimientos s
             WHERE s.IdInteresado = @id
-            ORDER BY s.Fecha DESC;
-        ";
+            ORDER BY s.Fecha DESC";
 
             var result = await conn.QueryAsync<SeguimientoDto>(sql, new { id = idInteresado });
             _logger.LogInformation("Se obtuvieron {Count} seguimientos del interesado {Id}", result.Count(), idInteresado);
@@ -168,5 +167,88 @@ public class ClientesRepository : IClientesRepository
         }
     }
 
+    public async Task<InteresadoDto?> ObtenerInteresadoPorId(int id)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+        SELECT 
+            Id,
+            Nombre,
+            Telefono,
+            Email,
+            Ciudad,
+            ProductoInteres,
+            AportaIPS,
+            CantidadAportes,
+            Estado,
+            FechaRegistro,
+            FechaProximoContacto,
+            Descripcion,
+            ArchivoUrl,
+            UsuarioResponsable
+        FROM Interesados
+        WHERE Id = @Id;";
+
+            var interesado = await conn.QueryFirstOrDefaultAsync<InteresadoDto>(sql, new { Id = id });
+
+            if (interesado == null)
+            {
+                _logger.LogWarning("No se encontró el interesado con Id {Id}", id);
+            }
+            else
+            {
+                _logger.LogInformation("Se obtuvo correctamente el interesado con Id {Id}", id);
+            }
+
+            return interesado;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener interesado con Id {Id}", id);
+            throw new RepositoryException("Error al obtener interesado por Id", ex);
+        }
+    }
+
+    public async Task ActualizarInteresado(InteresadoDto dto)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+        UPDATE Interesados
+        SET 
+            Nombre = @Nombre,
+            Telefono = @Telefono,
+            Email = @Email,
+            Ciudad = @Ciudad,
+            ProductoInteres = @ProductoInteres,
+            FechaProximoContacto = @FechaProximoContacto,
+            Descripcion = @Descripcion,
+            AportaIPS = @AportaIPS,
+            CantidadAportes = @CantidadAportes,
+            ArchivoUrl = @ArchivoUrl
+        WHERE Id = @Id;";
+
+            int filasAfectadas = await conn.ExecuteAsync(sql, dto);
+
+            if (filasAfectadas > 0)
+            {
+                _logger.LogInformation("Interesado {Id} actualizado correctamente por usuario {UsuarioResponsable}", dto.Id, dto.UsuarioResponsable);
+            }
+            else
+            {
+                _logger.LogWarning("No se actualizó ningún registro para el interesado con Id {Id}", dto.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al actualizar interesado {Id}", dto.Id);
+            throw new RepositoryException("Error al actualizar interesado", ex);
+        }
+    }
 
 }
