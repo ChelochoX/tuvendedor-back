@@ -100,14 +100,23 @@ public class ClientesRepository : IClientesRepository
             if (!string.IsNullOrEmpty(filtro.Nombre))
                 sql.AppendLine("AND i.Nombre LIKE '%' + @Nombre + '%'");
 
-            if (!string.IsNullOrEmpty(filtro.Estado))
+            if (!string.IsNullOrEmpty(filtro.Estado) && filtro.Estado != "Todos")
+            {
                 sql.AppendLine("AND i.Estado = @Estado");
+            }
 
-            if (filtro.FechaDesde.HasValue)
-                sql.AppendLine("AND CONVERT(date, i.FechaRegistro) >= CONVERT(date, @FechaDesde)");
+            if (filtro.FechaRegistroDesde.HasValue)
+                sql.AppendLine("AND CONVERT(date, i.FechaRegistro) >= CONVERT(date, @FechaRegistroDesde)");
 
-            if (filtro.FechaHasta.HasValue)
-                sql.AppendLine("AND CONVERT(date, i.FechaRegistro) <= CONVERT(date, @FechaHasta)");
+            if (filtro.FechaRegistroHasta.HasValue)
+                sql.AppendLine("AND CONVERT(date, i.FechaRegistro) <= CONVERT(date, @FechaRegistroHasta)");
+
+            if (filtro.FechaProximoContactoDesde.HasValue)
+                sql.AppendLine("AND CONVERT(date, i.FechaProximoContacto) >= CONVERT(date, @FechaProximoContactoDesde)");
+
+            if (filtro.FechaProximoContactoHasta.HasValue)
+                sql.AppendLine("AND CONVERT(date, i.FechaProximoContacto) <= CONVERT(date, @FechaProximoContactoHasta)");
+
 
             // 🔹 Conteo total
             var sqlCount = $"SELECT COUNT(1) FROM ({sql}) AS Conteo";
@@ -120,8 +129,10 @@ public class ClientesRepository : IClientesRepository
             {
                 filtro.Nombre,
                 filtro.Estado,
-                filtro.FechaDesde,
-                filtro.FechaHasta,
+                filtro.FechaRegistroDesde,
+                filtro.FechaRegistroHasta,
+                filtro.FechaProximoContactoDesde,
+                filtro.FechaProximoContactoHasta,
                 Offset = (filtro.NumeroPagina - 1) * filtro.RegistrosPorPagina,
                 Limit = filtro.RegistrosPorPagina
             };
@@ -170,85 +181,46 @@ public class ClientesRepository : IClientesRepository
     public async Task<InteresadoDto?> ObtenerInteresadoPorId(int id)
     {
         using var conn = _conexion.CreateSqlConnection();
-
-        try
-        {
-            const string sql = @"
-        SELECT 
-            Id,
-            Nombre,
-            Telefono,
-            Email,
-            Ciudad,
-            ProductoInteres,
-            AportaIPS,
-            CantidadAportes,
-            Estado,
-            FechaRegistro,
-            FechaProximoContacto,
-            Descripcion,
-            ArchivoUrl,
-            UsuarioResponsable
+        const string sql = @"
+        SELECT Id, Nombre, Telefono, Email, Ciudad, ProductoInteres,
+               AportaIPS, CantidadAportes, Estado,
+               FechaProximoContacto, Descripcion, ArchivoUrl
         FROM Interesados
-        WHERE Id = @Id;";
+        WHERE Id = @Id";
 
-            var interesado = await conn.QueryFirstOrDefaultAsync<InteresadoDto>(sql, new { Id = id });
-
-            if (interesado == null)
-            {
-                _logger.LogWarning("No se encontró el interesado con Id {Id}", id);
-            }
-            else
-            {
-                _logger.LogInformation("Se obtuvo correctamente el interesado con Id {Id}", id);
-            }
-
-            return interesado;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error al obtener interesado con Id {Id}", id);
-            throw new RepositoryException("Error al obtener interesado por Id", ex);
-        }
+        return await conn.QueryFirstOrDefaultAsync<InteresadoDto>(sql, new { Id = id });
     }
 
-    public async Task ActualizarInteresado(InteresadoDto dto)
+    public async Task ActualizarInteresado(InteresadoDto interesado)
     {
         using var conn = _conexion.CreateSqlConnection();
 
-        try
-        {
-            const string sql = @"
-        UPDATE Interesados
-        SET 
+        const string sql = @"
+        UPDATE Interesados SET
             Nombre = @Nombre,
             Telefono = @Telefono,
             Email = @Email,
             Ciudad = @Ciudad,
             ProductoInteres = @ProductoInteres,
-            FechaProximoContacto = @FechaProximoContacto,
-            Descripcion = @Descripcion,
             AportaIPS = @AportaIPS,
             CantidadAportes = @CantidadAportes,
-            ArchivoUrl = @ArchivoUrl
+            Estado = @Estado,
+            FechaProximoContacto = @FechaProximoContacto,
+            Descripcion = @Descripcion,
+            ArchivoUrl = @ArchivoUrl            
         WHERE Id = @Id;";
 
-            int filasAfectadas = await conn.ExecuteAsync(sql, dto);
-
-            if (filasAfectadas > 0)
-            {
-                _logger.LogInformation("Interesado {Id} actualizado correctamente por usuario {UsuarioResponsable}", dto.Id, dto.UsuarioResponsable);
-            }
-            else
-            {
-                _logger.LogWarning("No se actualizó ningún registro para el interesado con Id {Id}", dto.Id);
-            }
+        try
+        {
+            await conn.ExecuteAsync(sql, interesado);
+            _logger.LogInformation("Interesado {Id} actualizado correctamente", interesado.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al actualizar interesado {Id}", dto.Id);
+            _logger.LogError(ex, "Error al actualizar interesado {@interesado}", interesado);
             throw new RepositoryException("Error al actualizar interesado", ex);
         }
     }
+
 
 }

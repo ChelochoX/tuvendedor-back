@@ -114,4 +114,32 @@ public class ClientesController : ControllerBase
         });
     }
 
+    [HttpPut("actualizar-interesado/{id}")]
+    [Consumes("multipart/form-data")]
+    [SwaggerOperation(Summary = "Actualizar datos de un interesado existente")]
+    public async Task<IActionResult> Actualizar(int id, [FromForm] InteresadoRequest request)
+    {
+        var idUsuario = _userContext.IdUsuario;
+
+        if (idUsuario is null or 0)
+        {
+            return Unauthorized(new Response<object>
+            {
+                Success = false,
+                Errors = new List<string> { "Usuario no autenticado." },
+                StatusCode = 401
+            });
+        }
+
+        await _service.ActualizarInteresado(id, request, idUsuario.Value);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Interesado actualizado correctamente",
+            StatusCode = 200
+        });
+    }
+
+
 }

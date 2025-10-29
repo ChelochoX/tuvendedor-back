@@ -32,7 +32,7 @@ public class ClientesService : IClientesService
 
         var dto = _mapper.Map<InteresadoDto>(request);
         dto.FechaRegistro = DateTime.Now;
-        dto.Estado = "Pendiente";
+        dto.Estado = "Activo";
         dto.UsuarioResponsable = idUsuario.ToString();
 
         // 📎 Subir archivo de conversación si lo envió
@@ -76,45 +76,64 @@ public class ClientesService : IClientesService
     {
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
-        // Obtener el registro actual
-        var existente = await _repository.ObtenerInteresadoPorId(id);
-        if (existente == null)
-            throw new RepositoryException($"No se encontró el interesado con Id {id}");
+        // 🔹 Obtener datos actuales
+        var actual = await _repository.ObtenerInteresadoPorId(id);
+        if (actual is null)
+            throw new ReglasdeNegocioException($"No se encontró el interesado con Id {id}");
 
-        string? nuevaUrl = existente.ArchivoUrl;
+        var estadoAnterior = actual.Estado ?? "Activo";
 
-        // 📁 Si hay nuevo archivo, reemplazar
-        if (request.ArchivoConversacion != null)
-        {
-            // Eliminar el anterior si existía
-            if (!string.IsNullOrEmpty(existente.ArchivoUrl))
-            {
-                try
-                {
-                    await _imageStorage.EliminarArchivo(existente.ArchivoUrl);
-                    _logger.LogInformation("Archivo anterior eliminado correctamente para Id {Id}", id);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "No se pudo eliminar el archivo anterior de Id {Id}", id);
-                }
-            }
-
-            // Subir el nuevo archivo
-            var uploadResult = await _imageStorage.SubirArchivo(request.ArchivoConversacion, "interesados");
-            nuevaUrl = uploadResult.MainUrl;
-        }
-
-        // Mapear actualización
+        // 🔹 Mapear nuevos datos
         var dto = _mapper.Map<InteresadoDto>(request);
         dto.Id = id;
-        dto.ArchivoUrl = nuevaUrl;
-        dto.UsuarioResponsable = idUsuario.ToString();
 
+        // 🔹 Subir nuevo archivo (y eliminar el anterior si existe)
+        if (request.ArchivoConversacion != null)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(actual.ArchivoUrl))
+                {
+                    await _imageStorage.EliminarArchivo(actual.ArchivoUrl);
+                    _logger.LogInformation("Archivo anterior eliminado: {Url}", actual.ArchivoUrl);
+                }
+
+                var upload = await _imageStorage.SubirArchivo(request.ArchivoConversacion, "interesados");
+                dto.ArchivoUrl = upload.MainUrl;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al reemplazar archivo para interesado {Id}", id);
+                throw new RepositoryException("Error al reemplazar archivo", ex);
+            }
+        }
+        else
+        {
+            // Si no se sube nada, mantener la URL existente
+            dto.ArchivoUrl = actual.ArchivoUrl;
+        }
+
+        // 🔹 Mantener estado si no vino en el request
+        dto.Estado ??= actual.Estado ?? "Activo";
+
+        // 🔹 Actualizar en base de datos
         await _repository.ActualizarInteresado(dto);
+        _logger.LogInformation("Interesado {Id} actualizado por usuario {IdUsuario}", id, idUsuario);
 
-        _logger.LogInformation("Interesado {Id} actualizado por usuario {Usuario}", id, idUsuario);
+        // 🔹 Registrar seguimiento automático si se cierra
+        if (estadoAnterior == "Activo" && dto.Estado == "Inactivo")
+        {
+            var seguimiento = new SeguimientoDto
+            {
+                IdInteresado = id,
+                Fecha = DateTime.Now,
+                Comentario = "Cierre de interesado (estado cambiado a Inactivo).",
+                Usuario = idUsuario.ToString()
+            };
+            await _repository.InsertarSeguimiento(seguimiento);
+        }
     }
+
 
 
 }

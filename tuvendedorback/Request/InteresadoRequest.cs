@@ -13,6 +13,7 @@ public class InteresadoRequest
     public string? Descripcion { get; set; }
     public bool AportaIPS { get; set; }
     public int CantidadAportes { get; set; }
+    public string? Estado { get; set; }
     public IFormFile? ArchivoConversacion { get; set; }
 }
 

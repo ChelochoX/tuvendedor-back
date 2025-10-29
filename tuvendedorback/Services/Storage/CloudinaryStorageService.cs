@@ -150,32 +150,48 @@ public class CloudinaryStorageService : IImageStorageService
             var uri = new Uri(archivoUrl);
             var segmentos = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
+            // 🔹 Obtener carpeta y nombre base
             var carpeta = segmentos.Length > 1 ? segmentos[^2] : string.Empty;
             var nombreArchivo = Path.GetFileNameWithoutExtension(segmentos[^1]);
+
+            // 🔹 Construir publicId (lo que Cloudinary usa para eliminar)
             var publicId = string.IsNullOrEmpty(carpeta)
                 ? nombreArchivo
                 : $"{carpeta}/{nombreArchivo}";
 
+            // 🔹 Detectar tipo de recurso según la extensión
+            var extension = Path.GetExtension(segmentos[^1]).ToLowerInvariant();
+            var resourceType = extension switch
+            {
+                ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif" => ResourceType.Image,
+                ".mp4" or ".mov" or ".avi" or ".mkv" => ResourceType.Video,
+                _ => ResourceType.Raw // Por ejemplo: PDF, ZIP, DOCX, etc.
+            };
+
+            _logger.LogInformation("Intentando eliminar archivo {PublicId} (tipo: {Tipo})", publicId, resourceType);
+
+            // 🔹 Ejecutar eliminación en Cloudinary
             var deletionParams = new DeletionParams(publicId)
             {
-                ResourceType = ResourceType.Auto
+                ResourceType = resourceType
             };
 
             var result = await _cloudinary.DestroyAsync(deletionParams);
 
             if (result.Result == "ok")
             {
-                _logger.LogInformation("Archivo eliminado correctamente de Cloudinary: {PublicId}", publicId);
+                _logger.LogInformation("✅ Archivo eliminado correctamente de Cloudinary: {PublicId}", publicId);
             }
             else
             {
-                _logger.LogWarning("No se pudo eliminar el archivo {PublicId} de Cloudinary. Resultado: {Resultado}",
-                    publicId, result.Result);
+                _logger.LogWarning("⚠️ No se pudo eliminar el archivo {PublicId} de Cloudinary. Resultado: {Resultado} | Error: {Error}",
+                    publicId, result.Result, result.Error?.Message);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al intentar eliminar archivo de Cloudinary con URL {ArchivoUrl}", archivoUrl);
+            _logger.LogError(ex, "❌ Error al intentar eliminar archivo de Cloudinary con URL {ArchivoUrl}", archivoUrl);
         }
     }
+
 }
