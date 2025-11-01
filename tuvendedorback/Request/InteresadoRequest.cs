@@ -42,9 +42,9 @@ public class InteresadoRequestValidator : AbstractValidator<InteresadoRequest>
         RuleFor(x => x.CantidadAportes)
             .GreaterThanOrEqualTo(0).WithMessage("La cantidad de aportes no puede ser negativa.");
 
-        RuleFor(x => x.FechaProximoContacto)
-            .GreaterThan(DateTime.Now.Date).When(x => x.FechaProximoContacto.HasValue)
-            .WithMessage("La fecha de próximo contacto debe ser futura.");
+        //RuleFor(x => x.FechaProximoContacto)
+        //    .GreaterThan(DateTime.Now.Date).When(x => x.FechaProximoContacto.HasValue)
+        //    .WithMessage("La fecha de próximo contacto debe ser futura.");
 
         RuleFor(x => x.Descripcion)
             .MaximumLength(500).WithMessage("La descripción no puede superar los 500 caracteres.");

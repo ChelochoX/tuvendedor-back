@@ -54,8 +54,8 @@ public class ClientesRepository : IClientesRepository
         {
             const string sql = @"
                 INSERT INTO Seguimientos
-                (IdInteresado, Fecha, Descripcion, Usuario)
-                VALUES (@IdInteresado, @Fecha, @Descripcion, @Usuario);
+                (IdInteresado, Fecha, Comentario, Usuario)
+                VALUES (@IdInteresado, @Fecha, @Comentario, @Usuario);
 
                 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
@@ -158,12 +158,13 @@ public class ClientesRepository : IClientesRepository
         {
             const string sql = @"
             SELECT 
-                s.Id,
-                s.IdInteresado,
-                s.Fecha,
-                s.Comentario,
-                s.Usuario
+              s.Id,
+              s.IdInteresado,
+              s.Fecha,
+              s.Comentario,
+              u.NombreUsuario AS Usuario
             FROM Seguimientos s
+            INNER JOIN Usuarios u ON s.Usuario = u.Id
             WHERE s.IdInteresado = @id
             ORDER BY s.Fecha DESC";
 
