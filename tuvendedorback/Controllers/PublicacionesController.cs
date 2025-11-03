@@ -72,4 +72,42 @@ public class PublicacionesController : ControllerBase
             Message = "Publicaciones obtenidas correctamente"
         });
     }
+
+    [HttpDelete("eliminar-publicacion/{id}")]
+    [SwaggerOperation(
+    Summary = "Elimina una publicación",
+    Description = "Elimina una publicación junto con sus imágenes en Cloudinary y sus planes de crédito asociados.")]
+    public async Task<IActionResult> EliminarPublicacion(int id)
+    {
+        await _service.EliminarPublicacion(id);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Publicación eliminada correctamente"
+        });
+    }
+
+    [HttpGet("mis-publicaciones")]
+    [SwaggerOperation(
+    Summary = "Obtiene las publicaciones del usuario autenticado",
+    Description = "Devuelve solo las publicaciones creadas por el usuario logueado.")]
+    public async Task<IActionResult> ObtenerMisPublicaciones()
+    {
+        var idUsuario = _userContext.IdUsuario;
+
+        if (idUsuario == null || idUsuario == 0)
+            throw new UnauthorizedAccessException();
+
+        var publicaciones = await _service.ObtenerMisPublicaciones(idUsuario.Value);
+
+        return Ok(new Response<List<ProductoDto>>
+        {
+            Success = true,
+            Data = publicaciones,
+            Message = "Publicaciones del usuario obtenidas correctamente"
+        });
+    }
+
+
 }
