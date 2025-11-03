@@ -86,7 +86,6 @@ public class CloudinaryStorageService : IImageStorageService
         else if (resourceType == ResourceType.Video)
         {
             using var stream = new MemoryStream();
-
             await archivo.CopyToAsync(stream);
             stream.Position = 0;
 
@@ -96,15 +95,22 @@ public class CloudinaryStorageService : IImageStorageService
                 Folder = carpetaDestino,
                 UseFilename = true,
                 UniqueFilename = false,
+                Format = "mp4", // 🔹 Fuerza la salida a MP4 optimizado
+                Transformation = new Transformation()
+                    .Width(1080).Height(1080)
+                    .Crop("limit")
+                    .Quality("auto")
+                    .FetchFormat("mp4"), // 🔹 Conversión garantizada a MP4
             };
 
             var result = await _cloudinary.UploadAsync(uploadParams);
+
             if (result.StatusCode == HttpStatusCode.OK)
             {
                 return new UploadResultDto
                 {
                     MainUrl = result.SecureUrl?.ToString() ?? string.Empty,
-                    ThumbUrl = string.Empty // no hay miniatura generada aquí
+                    ThumbUrl = result.SecureUrl?.ToString() ?? string.Empty // usamos la misma URL como fallback
                 };
             }
         }
