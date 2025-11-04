@@ -103,7 +103,8 @@ public class AuthController : ControllerBase
                     usuario.FotoPerfil,
                     usuario.Telefono,
                     usuario.Ciudad,
-                    usuario.Direccion
+                    usuario.Direccion,
+                    Roles = roles
                 }
             },
             Message = "Login exitoso",
