@@ -345,5 +345,53 @@ public class UsuariosRepository : IUsuariosRepository
         }
     }
 
+    public async Task<Usuario?> ObtenerUsuarioPorEmail(string email)
+    {
+        _logger.LogInformation("Buscando usuario por email: {Email}", email);
+
+        const string query = @"SELECT TOP 1 * FROM Usuarios WHERE Email = @Email";
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = email });
+
+            if (usuario == null)
+                _logger.LogWarning("No se encontró usuario con email: {Email}", email);
+            else
+                _logger.LogInformation("Usuario encontrado con ID: {IdUsuario}", usuario.Id);
+
+            return usuario;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al buscar usuario por email: {Email}", email);
+            throw new RepositoryException("Error al obtener usuario por email", ex);
+        }
+    }
+
+    public async Task<Usuario?> ObtenerUsuarioPorLogin(string usuarioLogin)
+    {
+        _logger.LogInformation("Buscando usuario por login: {UsuarioLogin}", usuarioLogin);
+
+        const string query = @"SELECT TOP 1 * FROM Usuarios WHERE UsuarioLogin = @UsuarioLogin";
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { UsuarioLogin = usuarioLogin });
+
+            if (usuario == null)
+                _logger.LogWarning("No se encontró usuario con login: {UsuarioLogin}", usuarioLogin);
+            else
+                _logger.LogInformation("Usuario encontrado con ID: {IdUsuario}", usuario.Id);
+
+            return usuario;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al buscar usuario por login: {UsuarioLogin}", usuarioLogin);
+            throw new RepositoryException("Error al obtener usuario por login", ex);
+        }
+    }
+
 }
 

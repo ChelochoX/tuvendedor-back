@@ -131,21 +131,14 @@ public class AuthController : ControllerBase
         });
     }
 
-
     [HttpPost("cambiar-clave")]
     [SwaggerOperation(Summary = "Permite a un usuario cambiar su contraseña")]
     public async Task<IActionResult> CambiarClave([FromBody] CambiarClaveRequest request)
     {
-        var exito = await _usuarioService.CambiarClave(request);
+        _logger.LogInformation("Solicitud de cambio de clave recibida para: {EmailOrUser}",
+            request.Email ?? request.UsuarioLogin);
 
-        if (!exito)
-        {
-            return BadRequest(new Response<object>
-            {
-                Success = false,
-                Errors = new List<string> { "No se pudo cambiar la contraseña. Verifique sus datos." }
-            });
-        }
+        await _usuarioService.CambiarClave(request);
 
         return Ok(new Response<object>
         {
@@ -153,6 +146,7 @@ public class AuthController : ControllerBase
             Data = new { Mensaje = "Contraseña actualizada correctamente." }
         });
     }
+
 
     [HttpGet("verificar-usuario-login")]
     [SwaggerOperation(Summary = "Verifica si un usuarioLogin ya existe en el sistema")]

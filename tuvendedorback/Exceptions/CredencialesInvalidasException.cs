@@ -2,6 +2,6 @@
 
 public class CredencialesInvalidasException : ApiException
 {
-    public CredencialesInvalidasException()
-       : base("Credenciales inválidas.") { }
+    public CredencialesInvalidasException(string message)
+       : base(message) { }
 }

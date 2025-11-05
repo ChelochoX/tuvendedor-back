@@ -13,4 +13,6 @@ public interface IUsuariosRepository
     Task<Usuario?> ObtenerUsuarioPorProveedor(LoginRequest request);
     Task<Usuario?> ObtenerUsuarioActivoPorId(int id);
     Task<bool> ExisteUsuarioLogin(string usuarioLogin);
+    Task<Usuario?> ObtenerUsuarioPorEmail(string email);
+    Task<Usuario?> ObtenerUsuarioPorLogin(string usuarioLogin);
 }

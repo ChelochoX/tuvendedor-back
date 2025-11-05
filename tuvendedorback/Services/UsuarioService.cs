@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using tuvendedorback.Common;
+using tuvendedorback.Exceptions;
 using tuvendedorback.Models;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Request;
@@ -56,45 +57,65 @@ public class UsuarioService : IUsuarioService
     }
     public async Task<bool> CambiarClave(CambiarClaveRequest request)
     {
-        _logger.LogInformation("Iniciando proceso de cambio de clave para: {Email}", request.Email);
-
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
-        _logger.LogDebug("Validación Fluent completada para: {Email}", request.Email);
+        _logger.LogInformation("Iniciando proceso de cambio de clave para usuario: {EmailOrUser}",
+            request.Email ?? request.UsuarioLogin);
 
-        //var usuario = await _usuarioRepository.ObtenerUsuarioPorEmail(request.Email);
-
-        var usuario = new Usuario();
-
-        if (usuario == null)
+        try
         {
-            _logger.LogWarning("No se encontró un usuario con el email: {Email}", request.Email);
-            return false;
-        }
+            // Buscar usuario por email o usuarioLogin
+            Usuario? usuario = null;
 
-        if (usuario.Estado != "Activo")
-        {
-            _logger.LogWarning("El usuario {Email} no está activo. Cambio de clave no permitido.", request.Email);
-            return false;
-        }
+            if (!string.IsNullOrEmpty(request.Email))
+            {
+                _logger.LogDebug("Buscando usuario por email: {Email}", request.Email);
+                usuario = await _usuarioRepository.ObtenerUsuarioPorEmail(request.Email);
+            }
+            else if (!string.IsNullOrEmpty(request.UsuarioLogin))
+            {
+                _logger.LogDebug("Buscando usuario por login: {UsuarioLogin}", request.UsuarioLogin);
+                usuario = await _usuarioRepository.ObtenerUsuarioPorLogin(request.UsuarioLogin);
+            }
 
-        var resultado = _hasher.VerifyHashedPassword(null, usuario.ClaveHash, request.ClaveActual);
-        if (resultado != PasswordVerificationResult.Success)
-        {
-            _logger.LogWarning("Clave actual incorrecta para el usuario: {Email}", request.Email);
-            return false;
-        }
+            if (usuario == null)
+            {
+                _logger.LogWarning("No se encontró el usuario: {EmailOrUser}", request.Email ?? request.UsuarioLogin);
+                throw new NoDataFoundException("No se encontró un usuario con los datos proporcionados.");
+            }
 
-        var nuevaClaveHash = _hasher.HashPassword(null, request.NuevaClave);
+            if (usuario.Estado != "Activo")
+            {
+                _logger.LogWarning("El usuario {Usuario} no está activo. Cambio de clave no permitido.", usuario.Email);
+                throw new ReglasdeNegocioException("El usuario no está activo. No se puede cambiar la clave.");
+            }
 
-        var cambio = await _usuarioRepository.ActualizarClaveUsuario(usuario.Id, nuevaClaveHash);
+            // Hash de la nueva clave
+            var nuevaClaveHash = _hasher.HashPassword(null, request.NuevaClave);
 
-        if (cambio)
+            _logger.LogInformation("Actualizando clave en la base de datos para el usuario ID: {IdUsuario}", usuario.Id);
+            var cambioExitoso = await _usuarioRepository.ActualizarClaveUsuario(usuario.Id, nuevaClaveHash);
+
+            if (!cambioExitoso)
+            {
+                _logger.LogWarning("No se pudo actualizar la clave del usuario ID: {IdUsuario}", usuario.Id);
+                throw new RepositoryException("Error_CambioClave_Fallido", "No se pudo actualizar la clave del usuario.");
+            }
+
             _logger.LogInformation("Clave actualizada exitosamente para el usuario ID: {IdUsuario}", usuario.Id);
-        else
-            _logger.LogWarning("No se pudo actualizar la clave para el usuario ID: {IdUsuario}", usuario.Id);
-
-        return cambio;
+            return true;
+        }
+        catch (RepositoryException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error inesperado durante el cambio de clave para {EmailOrUser}",
+                request.Email ?? request.UsuarioLogin);
+            throw new ServiceException("Ocurrió un error inesperado al cambiar la contraseña.", ex);
+        }
     }
+
 
     public async Task<bool> ExisteUsuarioLogin(string usuarioLogin)
     {
