@@ -93,10 +93,3 @@ project.assets.json
 # Ignorar todos los archivos PDF en cualquier ubicación
 *.pdf
 
-# --- 🔒 Archivos sensibles que NO deben subirse ---
-tuvendedorback/appsettings.Development.json
-tuvendedorback/appsettings.Production.json
-
-# --- ✅ Archivos seguros que SÍ deben subirse (copias) ---
-!tuvendedorback/appsettings - Copia.Development.json
-!tuvendedorback/appsettings - Copia.Production.json
