@@ -92,3 +92,7 @@ project.assets.json
 
 # Ignorar todos los archivos PDF en cualquier ubicación
 *.pdf
+
+# Ignorar appsettings reales con datos sensibles
+tuvendedorback/appsettings.Development.json
+tuvendedorback/appsettings.Production.json
