@@ -1,0 +1,397 @@
+﻿using Dapper;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
+using tuvendedorback.Data;
+using tuvendedorback.Exceptions;
+using tuvendedorback.Models;
+using tuvendedorback.Repositories.Interfaces;
+using tuvendedorback.Request;
+
+namespace tuvendedorback.Repositories;
+
+public class UsuariosRepository : IUsuariosRepository
+{
+    private readonly DbConnections _conexion;
+    private readonly ILogger<UsuariosRepository> _logger;
+    public readonly PasswordHasher<string> _hasher;
+
+    public UsuariosRepository(DbConnections conexion, ILogger<UsuariosRepository> logger)
+    {
+        _conexion = conexion;
+        _logger = logger;
+        _hasher = new PasswordHasher<string>();
+    }
+
+    public async Task<Usuario?> ValidarCredencialesPorEmailYClave(string email, string clave)
+    {
+        try
+        {
+            _logger.LogInformation("Validando credenciales para el email: {Email}", email);
+
+            const string query = @"SELECT Id, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Ciudad 
+                               FROM Usuarios 
+                               WHERE Email = @Email AND Estado = 'Activo'";
+
+            using var connection = _conexion.CreateSqlConnection();
+            var usuarioDb = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = email });
+
+            if (usuarioDb == null)
+            {
+                _logger.LogWarning("No se encontró usuario con email: {Email}", email);
+                return null;
+            }
+
+            var resultado = _hasher.VerifyHashedPassword(null, usuarioDb.ClaveHash, clave);
+            if (resultado == PasswordVerificationResult.Success)
+            {
+                _logger.LogInformation("Autenticación exitosa para el usuario con email: {Email}", email);
+                return usuarioDb;
+            }
+
+            _logger.LogWarning("Contraseña incorrecta para el usuario con email: {Email}", email);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al validar credenciales para el email: {Email}", email);
+            throw new RepositoryException("Error al validar credenciales", ex);
+        }
+    }
+
+    public async Task<Usuario?> ValidarCredencialesPorUsuarioLoginYClave(string usuarioLogin, string clave)
+    {
+        try
+        {
+            _logger.LogInformation("Validando credenciales para el usuarioLogin: {UsuarioLogin}", usuarioLogin);
+
+            const string query = @"SELECT Id, NombreUsuario, UsuarioLogin, Email, ClaveHash, Estado, FechaRegistro, Ciudad 
+                               FROM Usuarios 
+                               WHERE UsuarioLogin = @UsuarioLogin AND Estado = 'Activo'";
+
+            using var connection = _conexion.CreateSqlConnection();
+            var usuarioDb = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { UsuarioLogin = usuarioLogin });
+
+            if (usuarioDb == null)
+            {
+                _logger.LogWarning("No se encontró usuario con usuarioLogin: {UsuarioLogin}", usuarioLogin);
+                return null;
+            }
+
+            var resultado = _hasher.VerifyHashedPassword(null, usuarioDb.ClaveHash, clave);
+            if (resultado == PasswordVerificationResult.Success)
+            {
+                _logger.LogInformation("Autenticación exitosa para el usuarioLogin: {UsuarioLogin}", usuarioLogin);
+                return usuarioDb;
+            }
+
+            _logger.LogWarning("Contraseña incorrecta para el usuarioLogin: {UsuarioLogin}", usuarioLogin);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al validar credenciales para el usuarioLogin: {UsuarioLogin}", usuarioLogin);
+            throw new RepositoryException("Error al validar credenciales", ex);
+        }
+    }
+
+
+    public async Task<List<string>> ObtenerRolesPorUsuario(int idUsuario)
+    {
+        const string query = @"
+        SELECT R.NombreRol
+        FROM UsuarioRoles UR
+        INNER JOIN Roles R ON UR.IdRol = R.Id
+        WHERE UR.IdUsuario = @IdUsuario
+        ";
+
+        _logger.LogInformation("Iniciando consulta de roles para el usuario con ID: {IdUsuario}", idUsuario);
+
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var roles = (await connection.QueryAsync<string>(query, new { IdUsuario = idUsuario })).ToList();
+
+            if (!roles.Any())
+            {
+                _logger.LogWarning("No se encontraron roles asignados al usuario con ID: {IdUsuario}", idUsuario);
+            }
+            else
+            {
+                _logger.LogInformation("Se encontraron {Cantidad} roles para el usuario con ID: {IdUsuario}: {Roles}",
+                    roles.Count, idUsuario, string.Join(", ", roles));
+            }
+
+            return roles;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener los roles del usuario con ID: {IdUsuario}", idUsuario);
+            throw new RepositoryException("No se pudieron obtener los roles del usuario.", ex);
+        }
+    }
+
+    public async Task<int> InsertarUsuarioConRol(RegistroRequest request)
+    {
+        using var connection = _conexion.CreateSqlConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            var esLoginExterno = !string.IsNullOrEmpty(request.Proveedor);
+
+            var claveHash = esLoginExterno
+                ? null
+                : _hasher.HashPassword(null, request.Clave);
+
+            const string insertUsuario = @"
+                INSERT INTO Usuarios 
+                (NombreUsuario, UsuarioLogin, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, Telefono, Ciudad, Direccion, FotoPerfil)
+                VALUES 
+                (@NombreUsuario, @UsuarioLogin, @Email, @ClaveHash, 'Activo', GETDATE(), @Proveedor, @ProveedorId, @Telefono, @Ciudad, @Direccion, @FotoPerfil);
+                SELECT SCOPE_IDENTITY();";
+
+            var idUsuario = await connection.ExecuteScalarAsync<int>(insertUsuario, new
+            {
+                request.NombreUsuario,
+                request.UsuarioLogin,
+                request.Email,
+                ClaveHash = claveHash,
+                request.Proveedor,
+                request.ProveedorId,
+                request.Telefono,
+                request.Ciudad,
+                request.Direccion,
+                request.FotoPerfil
+            }, transaction);
+
+            // Rol comprador (siempre)
+            await connection.ExecuteAsync("INSERT INTO UsuarioRoles (IdUsuario, IdRol) VALUES (@IdUsuario, 3);", new
+            {
+                IdUsuario = idUsuario
+            }, transaction);
+
+            // Rol vendedor (opcional)
+            if (request.EsVendedor)
+            {
+                await connection.ExecuteAsync("INSERT INTO UsuarioRoles (IdUsuario, IdRol) VALUES (@IdUsuario, 2);", new
+                {
+                    IdUsuario = idUsuario
+                }, transaction);
+
+                // Registrar detalles del vendedor si tenés una tabla aparte como `Vendedores`
+                await connection.ExecuteAsync(@"
+                INSERT INTO Vendedores (IdUsuario, NombreNegocio, Ruc, Rubro)
+                VALUES (@IdUsuario, @NombreNegocio, @Ruc, @Rubro);", new
+                {
+                    IdUsuario = idUsuario,
+                    request.NombreNegocio,
+                    request.Ruc,
+                    request.Rubro
+                }, transaction);
+            }
+
+            transaction.Commit();
+            return idUsuario;
+        }
+        catch (SqlException sqlEx)
+        {
+            transaction.Rollback();
+            _logger.LogError(sqlEx, "Error SQL al registrar el usuario");
+
+            if (sqlEx.Number == 2601 || sqlEx.Number == 2627)
+            {
+                if (sqlEx.Message.Contains("UQ__Usuarios__A9D10534")) // Email duplicado
+                {
+                    throw new RepositoryException("Error_Usuario_EmailDuplicado", "Ya existe un usuario con ese correo.", sqlEx);
+                }
+            }
+
+            // No coincide con ningún caso controlado → error genérico
+            throw new RepositoryException("Error_Registro_Usuario_SQL", "Error inesperado al registrar el usuario.", sqlEx);
+        }
+    }
+
+    public async Task<bool> ActualizarClaveUsuario(int idUsuario, string nuevaClaveHash)
+    {
+        _logger.LogInformation("Intentando actualizar la clave para el usuario ID: {IdUsuario}", idUsuario);
+
+        const string query = @"UPDATE Usuarios SET ClaveHash = @ClaveHash WHERE Id = @IdUsuario";
+
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var filas = await connection.ExecuteAsync(query, new { ClaveHash = nuevaClaveHash, IdUsuario = idUsuario });
+
+            if (filas > 0)
+            {
+                _logger.LogInformation("Clave actualizada correctamente para el usuario ID: {IdUsuario}", idUsuario);
+                return true;
+            }
+            else
+            {
+                _logger.LogWarning("No se actualizó ninguna fila al intentar cambiar la clave del usuario ID: {IdUsuario}", idUsuario);
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al intentar actualizar la clave del usuario ID: {IdUsuario}", idUsuario);
+            throw new RepositoryException("Error al actualizar la clave del usuario", ex);
+        }
+    }
+
+    public async Task<Usuario?> ObtenerUsuarioPorProveedor(LoginRequest request)
+    {
+        _logger.LogInformation("Buscando usuario externo: {Email} - Proveedor: {Proveedor} - ID: {ProveedorId}",
+                                request.Email, request.TipoLogin, request.ProveedorId);
+
+        const string query = @"
+        SELECT Id AS Id, NombreUsuario, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, FotoPerfil
+        FROM Usuarios
+        WHERE Email = @Email AND Proveedor = @Proveedor AND ProveedorId = @ProveedorId";
+
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new
+            {
+                Email = request.Email,
+                Proveedor = request.TipoLogin,
+                request.ProveedorId
+            });
+
+            if (usuario == null)
+                _logger.LogWarning("No se encontró usuario externo con email: {Email}", request.Email);
+            else
+                _logger.LogInformation("Usuario encontrado con ID: {IdUsuario}", usuario.Id);
+
+            return usuario;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al buscar usuario por proveedor");
+            throw new RepositoryException("Error al obtener usuario por proveedor", ex);
+        }
+    }
+
+
+    public async Task<Usuario?> ObtenerUsuarioActivoPorId(int id)
+    {
+        _logger.LogInformation("Buscando usuario activo por ID: {Id}", id);
+
+        const string query = @"
+                SELECT 
+                u.Id            AS Id,
+                u.NombreUsuario AS NombreUsuario,
+                u.Email         AS Email,
+                u.Estado        AS Estado,
+                u.FotoPerfil    AS FotoPerfil,
+                u.Telefono      AS Telefono,
+                u.Ciudad        AS Ciudad,
+                u.Direccion     AS Direccion,
+                v.NombreNegocio AS NombreNegocio,
+                v.Ruc           AS Ruc,
+                v.Rubro         AS Rubro
+            FROM Usuarios u
+            LEFT JOIN Vendedores v ON v.IdUsuario = u.Id
+            WHERE u.Id = @Id AND u.Estado = 'Activo'";
+
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { Id = id });
+
+            if (usuario == null)
+                _logger.LogWarning("No se encontró usuario activo con ID: {Id}", id);
+            else
+                _logger.LogInformation("Usuario activo encontrado: {IdUsuario} - {NombreUsuario}", usuario.Id, usuario.NombreUsuario);
+
+            return usuario;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener usuario activo con ID: {Id}", id);
+            throw new RepositoryException("Error al obtener usuario activo por ID", ex);
+        }
+    }
+
+    public async Task<bool> ExisteUsuarioLogin(string usuarioLogin)
+    {
+        _logger.LogInformation("Consultando en la base de datos si existe usuarioLogin: {UsuarioLogin}", usuarioLogin);
+
+        const string query = @"SELECT COUNT(1) 
+                           FROM Usuarios 
+                           WHERE UsuarioLogin = @UsuarioLogin";
+
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var count = await connection.ExecuteScalarAsync<int>(query, new { UsuarioLogin = usuarioLogin });
+
+            var existe = count > 0;
+
+            if (existe)
+                _logger.LogWarning("El usuarioLogin {UsuarioLogin} ya existe en la base de datos", usuarioLogin);
+            else
+                _logger.LogInformation("El usuarioLogin {UsuarioLogin} está disponible", usuarioLogin);
+
+            return existe;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al verificar la existencia del usuarioLogin: {UsuarioLogin}", usuarioLogin);
+            throw new RepositoryException("Error al verificar existencia de usuarioLogin", ex);
+        }
+    }
+
+    public async Task<Usuario?> ObtenerUsuarioPorEmail(string email)
+    {
+        _logger.LogInformation("Buscando usuario por email: {Email}", email);
+
+        const string query = @"SELECT TOP 1 * FROM Usuarios WHERE Email = @Email";
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { Email = email });
+
+            if (usuario == null)
+                _logger.LogWarning("No se encontró usuario con email: {Email}", email);
+            else
+                _logger.LogInformation("Usuario encontrado con ID: {IdUsuario}", usuario.Id);
+
+            return usuario;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al buscar usuario por email: {Email}", email);
+            throw new RepositoryException("Error al obtener usuario por email", ex);
+        }
+    }
+
+    public async Task<Usuario?> ObtenerUsuarioPorLogin(string usuarioLogin)
+    {
+        _logger.LogInformation("Buscando usuario por login: {UsuarioLogin}", usuarioLogin);
+
+        const string query = @"SELECT TOP 1 * FROM Usuarios WHERE UsuarioLogin = @UsuarioLogin";
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+            var usuario = await connection.QueryFirstOrDefaultAsync<Usuario>(query, new { UsuarioLogin = usuarioLogin });
+
+            if (usuario == null)
+                _logger.LogWarning("No se encontró usuario con login: {UsuarioLogin}", usuarioLogin);
+            else
+                _logger.LogInformation("Usuario encontrado con ID: {IdUsuario}", usuario.Id);
+
+            return usuario;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al buscar usuario por login: {UsuarioLogin}", usuarioLogin);
+            throw new RepositoryException("Error al obtener usuario por login", ex);
+        }
+    }
+
+}
+
