@@ -24,7 +24,8 @@ public class CrearPublicacionRequestValidator : AbstractValidator<CrearPublicaci
 {
     public CrearPublicacionRequestValidator()
     {
-        RuleFor(x => x.Titulo).NotEmpty().MaximumLength(10000);
+        RuleFor(x => x.Titulo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Descripcion).NotEmpty().MaximumLength(1000);
         RuleFor(x => x.Precio).GreaterThan(0);
         RuleFor(x => x.Categoria).NotEmpty();
         RuleFor(x => x.Imagenes).NotEmpty().WithMessage("Debe adjuntar al menos una imagen.")
