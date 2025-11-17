@@ -11,4 +11,5 @@ public interface IPublicacionRepository
     Task<int> EliminarPublicacion(int idPublicacion, int idUsuario);
     Task<IEnumerable<ImagenDto>> ObtenerImagenesPorPublicacion(int idPublicacion, int idUsuario);
     Task<List<Publicacion>> ObtenerMisPublicaciones(int idUsuario);
+    Task<List<CategoriaDto>> ObtenerCategoriasActivas();
 }
