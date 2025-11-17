@@ -146,9 +146,9 @@ public class UsuariosRepository : IUsuariosRepository
 
             const string insertUsuario = @"
                 INSERT INTO Usuarios 
-                (NombreUsuario, UsuarioLogin, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, Telefono, Ciudad, Direccion, FotoPerfil)
+                (NombreUsuario, UsuarioLogin, Email, ClaveHash, Estado, FechaRegistro, Proveedor, ProveedorId, Telefono, Ciudad, Direccion, FotoPerfil,Sexo)
                 VALUES 
-                (@NombreUsuario, @UsuarioLogin, @Email, @ClaveHash, 'Activo', GETDATE(), @Proveedor, @ProveedorId, @Telefono, @Ciudad, @Direccion, @FotoPerfil);
+                (@NombreUsuario, @UsuarioLogin, @Email, @ClaveHash, 'Activo', GETDATE(), @Proveedor, @ProveedorId, @Telefono, @Ciudad, @Direccion, @FotoPerfil,@Sexo);
                 SELECT SCOPE_IDENTITY();";
 
             var idUsuario = await connection.ExecuteScalarAsync<int>(insertUsuario, new
@@ -162,7 +162,8 @@ public class UsuariosRepository : IUsuariosRepository
                 request.Telefono,
                 request.Ciudad,
                 request.Direccion,
-                request.FotoPerfil
+                request.FotoPerfil,
+                request.Sexo
             }, transaction);
 
             // Rol comprador (siempre)

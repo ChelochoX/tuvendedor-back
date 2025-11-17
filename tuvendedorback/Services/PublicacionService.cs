@@ -83,5 +83,8 @@ public class PublicacionService : IPublicacionService
         return _mapper.Map<List<ProductoDto>>(publicaciones);
     }
 
-
+    public async Task<List<CategoriaDto>> ObtenerCategoriasActivas()
+    {
+        return await _repository.ObtenerCategoriasActivas();
+    }
 }

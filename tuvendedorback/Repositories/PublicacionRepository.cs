@@ -272,6 +272,28 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
+    public async Task<List<CategoriaDto>> ObtenerCategoriasActivas()
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            var sql = @"
+                SELECT Id, Nombre, Descripcion
+                FROM Categorias
+                WHERE Estado = 'Activo'
+                ORDER BY Nombre ASC";
+
+            var categorias = await conn.QueryAsync<CategoriaDto>(sql);
+
+            return categorias.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener categorías");
+            throw new RepositoryException("Error_Obtener_Categorias", "Error al obtener la lista de categorías.", ex);
+        }
+    }
 
 
 

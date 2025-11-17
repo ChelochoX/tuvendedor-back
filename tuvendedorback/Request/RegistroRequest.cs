@@ -15,7 +15,7 @@ public class RegistroRequest
     public string? Telefono { get; set; }
     public string? Ciudad { get; set; }
     public string? Direccion { get; set; }
-
+    public string Sexo { get; set; }
     public bool EsVendedor { get; set; }
     public string? NombreNegocio { get; set; }
     public string? Ruc { get; set; }

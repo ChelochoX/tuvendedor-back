@@ -110,4 +110,20 @@ public class PublicacionesController : ControllerBase
     }
 
 
+    [HttpGet("listar-categorias")]
+    [SwaggerOperation(
+       Summary = "Obtiene todas las categorías activas",
+       Description = "Devuelve categorías de la base de datos con estado = Activo.")]
+    public async Task<IActionResult> ObtenerCategorias()
+    {
+        var categorias = await _service.ObtenerCategoriasActivas();
+
+        return Ok(new Response<List<CategoriaDto>>
+        {
+            Success = true,
+            Data = categorias,
+            Message = "Categorías obtenidas correctamente"
+        });
+    }
+
 }

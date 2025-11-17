@@ -9,4 +9,5 @@ public interface IPublicacionService
     Task<List<ProductoDto>> ObtenerPublicaciones(string? categoria, string? nombre);
     Task EliminarPublicacion(int idPublicacion);
     Task<List<ProductoDto>> ObtenerMisPublicaciones(int idUsuario);
+    Task<List<CategoriaDto>> ObtenerCategoriasActivas();
 }
