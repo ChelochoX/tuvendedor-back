@@ -13,4 +13,8 @@ public class Publicacion
     public List<ImagenPublicacion> Imagenes { get; set; } = new();
     public string VendedorNombre { get; set; }
     public string VendedorAvatar { get; set; }
+    public string VendedorTelefono { get; set; }
+    public bool EsDestacada { get; set; }
+    public DateTime? FechaFinDestacado { get; set; }
+
 }

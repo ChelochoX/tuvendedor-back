@@ -31,6 +31,8 @@ public class PublicacionesAutomapping : Profile
                         }).ToList()
                     }
                     : null
-            ));
+            ))
+            .ForMember(dest => dest.EsDestacada, opt => opt.MapFrom(src => src.EsDestacada))
+            .ForMember(dest => dest.FechaFinDestacado, opt => opt.MapFrom(src => src.FechaFinDestacado));
     }
 }

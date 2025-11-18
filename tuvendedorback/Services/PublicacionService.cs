@@ -87,4 +87,28 @@ public class PublicacionService : IPublicacionService
     {
         return await _repository.ObtenerCategoriasActivas();
     }
+
+    public async Task DestacarPublicacion(DestacarPublicacionRequest request, int idUsuario)
+    {
+        // ✅ Validar el request con FluentValidation
+        await ValidationHelper.ValidarAsync(request, _serviceProvider);
+
+        // ✅ Validar que la publicación pertenece al usuario
+        var esDeUsuario = await _repository.EsPublicacionDeUsuario(request.IdPublicacion, idUsuario);
+
+        if (!esDeUsuario)
+            throw new ReglasdeNegocioException("No puedes destacar una publicación que no te pertenece.");
+
+        // 🟡 Validar si YA ESTÁ destacada actualmente
+        var yaEstaDestacada = await _repository.EstaPublicacionDestacada(request.IdPublicacion);
+
+        if (yaEstaDestacada)
+            throw new ReglasdeNegocioException("Esta publicación ya está destacada actualmente.");
+
+        var fechaInicio = DateTime.Now;
+        var fechaFin = fechaInicio.AddDays(request.DuracionDias);
+
+        // ✅ Registrar o actualizar el destacado
+        await _repository.CrearOActualizarDestacado(request.IdPublicacion, fechaInicio, fechaFin);
+    }
 }

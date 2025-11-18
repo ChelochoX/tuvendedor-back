@@ -126,4 +126,25 @@ public class PublicacionesController : ControllerBase
         });
     }
 
+    [HttpPost("destacar-publicacion")]
+    [SwaggerOperation(
+      Summary = "Destaca una publicación existente",
+      Description = "Permite al usuario vendedor destacar una publicación ya creada por un período determinado (en días)." +
+        " Solo el dueño de la publicación puede destacarla.")]
+    public async Task<IActionResult> DestacarPublicacion([FromBody] DestacarPublicacionRequest request)
+    {
+        var idUsuario = _userContext.IdUsuario;
+
+        if (idUsuario == null || idUsuario == 0)
+            throw new UnauthorizedAccessException();
+
+        await _service.DestacarPublicacion(request, idUsuario.Value);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "La publicación fue destacada correctamente."
+        });
+    }
+
 }

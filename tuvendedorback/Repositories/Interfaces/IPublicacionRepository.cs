@@ -12,4 +12,7 @@ public interface IPublicacionRepository
     Task<IEnumerable<ImagenDto>> ObtenerImagenesPorPublicacion(int idPublicacion, int idUsuario);
     Task<List<Publicacion>> ObtenerMisPublicaciones(int idUsuario);
     Task<List<CategoriaDto>> ObtenerCategoriasActivas();
+    Task<bool> EsPublicacionDeUsuario(int idPublicacion, int idUsuario);
+    Task CrearOActualizarDestacado(int idPublicacion, DateTime fechaInicio, DateTime fechaFin);
+    Task<bool> EstaPublicacionDestacada(int idPublicacion);
 }

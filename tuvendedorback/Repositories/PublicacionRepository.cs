@@ -92,12 +92,23 @@ public class PublicacionRepository : IPublicacionRepository
             p.Ubicacion        AS Ubicacion,
             p.MostrarBotonesCompra AS MostrarBotonesCompra,
             v.NombreNegocio    AS VendedorNombre,
-            NULL               AS VendedorAvatar
+            NULL               AS VendedorAvatar,
+            u.Telefono         AS VendedorTelefono, 
+            CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+            d.FechaFin AS FechaFinDestacado
+
         FROM Publicaciones p
         LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
+        LEFT JOIN Usuarios u ON u.Id = p.IdUsuario
+        LEFT JOIN PublicacionesDestacadas d
+        ON d.IdPublicacion = p.Id
+        AND d.Estado = 'Activo'
+        AND d.FechaFin >= GETDATE()
         WHERE (@Categoria IS NULL OR p.Categoria = @Categoria)
           AND (@Nombre IS NULL OR p.Titulo LIKE '%' + @Nombre + '%')
-        ORDER BY p.Fecha DESC";
+        ORDER BY 
+            CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+            p.Fecha DESC";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(
                 sql,
@@ -237,11 +248,20 @@ public class PublicacionRepository : IPublicacionRepository
             p.Ubicacion        AS Ubicacion,
             p.MostrarBotonesCompra AS MostrarBotonesCompra,
             v.NombreNegocio    AS VendedorNombre,
-            NULL               AS VendedorAvatar
+            NULL               AS VendedorAvatar,
+            CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+            d.FechaFin AS FechaFinDestacado
+
         FROM Publicaciones p
         LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
+        LEFT JOIN PublicacionesDestacadas d
+            ON d.IdPublicacion = p.Id
+           AND d.Estado = 'Activo'
+           AND d.FechaFin >= GETDATE()
         WHERE p.IdUsuario = @IdUsuario
-        ORDER BY p.Fecha DESC";
+        ORDER BY 
+            CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+            p.Fecha DESC";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(sql, new { IdUsuario = idUsuario })).ToList();
 
@@ -295,6 +315,89 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
+    public async Task<bool> EsPublicacionDeUsuario(int idPublicacion, int idUsuario)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            SELECT COUNT(1)
+            FROM Publicaciones
+            WHERE Id = @idPublicacion AND IdUsuario = @idUsuario";
+
+            var count = await conn.ExecuteScalarAsync<int>(sql, new { idPublicacion, idUsuario });
+
+            return count > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al validar publicación {IdPublicacion} del usuario {IdUsuario}", idPublicacion, idUsuario);
+            throw new RepositoryException("Error al validar la publicación del usuario.", ex);
+        }
+    }
+
+    public async Task CrearOActualizarDestacado(int idPublicacion, DateTime fechaInicio, DateTime fechaFin)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string updateSql = @"
+            UPDATE PublicacionesDestacadas
+            SET FechaInicio = @FechaInicio,
+                FechaFin = @FechaFin,
+                Estado = 'Activo'
+            WHERE IdPublicacion = @IdPublicacion
+              AND Estado = 'Activo'
+              AND FechaFin >= GETDATE();";
+
+            var filas = await conn.ExecuteAsync(updateSql, new
+            {
+                IdPublicacion = idPublicacion,
+                FechaInicio = fechaInicio,
+                FechaFin = fechaFin
+            });
+
+            if (filas == 0)
+            {
+                const string insertSql = @"
+                INSERT INTO PublicacionesDestacadas (IdPublicacion, FechaInicio, FechaFin, Estado)
+                VALUES (@IdPublicacion, @FechaInicio, @FechaFin, 'Activo');";
+
+                await conn.ExecuteAsync(insertSql, new
+                {
+                    IdPublicacion = idPublicacion,
+                    FechaInicio = fechaInicio,
+                    FechaFin = fechaFin
+                });
+            }
+
+            _logger.LogInformation("✅ Publicación {IdPublicacion} destacada desde {Inicio} hasta {Fin}",
+                idPublicacion, fechaInicio, fechaFin);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al crear/actualizar destacado para la publicación {IdPublicacion}", idPublicacion);
+            throw new RepositoryException("Error al destacar la publicación.", ex);
+        }
+    }
+
+    public async Task<bool> EstaPublicacionDestacada(int idPublicacion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        const string sql = @"
+        SELECT COUNT(1)
+        FROM PublicacionesDestacadas
+        WHERE IdPublicacion = @IdPublicacion
+          AND Estado = 'Activo'
+          AND FechaFin >= GETDATE();";
+
+        var count = await conn.ExecuteScalarAsync<int>(sql, new { IdPublicacion = idPublicacion });
+
+        return count > 0;
+    }
 
 
 }
