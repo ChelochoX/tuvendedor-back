@@ -147,4 +147,68 @@ public class PublicacionesController : ControllerBase
         });
     }
 
+
+    [HttpPost("activar-temporada")]
+    [SwaggerOperation(
+    Summary = "Activa una publicación como temporada",
+    Description = "Permite a vendedores Premium o administradores activar una publicación como oferta de temporada. "
+                + "Solo el dueño de la publicación o un administrador puede activarla.")]
+    public async Task<IActionResult> ActivarTemporada([FromBody] ActivarTemporadaRequest request)
+    {
+        var idUsuario = _userContext.IdUsuario;
+
+        if (idUsuario == null || idUsuario == 0)
+            throw new UnauthorizedAccessException();
+
+        await _service.ActivarTemporada(request, idUsuario.Value);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Publicación activada como temporada correctamente.",
+            Data = new { request.IdPublicacion }
+        });
+    }
+
+
+    [HttpPost("desactivar-temporada")]
+    [SwaggerOperation(
+    Summary = "Desactiva una publicación de temporada",
+    Description = "Permite a administradores o vendedores premium desactivar una publicación marcada como temporada.")]
+    public async Task<IActionResult> DesactivarTemporada([FromBody] DesactivarTemporadaRequest request)
+    {
+        var idUsuario = _userContext.IdUsuario;
+
+        if (idUsuario == null || idUsuario == 0)
+            throw new UnauthorizedAccessException();
+
+        await _service.DesactivarTemporada(request.IdPublicacion, idUsuario.Value);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "La publicación fue desactivada de temporada correctamente.",
+            Data = new { request.IdPublicacion }
+        });
+    }
+
+
+    [HttpGet("listar-temporadas")]
+    [SwaggerOperation(
+    Summary = "Obtiene el listado de temporadas activas",
+    Description = "Devuelve todas las temporadas configuradas por el administrador que están en estado 'Activo'. "
+                + "Incluye nombre, colores del badge y rango de fechas definido para la temporada."
+)]
+    public async Task<IActionResult> ListarTemporadas()
+    {
+        var data = await _service.ObtenerTemporadasActivas();
+
+        return Ok(new Response<List<TemporadaDto>>
+        {
+            Success = true,
+            Data = data,
+            Message = "Temporadas activas obtenidas correctamente."
+        });
+    }
+
 }

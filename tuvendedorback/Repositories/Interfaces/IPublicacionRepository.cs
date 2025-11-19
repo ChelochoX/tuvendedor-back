@@ -1,5 +1,4 @@
 ﻿using tuvendedorback.DTOs;
-using tuvendedorback.Models;
 using tuvendedorback.Request;
 
 namespace tuvendedorback.Repositories.Interfaces;
@@ -15,4 +14,9 @@ public interface IPublicacionRepository
     Task<bool> EsPublicacionDeUsuario(int idPublicacion, int idUsuario);
     Task CrearOActualizarDestacado(int idPublicacion, DateTime fechaInicio, DateTime fechaFin);
     Task<bool> EstaPublicacionDestacada(int idPublicacion);
+    Task ActivarTemporada(ActivarTemporadaRequest request);
+    Task DesactivarTemporada(int idPublicacion);
+    Task<bool> UsuarioTienePermiso(int idUsuario, string nombrePermiso);
+    Task<bool> EstaPublicacionEnTemporada(int idPublicacion);
+    Task<List<TemporadaDto>> ObtenerTemporadasActivas();
 }
