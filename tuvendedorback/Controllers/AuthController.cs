@@ -85,7 +85,9 @@ public class AuthController : ControllerBase
 
         // Si llegamos acá, el usuario ya está registrado y activo (proveedor o clásico)
         var roles = await _usuarioService.ObtenerRolesPorUsuario(usuario.Id);
-        var token = _jwtService.GenerarToken(usuario.Id, usuario.NombreUsuario, roles);
+        var permisos = await _usuarioService.ObtenerPermisosPorUsuario(usuario.Id);
+
+        var token = _jwtService.GenerarToken(usuario.Id, usuario.NombreUsuario, roles, permisos);
 
         return Ok(new Response<object>
         {
@@ -104,7 +106,8 @@ public class AuthController : ControllerBase
                     usuario.Telefono,
                     usuario.Ciudad,
                     usuario.Direccion,
-                    Roles = roles
+                    Roles = roles,
+                    Permisos = permisos
                 }
             },
             Message = "Login exitoso",
@@ -156,7 +159,7 @@ public class AuthController : ControllerBase
             throw new ReglasdeNegocioException("El nombre de usuario no puede estar vacío.");
 
         var existe = await _usuarioService.ExisteUsuarioLogin(usuarioLogin);
-        var disponible = !existe; // 👈 invertir la lógica
+        var disponible = !existe;
 
         return Ok(new Response<object>
         {

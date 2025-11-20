@@ -49,6 +49,12 @@ public class UsuarioService : IUsuarioService
     {
         return await _usuarioRepository.ObtenerRolesPorUsuario(idUsuario);
     }
+
+    public async Task<List<string>> ObtenerPermisosPorUsuario(int idUsuario)
+    {
+        return await _usuarioRepository.ObtenerPermisosPorUsuario(idUsuario);
+    }
+
     public async Task<int> RegistrarUsuario(RegistroRequest request)
     {
         await ValidationHelper.ValidarAsync(request, _serviceProvider);

@@ -94,7 +94,6 @@ public class UsuariosRepository : IUsuariosRepository
         }
     }
 
-
     public async Task<List<string>> ObtenerRolesPorUsuario(int idUsuario)
     {
         const string query = @"
@@ -127,6 +126,44 @@ public class UsuariosRepository : IUsuariosRepository
         {
             _logger.LogError(ex, "Error al obtener los roles del usuario con ID: {IdUsuario}", idUsuario);
             throw new RepositoryException("No se pudieron obtener los roles del usuario.", ex);
+        }
+    }
+
+    public async Task<List<string>> ObtenerPermisosPorUsuario(int idUsuario)
+    {
+        const string query = @"
+        SELECT P.Nombre
+        FROM UsuarioPermisos UP
+        INNER JOIN Permisos P ON P.Id = UP.IdPermiso
+        WHERE UP.IdUsuario = @IdUsuario
+        ORDER BY P.Nombre;";
+
+        _logger.LogInformation("Iniciando consulta de permisos para el usuario con ID: {IdUsuario}", idUsuario);
+
+        try
+        {
+            using var connection = _conexion.CreateSqlConnection();
+
+            var permisos = (await connection.QueryAsync<string>(query, new { IdUsuario = idUsuario }))
+                            .ToList();
+
+            if (!permisos.Any())
+            {
+                _logger.LogWarning("No se encontraron permisos asignados al usuario con ID: {IdUsuario}", idUsuario);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Se encontraron {Cantidad} permisos para el usuario con ID: {IdUsuario}: {Permisos}",
+                    permisos.Count, idUsuario, string.Join(", ", permisos));
+            }
+
+            return permisos;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener los permisos del usuario con ID: {IdUsuario}", idUsuario);
+            throw new RepositoryException("No se pudieron obtener los permisos del usuario.", ex);
         }
     }
 
@@ -275,7 +312,6 @@ public class UsuariosRepository : IUsuariosRepository
             throw new RepositoryException("Error al obtener usuario por proveedor", ex);
         }
     }
-
 
     public async Task<Usuario?> ObtenerUsuarioActivoPorId(int id)
     {
