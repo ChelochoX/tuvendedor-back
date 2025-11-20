@@ -1,4 +1,5 @@
 ﻿using Dapper;
+using Microsoft.Data.SqlClient;
 using tuvendedorback.Data;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
@@ -85,7 +86,7 @@ public class PublicacionRepository : IPublicacionRepository
             var sql = @"
             SELECT 
                 p.Id,
-                p.Titulo              AS Nombre,
+                p.Titulo              AS Titulo,
                 p.Descripcion         AS Descripcion,
                 p.Precio              AS Precio,
                 p.Categoria           AS Categoria,
@@ -252,46 +253,70 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             var sql = @"
-        SELECT 
-            p.Id               AS Id,
-            p.Titulo           AS Titulo,
-            p.Descripcion      AS Descripcion,
-            p.Precio           AS Precio,
-            p.Categoria        AS Categoria,
-            p.Ubicacion        AS Ubicacion,
-            p.MostrarBotonesCompra AS MostrarBotonesCompra,
-            v.NombreNegocio    AS VendedorNombre,
-            NULL               AS VendedorAvatar,
-            CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
-            d.FechaFin AS FechaFinDestacado
+            SELECT 
+                p.Id                    AS Id,
+                p.Titulo                AS Titulo,
+                p.Descripcion           AS Descripcion,
+                p.Precio                AS Precio,
+                p.Categoria             AS Categoria,
+                p.Ubicacion             AS Ubicacion,
+                p.MostrarBotonesCompra  AS MostrarBotonesCompra,
 
-        FROM Publicaciones p
-        LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
-        LEFT JOIN PublicacionesDestacadas d
-            ON d.IdPublicacion = p.Id
-           AND d.Estado = 'Activo'
-           AND d.FechaFin >= GETDATE()
-        WHERE p.IdUsuario = @IdUsuario
-        ORDER BY 
-            CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-            p.Fecha DESC";
+                v.NombreNegocio         AS VendedorNombre,
+                NULL                    AS VendedorAvatar,
+                NULL                    AS VendedorTelefono,
+
+                -- ⭐ Destacado
+                CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+                d.FechaFin              AS FechaFinDestacado,
+
+                -- 🎉 Temporada (activa)
+                CASE WHEN pt.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
+                pt.FechaFin             AS FechaFinTemporada,
+                pt.BadgeTexto           AS BadgeTexto,
+                pt.BadgeColor           AS BadgeColor
+
+            FROM Publicaciones p
+            LEFT JOIN Vendedores v 
+                    ON v.IdUsuario = p.IdUsuario
+
+            -- Destacado activo
+            LEFT JOIN PublicacionesDestacadas d
+                    ON d.IdPublicacion = p.Id
+                    AND d.Estado = 'Activo'
+                    AND d.FechaFin >= GETDATE()
+
+            -- Temporada ACTIVA (una por publicación)
+            LEFT JOIN (
+                SELECT x.*
+                FROM PublicacionesTemporada x
+                WHERE x.Estado = 'Activo'
+                    AND x.FechaFin >= GETDATE()
+            ) pt
+                    ON pt.IdPublicacion = p.Id
+
+            WHERE p.IdUsuario = @IdUsuario
+
+            ORDER BY 
+                CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+                p.Fecha DESC;";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(sql, new { IdUsuario = idUsuario })).ToList();
 
+            // 📸 Imágenes (si seguís devolviendo solo URLs)
             foreach (var pub in publicaciones)
             {
-                // 📸 Imágenes - Devuelve SOLO las URLs (igual que obtener-publicaciones)
                 var imagenes = await conn.QueryAsync<string>(@"
                 SELECT Url
                 FROM ImagenesPublicacion
                 WHERE IdPublicacion = @Id",
-                new { Id = pub.Id });
+                    new { Id = pub.Id });
 
-                // 💳 Planes de crédito
                 var planes = await conn.QueryAsync<PlanCredito>(@"
                 SELECT Id, IdPublicacion, Cuotas, ValorCuota
                 FROM PlanesCredito
-                WHERE IdPublicacion = @Id", new { Id = pub.Id });
+                WHERE IdPublicacion = @Id",
+                    new { Id = pub.Id });
 
                 pub.Imagenes = imagenes.ToList();
                 pub.PlanCredito = planes.ToList();
@@ -305,6 +330,7 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al obtener tus publicaciones", ex);
         }
     }
+
 
     public async Task<List<CategoriaDto>> ObtenerCategoriasActivas()
     {
@@ -416,41 +442,64 @@ public class PublicacionRepository : IPublicacionRepository
     public async Task ActivarTemporada(ActivarTemporadaRequest request)
     {
         using var conn = _conexion.CreateSqlConnection();
+        using var tran = conn.BeginTransaction();
 
         try
         {
-            // 1️⃣ Obtener datos de la temporada
+            // 1) Temporada válida y activa
             var temporada = await conn.QueryFirstOrDefaultAsync<TemporadaDto>(@"
             SELECT Id, Nombre, BadgeTexto, BadgeColor, FechaInicio, FechaFin
             FROM Temporadas
             WHERE Id = @IdTemporada AND Estado = 'Activo'",
-                new { request.IdTemporada });
+                new { request.IdTemporada }, tran);
 
             if (temporada == null)
                 throw new RepositoryException("La temporada no existe o no está activa.");
 
-            // 2️⃣ Insertar publicación con datos de temporada
-            var sql = @"
+            // 2) ¿Ya hay una temporada ACTIVA para esta publicación?
+            // Regla simple: No permitimos activar otra mientras exista una activa (sin importar fechas)
+            var existeActiva = await conn.ExecuteScalarAsync<int>(@"
+            SELECT 1
+            FROM PublicacionesTemporada
+            WHERE IdPublicacion = @IdPublicacion AND Estado = 'Activo'",
+                new { request.IdPublicacion }, tran) == 1;
+
+            if (existeActiva)
+                throw new RepositoryException("La publicación ya tiene una temporada activa. Esperá a que termine para activar otra.");
+
+            // 3) Insertar nueva temporada activa
+            const string insertSql = @"
             INSERT INTO PublicacionesTemporada
             (IdPublicacion, IdTemporada, FechaInicio, FechaFin, BadgeTexto, BadgeColor, Estado)
             VALUES (@IdPublicacion, @IdTemporada, @FechaInicio, @FechaFin, @BadgeTexto, @BadgeColor, 'Activo');";
 
-            await conn.ExecuteAsync(sql, new
+            await conn.ExecuteAsync(insertSql, new
             {
                 request.IdPublicacion,
                 request.IdTemporada,
-                temporada.FechaInicio,
-                temporada.FechaFin,
+                FechaInicio = temporada.FechaInicio,
+                FechaFin = temporada.FechaFin,
                 temporada.BadgeTexto,
                 temporada.BadgeColor
-            });
+            }, tran);
+
+            tran.Commit();
+            _logger.LogInformation("Publicación {IdPublicacion} activada en temporada {IdTemporada}.", request.IdPublicacion, request.IdTemporada);
+        }
+        catch (SqlException sqlEx) when (sqlEx.Message.Contains("UX_PublicacionesTemporada_Activa"))
+        {
+            tran.Rollback();
+            _logger.LogWarning(sqlEx, "Violación de índice único. Ya existe temporada activa para publicación {IdPublicacion}.", request.IdPublicacion);
+            throw new RepositoryException("La publicación ya tiene una temporada activa. Esperá a que termine para activar otra.", sqlEx);
         }
         catch (Exception ex)
         {
+            tran.Rollback();
             _logger.LogError(ex, "Error al activar temporada para la publicación {IdPublicacion}", request.IdPublicacion);
             throw new RepositoryException("Error al activar temporada", ex);
         }
     }
+
 
     public async Task DesactivarTemporada(int idPublicacion)
     {

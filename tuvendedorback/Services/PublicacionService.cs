@@ -119,13 +119,11 @@ public class PublicacionService : IPublicacionService
 
         //Validación de permiso premium
         var tienePermiso = await _repository.UsuarioTienePermiso(idUsuario, "CrearPublicacionTemporada");
-
         if (!tienePermiso)
             throw new ReglasdeNegocioException("No tienes permiso para crear publicaciones de temporada.");
 
         //Verificar que la publicación sea del usuario
         var esDeUsuario = await _repository.EsPublicacionDeUsuario(request.IdPublicacion, idUsuario);
-
         if (!esDeUsuario)
             throw new ReglasdeNegocioException("No puedes activar temporada en una publicación que no te pertenece.");
 
