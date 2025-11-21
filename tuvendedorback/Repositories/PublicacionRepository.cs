@@ -1,4 +1,5 @@
 ﻿using Dapper;
+using Microsoft.Data.SqlClient;
 using tuvendedorback.Data;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
@@ -83,21 +84,48 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             var sql = @"
-        SELECT 
-            p.Id               AS Id,
-            p.Titulo           AS Titulo,
-            p.Descripcion      AS Descripcion,
-            p.Precio           AS Precio,
-            p.Categoria        AS Categoria,
-            p.Ubicacion        AS Ubicacion,
-            p.MostrarBotonesCompra AS MostrarBotonesCompra,
-            v.NombreNegocio    AS VendedorNombre,
-            NULL               AS VendedorAvatar
-        FROM Publicaciones p
-        LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
-        WHERE (@Categoria IS NULL OR p.Categoria = @Categoria)
-          AND (@Nombre IS NULL OR p.Titulo LIKE '%' + @Nombre + '%')
-        ORDER BY p.Fecha DESC";
+            SELECT 
+                p.Id,
+                p.Titulo              AS Titulo,
+                p.Descripcion         AS Descripcion,
+                p.Precio              AS Precio,
+                p.Categoria           AS Categoria,
+                p.Ubicacion           AS Ubicacion,
+                p.MostrarBotonesCompra,
+                v.NombreNegocio       AS VendedorNombre,
+                u.Telefono            AS VendedorTelefono,
+
+                -- ⭐ DESTACADO
+                CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+                d.FechaFin AS FechaFinDestacado,
+
+                -- ⭐ TEMPORADA
+                CASE WHEN t.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
+                t.FechaFin   AS FechaFinTemporada,
+                t.BadgeTexto AS BadgeTexto,
+                t.BadgeColor AS BadgeColor
+
+            FROM Publicaciones p
+            LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
+            LEFT JOIN Usuarios u   ON u.Id = p.IdUsuario
+
+            LEFT JOIN PublicacionesDestacadas d
+                ON d.IdPublicacion = p.Id
+               AND d.Estado = 'Activo'
+               AND d.FechaFin >= GETDATE()
+
+            LEFT JOIN PublicacionesTemporada t
+                ON t.IdPublicacion = p.Id
+               AND t.Estado = 'Activo'
+               AND t.FechaFin >= GETDATE()
+
+            WHERE (@Categoria IS NULL OR p.Categoria = @Categoria)
+              AND (@Nombre IS NULL OR p.Titulo LIKE '%' + @Nombre + '%')
+
+            ORDER BY 
+                CASE WHEN t.Id IS NOT NULL THEN 0 ELSE 1 END,   -- Temporada primero
+                CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,   -- Luego destacados
+                p.Fecha DESC";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(
                 sql,
@@ -107,24 +135,21 @@ public class PublicacionRepository : IPublicacionRepository
             foreach (var pub in publicaciones)
             {
                 // 📸 Imágenes
-                var imagenes = await conn.QueryAsync<ImagenPublicacion>(@"
-                SELECT 
-                    i.Id           AS Id,
-                    i.Url          AS Url,
-                    i.IdPublicacion AS PublicacionId
-                FROM ImagenesPublicacion i
-                WHERE i.IdPublicacion = @Id",
+                var imagenes = await conn.QueryAsync<string>(@"
+                    SELECT Url
+                    FROM ImagenesPublicacion
+                    WHERE IdPublicacion = @Id",
                     new { Id = pub.Id });
 
                 // 💳 Planes de crédito
                 var planes = await conn.QueryAsync<PlanCredito>(@"
-                SELECT 
-                    pc.Id            AS Id,
-                    pc.IdPublicacion AS PublicacionId,
-                    pc.Cuotas        AS Cuotas,
-                    pc.ValorCuota    AS ValorCuota
-                FROM PlanesCredito pc
-                WHERE pc.IdPublicacion = @Id",
+                    SELECT 
+                        pc.Id,
+                        pc.IdPublicacion,
+                        pc.Cuotas,
+                        pc.ValorCuota
+                    FROM PlanesCredito pc
+                    WHERE pc.IdPublicacion = @Id",
                     new { Id = pub.Id });
 
                 pub.Imagenes = imagenes.ToList();
@@ -228,36 +253,70 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             var sql = @"
-        SELECT 
-            p.Id               AS Id,
-            p.Titulo           AS Titulo,
-            p.Descripcion      AS Descripcion,
-            p.Precio           AS Precio,
-            p.Categoria        AS Categoria,
-            p.Ubicacion        AS Ubicacion,
-            p.MostrarBotonesCompra AS MostrarBotonesCompra,
-            v.NombreNegocio    AS VendedorNombre,
-            NULL               AS VendedorAvatar
-        FROM Publicaciones p
-        LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
-        WHERE p.IdUsuario = @IdUsuario
-        ORDER BY p.Fecha DESC";
+            SELECT 
+                p.Id                    AS Id,
+                p.Titulo                AS Titulo,
+                p.Descripcion           AS Descripcion,
+                p.Precio                AS Precio,
+                p.Categoria             AS Categoria,
+                p.Ubicacion             AS Ubicacion,
+                p.MostrarBotonesCompra  AS MostrarBotonesCompra,
+
+                v.NombreNegocio         AS VendedorNombre,
+                NULL                    AS VendedorAvatar,
+                NULL                    AS VendedorTelefono,
+
+                -- ⭐ Destacado
+                CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+                d.FechaFin              AS FechaFinDestacado,
+
+                -- 🎉 Temporada (activa)
+                CASE WHEN pt.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
+                pt.FechaFin             AS FechaFinTemporada,
+                pt.BadgeTexto           AS BadgeTexto,
+                pt.BadgeColor           AS BadgeColor
+
+            FROM Publicaciones p
+            LEFT JOIN Vendedores v 
+                    ON v.IdUsuario = p.IdUsuario
+
+            -- Destacado activo
+            LEFT JOIN PublicacionesDestacadas d
+                    ON d.IdPublicacion = p.Id
+                    AND d.Estado = 'Activo'
+                    AND d.FechaFin >= GETDATE()
+
+            -- Temporada ACTIVA (una por publicación)
+            LEFT JOIN (
+                SELECT x.*
+                FROM PublicacionesTemporada x
+                WHERE x.Estado = 'Activo'
+                    AND x.FechaFin >= GETDATE()
+            ) pt
+                    ON pt.IdPublicacion = p.Id
+
+            WHERE p.IdUsuario = @IdUsuario
+
+            ORDER BY 
+                CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+                p.Fecha DESC;";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(sql, new { IdUsuario = idUsuario })).ToList();
 
+            // 📸 Imágenes (si seguís devolviendo solo URLs)
             foreach (var pub in publicaciones)
             {
-                // 📸 Imágenes
-                var imagenes = await conn.QueryAsync<ImagenPublicacion>(@"
-                SELECT Id, Url, IdPublicacion AS PublicacionId
+                var imagenes = await conn.QueryAsync<string>(@"
+                SELECT Url
                 FROM ImagenesPublicacion
-                WHERE IdPublicacion = @Id", new { Id = pub.Id });
+                WHERE IdPublicacion = @Id",
+                    new { Id = pub.Id });
 
-                // 💳 Planes de crédito
                 var planes = await conn.QueryAsync<PlanCredito>(@"
                 SELECT Id, IdPublicacion, Cuotas, ValorCuota
                 FROM PlanesCredito
-                WHERE IdPublicacion = @Id", new { Id = pub.Id });
+                WHERE IdPublicacion = @Id",
+                    new { Id = pub.Id });
 
                 pub.Imagenes = imagenes.ToList();
                 pub.PlanCredito = planes.ToList();
@@ -271,6 +330,7 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al obtener tus publicaciones", ex);
         }
     }
+
 
     public async Task<List<CategoriaDto>> ObtenerCategoriasActivas()
     {
@@ -295,6 +355,236 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
+    public async Task<bool> EsPublicacionDeUsuario(int idPublicacion, int idUsuario)
+    {
+        using var conn = _conexion.CreateSqlConnection();
 
+        try
+        {
+            const string sql = @"
+            SELECT COUNT(1)
+            FROM Publicaciones
+            WHERE Id = @idPublicacion AND IdUsuario = @idUsuario";
+
+            var count = await conn.ExecuteScalarAsync<int>(sql, new { idPublicacion, idUsuario });
+
+            return count > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al validar publicación {IdPublicacion} del usuario {IdUsuario}", idPublicacion, idUsuario);
+            throw new RepositoryException("Error al validar la publicación del usuario.", ex);
+        }
+    }
+
+    public async Task CrearOActualizarDestacado(int idPublicacion, DateTime fechaInicio, DateTime fechaFin)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string updateSql = @"
+            UPDATE PublicacionesDestacadas
+            SET FechaInicio = @FechaInicio,
+                FechaFin = @FechaFin,
+                Estado = 'Activo'
+            WHERE IdPublicacion = @IdPublicacion
+              AND Estado = 'Activo'
+              AND FechaFin >= GETDATE();";
+
+            var filas = await conn.ExecuteAsync(updateSql, new
+            {
+                IdPublicacion = idPublicacion,
+                FechaInicio = fechaInicio,
+                FechaFin = fechaFin
+            });
+
+            if (filas == 0)
+            {
+                const string insertSql = @"
+                INSERT INTO PublicacionesDestacadas (IdPublicacion, FechaInicio, FechaFin, Estado)
+                VALUES (@IdPublicacion, @FechaInicio, @FechaFin, 'Activo');";
+
+                await conn.ExecuteAsync(insertSql, new
+                {
+                    IdPublicacion = idPublicacion,
+                    FechaInicio = fechaInicio,
+                    FechaFin = fechaFin
+                });
+            }
+
+            _logger.LogInformation("✅ Publicación {IdPublicacion} destacada desde {Inicio} hasta {Fin}",
+                idPublicacion, fechaInicio, fechaFin);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al crear/actualizar destacado para la publicación {IdPublicacion}", idPublicacion);
+            throw new RepositoryException("Error al destacar la publicación.", ex);
+        }
+    }
+
+    public async Task<bool> EstaPublicacionDestacada(int idPublicacion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        const string sql = @"
+        SELECT COUNT(1)
+        FROM PublicacionesDestacadas
+        WHERE IdPublicacion = @IdPublicacion
+          AND Estado = 'Activo'
+          AND FechaFin >= GETDATE();";
+
+        var count = await conn.ExecuteScalarAsync<int>(sql, new { IdPublicacion = idPublicacion });
+
+        return count > 0;
+    }
+
+    public async Task ActivarTemporada(ActivarTemporadaRequest request)
+    {
+        await using var conn = (SqlConnection)_conexion.CreateSqlConnection();
+        await conn.OpenAsync();
+
+        await using var tran = await conn.BeginTransactionAsync();
+        try
+        {
+            // 1) Temporada válida y activa
+            var temporada = await conn.QueryFirstOrDefaultAsync<TemporadaDto>(@"
+            SELECT Id, Nombre, BadgeTexto, BadgeColor, FechaInicio, FechaFin
+            FROM Temporadas
+            WHERE Id = @IdTemporada AND Estado = 'Activo'",
+                new { request.IdTemporada }, tran);
+
+            if (temporada == null)
+                throw new RepositoryException("La temporada no existe o no está activa.");
+
+            // 2) ¿Ya existe una temporada activa para esta publicación?
+            var existeActiva = await conn.ExecuteScalarAsync<int>(@"
+            SELECT CASE WHEN EXISTS(
+                SELECT 1 FROM PublicacionesTemporada
+                WHERE IdPublicacion = @IdPublicacion AND Estado = 'Activo'
+            ) THEN 1 ELSE 0 END",
+                new { request.IdPublicacion }, tran) == 1;
+
+            if (existeActiva)
+                throw new RepositoryException("La publicación ya tiene una temporada activa. Esperá a que termine para activar otra.");
+
+            // 3) Insertar nueva temporada activa
+            const string insertSql = @"
+            INSERT INTO PublicacionesTemporada
+            (IdPublicacion, IdTemporada, FechaInicio, FechaFin, BadgeTexto, BadgeColor, Estado)
+            VALUES (@IdPublicacion, @IdTemporada, @FechaInicio, @FechaFin, @BadgeTexto, @BadgeColor, 'Activo');";
+
+            await conn.ExecuteAsync(insertSql, new
+            {
+                request.IdPublicacion,
+                request.IdTemporada,
+                FechaInicio = temporada.FechaInicio,
+                FechaFin = temporada.FechaFin,
+                temporada.BadgeTexto,
+                temporada.BadgeColor
+            }, tran);
+
+            await tran.CommitAsync();
+            _logger.LogInformation("Publicación {IdPublicacion} activada en temporada {IdTemporada}.",
+                request.IdPublicacion, request.IdTemporada);
+        }
+        catch (SqlException sqlEx) when (sqlEx.Message.Contains("UX_PublicacionesTemporada_Activa"))
+        {
+            await tran.RollbackAsync();
+            _logger.LogWarning(sqlEx, "Índice único: ya existe temporada activa para {IdPublicacion}.", request.IdPublicacion);
+            throw new RepositoryException("La publicación ya tiene una temporada activa. Esperá a que termine para activar otra.", sqlEx);
+        }
+        catch (Exception ex)
+        {
+            await tran.RollbackAsync();
+            _logger.LogError(ex, "Error al activar temporada para publicación {IdPublicacion}", request.IdPublicacion);
+            throw new RepositoryException("Error al activar temporada", ex);
+        }
+    }
+
+    public async Task DesactivarTemporada(int idPublicacion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            var sql = @"
+            UPDATE PublicacionesTemporada
+            SET Estado = 'Inactivo'
+            WHERE IdPublicacion = @IdPublicacion
+              AND Estado = 'Activo';";
+
+            await conn.ExecuteAsync(sql, new { IdPublicacion = idPublicacion });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al desactivar temporada para la publicación {IdPublicacion}", idPublicacion);
+            throw new RepositoryException("Error al desactivar temporada", ex);
+        }
+    }
+
+    public async Task<bool> UsuarioTienePermiso(int idUsuario, string nombrePermiso)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            var sql = @"
+            SELECT COUNT(*)
+            FROM UsuarioPermisos up
+            INNER JOIN Permisos p ON p.Id = up.IdPermiso
+            WHERE up.IdUsuario = @IdUsuario
+              AND p.Nombre = @NombrePermiso";
+
+            var cantidad = await conn.ExecuteScalarAsync<int>(sql, new
+            {
+                IdUsuario = idUsuario,
+                NombrePermiso = nombrePermiso
+            });
+
+            return cantidad > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error validando permiso {Permiso} para usuario {UsuarioId}",
+                nombrePermiso, idUsuario);
+
+            throw new RepositoryException("Error al validar permisos del usuario", ex);
+        }
+    }
+
+    public async Task<bool> EstaPublicacionEnTemporada(int idPublicacion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            var sql = @"
+            SELECT COUNT(*)
+            FROM PublicacionesTemporada
+            WHERE IdPublicacion = @IdPublicacion
+              AND Estado = 'Activo'
+              AND FechaFin >= GETDATE()";
+
+            var cantidad = await conn.ExecuteScalarAsync<int>(sql, new { IdPublicacion = idPublicacion });
+
+            return cantidad > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error consultando temporada de publicación {Id}", idPublicacion);
+            throw new RepositoryException("Error verificando temporada", ex);
+        }
+    }
+
+    public async Task<List<TemporadaDto>> ObtenerTemporadasActivas()
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        var sql = @"SELECT Id, Nombre, BadgeTexto, BadgeColor, FechaInicio, FechaFin
+                FROM Temporadas
+                WHERE Estado = 'Activo'
+                ORDER BY FechaInicio DESC";
+
+        return (await conn.QueryAsync<TemporadaDto>(sql)).ToList();
+    }
 
 }

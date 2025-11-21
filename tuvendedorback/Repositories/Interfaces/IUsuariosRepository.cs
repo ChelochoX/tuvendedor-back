@@ -8,6 +8,7 @@ public interface IUsuariosRepository
     Task<Usuario?> ValidarCredencialesPorEmailYClave(string email, string clave);
     Task<Usuario?> ValidarCredencialesPorUsuarioLoginYClave(string usuarioLogin, string clave);
     Task<List<string>> ObtenerRolesPorUsuario(int idUsuario);
+    Task<List<string>> ObtenerPermisosPorUsuario(int idUsuario);
     Task<int> InsertarUsuarioConRol(RegistroRequest request);
     Task<bool> ActualizarClaveUsuario(int idUsuario, string nuevaClaveHash);
     Task<Usuario?> ObtenerUsuarioPorProveedor(LoginRequest request);

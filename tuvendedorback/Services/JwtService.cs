@@ -21,7 +21,8 @@ public class JwtService
         _key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
     }
 
-    public string GenerarToken(int idUsuario, string nombreUsuario, IEnumerable<string> roles)
+    public string GenerarToken(int idUsuario, string nombreUsuario, IEnumerable<string> roles,
+        IEnumerable<string>? permisos = null)
     {
         var claims = new List<Claim>
             {
@@ -31,6 +32,8 @@ public class JwtService
 
         foreach (var rol in roles)
             claims.Add(new Claim("rol", rol));
+        if (permisos != null)
+            foreach (var p in permisos) claims.Add(new Claim("perm", p));
 
         var creds = new SigningCredentials(_key, SecurityAlgorithms.HmacSha256);
 

@@ -87,4 +87,74 @@ public class PublicacionService : IPublicacionService
     {
         return await _repository.ObtenerCategoriasActivas();
     }
+
+    public async Task DestacarPublicacion(DestacarPublicacionRequest request, int idUsuario)
+    {
+        // ✅ Validar el request con FluentValidation
+        await ValidationHelper.ValidarAsync(request, _serviceProvider);
+
+        // ✅ Validar que la publicación pertenece al usuario
+        var esDeUsuario = await _repository.EsPublicacionDeUsuario(request.IdPublicacion, idUsuario);
+
+        if (!esDeUsuario)
+            throw new ReglasdeNegocioException("No puedes destacar una publicación que no te pertenece.");
+
+        // 🟡 Validar si YA ESTÁ destacada actualmente
+        var yaEstaDestacada = await _repository.EstaPublicacionDestacada(request.IdPublicacion);
+
+        if (yaEstaDestacada)
+            throw new ReglasdeNegocioException("Esta publicación ya está destacada actualmente.");
+
+        var fechaInicio = DateTime.Now;
+        var fechaFin = fechaInicio.AddDays(request.DuracionDias);
+
+        // ✅ Registrar o actualizar el destacado
+        await _repository.CrearOActualizarDestacado(request.IdPublicacion, fechaInicio, fechaFin);
+    }
+
+    public async Task ActivarTemporada(ActivarTemporadaRequest request, int idUsuario)
+    {
+        //Validar request
+        await ValidationHelper.ValidarAsync(request, _serviceProvider);
+
+        //Validación de permiso premium
+        var tienePermiso = await _repository.UsuarioTienePermiso(idUsuario, "CrearPublicacionTemporada");
+        if (!tienePermiso)
+            throw new ReglasdeNegocioException("No tienes permiso para crear publicaciones de temporada.");
+
+        //Verificar que la publicación sea del usuario
+        var esDeUsuario = await _repository.EsPublicacionDeUsuario(request.IdPublicacion, idUsuario);
+        if (!esDeUsuario)
+            throw new ReglasdeNegocioException("No puedes activar temporada en una publicación que no te pertenece.");
+
+        //Registrar
+        await _repository.ActivarTemporada(request);
+    }
+
+
+    public async Task DesactivarTemporada(int idPublicacion, int idUsuario)
+    {
+        // 1️⃣ Validar con FluentValidation
+        await ValidationHelper.ValidarAsync(new DesactivarTemporadaRequest { IdPublicacion = idPublicacion }, _serviceProvider);
+
+        // 2️⃣ Validar que sea dueño (igual a DestacarPublicacion)
+        var esDeUsuario = await _repository.EsPublicacionDeUsuario(idPublicacion, idUsuario);
+
+        if (!esDeUsuario)
+            throw new ReglasdeNegocioException("No puedes desactivar una publicación que no te pertenece.");
+
+        // 3️⃣ Validar permiso premium o admin
+        var tienePermiso = await _repository.UsuarioTienePermiso(idUsuario, "AdministrarTemporadas");
+
+        if (!tienePermiso)
+            throw new ReglasdeNegocioException("No tienes permisos para desactivar publicaciones de temporada.");
+
+        // 4️⃣ Ejecutar acción
+        await _repository.DesactivarTemporada(idPublicacion);
+    }
+
+    public async Task<List<TemporadaDto>> ObtenerTemporadasActivas()
+    {
+        return await _repository.ObtenerTemporadasActivas();
+    }
 }
