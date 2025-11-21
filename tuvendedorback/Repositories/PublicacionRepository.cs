@@ -441,9 +441,10 @@ public class PublicacionRepository : IPublicacionRepository
 
     public async Task ActivarTemporada(ActivarTemporadaRequest request)
     {
-        using var conn = _conexion.CreateSqlConnection();
-        using var tran = conn.BeginTransaction();
+        await using var conn = (SqlConnection)_conexion.CreateSqlConnection();
+        await conn.OpenAsync();
 
+        await using var tran = await conn.BeginTransactionAsync();
         try
         {
             // 1) Temporada válida y activa
@@ -456,12 +457,12 @@ public class PublicacionRepository : IPublicacionRepository
             if (temporada == null)
                 throw new RepositoryException("La temporada no existe o no está activa.");
 
-            // 2) ¿Ya hay una temporada ACTIVA para esta publicación?
-            // Regla simple: No permitimos activar otra mientras exista una activa (sin importar fechas)
+            // 2) ¿Ya existe una temporada activa para esta publicación?
             var existeActiva = await conn.ExecuteScalarAsync<int>(@"
-            SELECT 1
-            FROM PublicacionesTemporada
-            WHERE IdPublicacion = @IdPublicacion AND Estado = 'Activo'",
+            SELECT CASE WHEN EXISTS(
+                SELECT 1 FROM PublicacionesTemporada
+                WHERE IdPublicacion = @IdPublicacion AND Estado = 'Activo'
+            ) THEN 1 ELSE 0 END",
                 new { request.IdPublicacion }, tran) == 1;
 
             if (existeActiva)
@@ -483,23 +484,23 @@ public class PublicacionRepository : IPublicacionRepository
                 temporada.BadgeColor
             }, tran);
 
-            tran.Commit();
-            _logger.LogInformation("Publicación {IdPublicacion} activada en temporada {IdTemporada}.", request.IdPublicacion, request.IdTemporada);
+            await tran.CommitAsync();
+            _logger.LogInformation("Publicación {IdPublicacion} activada en temporada {IdTemporada}.",
+                request.IdPublicacion, request.IdTemporada);
         }
         catch (SqlException sqlEx) when (sqlEx.Message.Contains("UX_PublicacionesTemporada_Activa"))
         {
-            tran.Rollback();
-            _logger.LogWarning(sqlEx, "Violación de índice único. Ya existe temporada activa para publicación {IdPublicacion}.", request.IdPublicacion);
+            await tran.RollbackAsync();
+            _logger.LogWarning(sqlEx, "Índice único: ya existe temporada activa para {IdPublicacion}.", request.IdPublicacion);
             throw new RepositoryException("La publicación ya tiene una temporada activa. Esperá a que termine para activar otra.", sqlEx);
         }
         catch (Exception ex)
         {
-            tran.Rollback();
-            _logger.LogError(ex, "Error al activar temporada para la publicación {IdPublicacion}", request.IdPublicacion);
+            await tran.RollbackAsync();
+            _logger.LogError(ex, "Error al activar temporada para publicación {IdPublicacion}", request.IdPublicacion);
             throw new RepositoryException("Error al activar temporada", ex);
         }
     }
-
 
     public async Task DesactivarTemporada(int idPublicacion)
     {
