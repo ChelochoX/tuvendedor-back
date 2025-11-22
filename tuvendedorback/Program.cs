@@ -1,18 +1,28 @@
-using tuvendedorback.Configurations;
+﻿using tuvendedorback.Configurations;
 using tuvendedorback.Middlewares;
 
 var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
 
 var configuration = new ConfigurationBuilder()
-    .SetBasePath(Directory.GetCurrentDirectory()) // Aseg�rate de establecer la ruta base correctamente
+    .SetBasePath(Directory.GetCurrentDirectory()) // Asegúrate de establecer la ruta base correctamente
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true) // Cargar el archivo base
-    .AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: true) // Cargar archivo espec�fico seg�n el entorno
+    .AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: true) // Cargar archivo específico según el entorno
     .AddEnvironmentVariables() // Cargar variables de entorno si es necesario
     .Build();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configuraci�n de Logs
+// ---------------------------------------
+// 🔹 AGREGADO: Configurar límite de request para Kestrel
+// ---------------------------------------
+var maxRequestBodySize = configuration.GetValue<long>("Upload:MaxRequestBodySize", 50_000_000);
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = maxRequestBodySize;
+});
+
+// ---------------------------------------
+// Configuración de Logs
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.SetMinimumLevel(LogLevel.Information);
@@ -21,7 +31,11 @@ builder.Logging.SetMinimumLevel(LogLevel.Information);
 builder.Services.AddRepositories();
 builder.Services.AddServices();
 builder.Services.AddControllers();
+
+// ---------------------------------------
+// 🔹 Mantengo tu configuración original
 builder.Services.AddConfiguration(configuration);
+// ---------------------------------------
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -33,7 +47,6 @@ builder.Services.AddSwaggerGen(c =>
         Description = "REST API Market Place de Tu Vendedor"
     });
     c.EnableAnnotations();
-
 
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
@@ -50,12 +63,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
 ILogger<Program> logger = app.Services.GetRequiredService<ILogger<Program>>();
 logger.LogInformation("Aplicacion Iniciada Correctamente");
 
 app.UseHandlingMiddleware();
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 
 app.UseAuthentication();

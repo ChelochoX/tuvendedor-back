@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.IdentityModel.Tokens;
 using System.Reflection;
 using System.Text;
@@ -26,6 +27,17 @@ public static class ServiceConfiguration
                         .AllowAnyMethod();
                 });
         });
+
+        // ---------------------------------------
+        // 🔹 AGREGADO: Límite para multipart/form-data
+        // ---------------------------------------
+        var maxRequestBodySize = configuration.GetValue<long>("Upload:MaxRequestBodySize", 50_000_000);
+
+        services.Configure<FormOptions>(options =>
+        {
+            options.MultipartBodyLengthLimit = maxRequestBodySize;
+        });
+        // ---------------------------------------
 
         // ✅ Registro del JwtService aquí
         services.AddSingleton<JwtService>();
