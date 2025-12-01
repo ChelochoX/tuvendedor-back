@@ -587,4 +587,32 @@ public class PublicacionRepository : IPublicacionRepository
         return (await conn.QueryAsync<TemporadaDto>(sql)).ToList();
     }
 
+    public async Task<int> CrearSugerencia(int? idUsuario, string comentario)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            INSERT INTO Sugerencias (UsuarioId, Comentario, Fecha)
+            VALUES (@UsuarioId, @Comentario, GETDATE());
+            SELECT SCOPE_IDENTITY();";
+
+            var id = await conn.ExecuteScalarAsync<int>(sql, new
+            {
+                UsuarioId = idUsuario,
+                Comentario = comentario
+            });
+
+            _logger.LogInformation("Sugerencia creada con Id {Id} por usuario {Usuario}", id, idUsuario);
+
+            return id;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Error al guardar sugerencia del usuario {Usuario}", idUsuario);
+            throw new RepositoryException("Error al guardar sugerencia", ex);
+        }
+    }
+
 }

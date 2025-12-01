@@ -19,4 +19,5 @@ public interface IPublicacionRepository
     Task<bool> UsuarioTienePermiso(int idUsuario, string nombrePermiso);
     Task<bool> EstaPublicacionEnTemporada(int idPublicacion);
     Task<List<TemporadaDto>> ObtenerTemporadasActivas();
+    Task<int> CrearSugerencia(int? idUsuario, string comentario);
 }

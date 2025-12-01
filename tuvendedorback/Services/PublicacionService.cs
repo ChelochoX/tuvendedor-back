@@ -157,4 +157,11 @@ public class PublicacionService : IPublicacionService
     {
         return await _repository.ObtenerTemporadasActivas();
     }
+
+    public async Task<int> CrearSugerencia(CrearSugerenciaRequest request, int? idUsuario)
+    {
+        await ValidationHelper.ValidarAsync(request, _serviceProvider);
+
+        return await _repository.CrearSugerencia(idUsuario, request.Comentario);
+    }
 }

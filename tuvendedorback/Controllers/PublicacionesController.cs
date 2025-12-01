@@ -197,8 +197,7 @@ public class PublicacionesController : ControllerBase
     [SwaggerOperation(
     Summary = "Obtiene el listado de temporadas activas",
     Description = "Devuelve todas las temporadas configuradas por el administrador que están en estado 'Activo'. "
-                + "Incluye nombre, colores del badge y rango de fechas definido para la temporada."
-)]
+                + "Incluye nombre, colores del badge y rango de fechas definido para la temporada.")]
     public async Task<IActionResult> ListarTemporadas()
     {
         var data = await _service.ObtenerTemporadasActivas();
@@ -211,4 +210,22 @@ public class PublicacionesController : ControllerBase
         });
     }
 
+
+    [HttpPost("crear-sugerencia")]
+    [SwaggerOperation(
+       Summary = "Crea una sugerencia",
+       Description = "Guarda un comentario, feedback o sugerencia del usuario en la base de datos.")]
+    public async Task<IActionResult> CrearSugerencia([FromBody] CrearSugerenciaRequest request)
+    {
+        var idUsuario = _userContext.IdUsuario;
+
+        var id = await _service.CrearSugerencia(request, idUsuario);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Sugerencia enviada correctamente",
+            Data = new { Id = id }
+        });
+    }
 }
