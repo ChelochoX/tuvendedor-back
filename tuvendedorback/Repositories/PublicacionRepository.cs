@@ -461,7 +461,9 @@ public class PublicacionRepository : IPublicacionRepository
             var existeActiva = await conn.ExecuteScalarAsync<int>(@"
             SELECT CASE WHEN EXISTS(
                 SELECT 1 FROM PublicacionesTemporada
-                WHERE IdPublicacion = @IdPublicacion AND Estado = 'Activo'
+                WHERE IdPublicacion = @IdPublicacion 
+                AND Estado = 'Activo'
+                AND GETDATE() BETWEEN FechaInicio AND FechaFin
             ) THEN 1 ELSE 0 END",
                 new { request.IdPublicacion }, tran) == 1;
 
@@ -487,12 +489,6 @@ public class PublicacionRepository : IPublicacionRepository
             await tran.CommitAsync();
             _logger.LogInformation("Publicación {IdPublicacion} activada en temporada {IdTemporada}.",
                 request.IdPublicacion, request.IdTemporada);
-        }
-        catch (SqlException sqlEx) when (sqlEx.Message.Contains("UX_PublicacionesTemporada_Activa"))
-        {
-            await tran.RollbackAsync();
-            _logger.LogWarning(sqlEx, "Índice único: ya existe temporada activa para {IdPublicacion}.", request.IdPublicacion);
-            throw new RepositoryException("La publicación ya tiene una temporada activa. Esperá a que termine para activar otra.", sqlEx);
         }
         catch (Exception ex)
         {
