@@ -7,6 +7,7 @@ public class ProductoDto
     public decimal Precio { get; set; }
     public string Categoria { get; set; }
     public string Ubicacion { get; set; }
+    public string Estado { get; set; }
 
     public string Imagen { get; set; }
     public string Miniatura { get; set; }

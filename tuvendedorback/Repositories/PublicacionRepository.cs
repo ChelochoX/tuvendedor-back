@@ -92,6 +92,7 @@ public class PublicacionRepository : IPublicacionRepository
                 p.Categoria           AS Categoria,
                 p.Ubicacion           AS Ubicacion,
                 p.MostrarBotonesCompra,
+                p.Estado             As Estado,  
                 v.NombreNegocio       AS VendedorNombre,
                 u.Telefono            AS VendedorTelefono,
 
@@ -284,6 +285,7 @@ public class PublicacionRepository : IPublicacionRepository
                 p.Precio                AS Precio,
                 p.Categoria             AS Categoria,
                 p.Ubicacion             AS Ubicacion,
+                p.Estado                AS Estado,
                 p.MostrarBotonesCompra  AS MostrarBotonesCompra,
 
                 v.NombreNegocio         AS VendedorNombre,
