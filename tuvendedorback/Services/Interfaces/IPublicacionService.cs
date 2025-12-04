@@ -15,4 +15,5 @@ public interface IPublicacionService
     Task DesactivarTemporada(int idPublicacion, int idUsuario);
     Task<List<TemporadaDto>> ObtenerTemporadasActivas();
     Task<int> CrearSugerencia(CrearSugerenciaRequest request, int? idUsuario);
+    Task MarcarComoVendido(int idPublicacion, int idUsuario);
 }

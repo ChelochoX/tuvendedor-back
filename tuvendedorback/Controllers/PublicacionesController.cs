@@ -228,4 +228,26 @@ public class PublicacionesController : ControllerBase
             Data = new { Id = id }
         });
     }
+
+    [HttpPost("marcar-vendido")]
+    [SwaggerOperation(
+    Summary = "Marca una publicación como vendida",
+    Description = "Permite al usuario dueño de la publicación marcarla con estado VENDIDO.")]
+    public async Task<IActionResult> MarcarComoVendido([FromBody] MarcarVendidoRequest request)
+    {
+        var idUsuario = _userContext.IdUsuario;
+
+        if (idUsuario == null || idUsuario == 0)
+            throw new UnauthorizedAccessException();
+
+        await _service.MarcarComoVendido(request.IdPublicacion, idUsuario.Value);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "La publicación fue marcada como vendida correctamente.",
+            Data = new { request.IdPublicacion }
+        });
+    }
+
 }

@@ -164,4 +164,22 @@ public class PublicacionService : IPublicacionService
 
         return await _repository.CrearSugerencia(idUsuario, request.Comentario);
     }
+
+    public async Task MarcarComoVendido(int idPublicacion, int idUsuario)
+    {
+        // 1️⃣ Validar que la publicación sea del usuario
+        var esDeUsuario = await _repository.EsPublicacionDeUsuario(idPublicacion, idUsuario);
+
+        if (!esDeUsuario)
+            throw new ReglasdeNegocioException("No puedes marcar como vendida una publicación que no te pertenece.");
+
+        // 2️⃣ Ver si ya está vendida
+        var yaVendida = await _repository.PublicacionEstaVendida(idPublicacion);
+        if (yaVendida)
+            throw new ReglasdeNegocioException("La publicación ya está marcada como vendida.");
+
+        // 3️⃣ Actualizar estado
+        await _repository.MarcarComoVendido(idPublicacion);
+    }
+
 }

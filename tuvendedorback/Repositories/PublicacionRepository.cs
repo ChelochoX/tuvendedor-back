@@ -635,4 +635,41 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
+    public async Task<bool> PublicacionEstaVendida(int idPublicacion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        var sql = @"SELECT CASE WHEN Estado = 'Vendido' THEN 1 ELSE 0 END 
+                FROM Publicaciones 
+                WHERE Id = @Id";
+
+        return await conn.ExecuteScalarAsync<bool>(sql, new { Id = idPublicacion });
+    }
+
+    public async Task MarcarComoVendido(int idPublicacion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            var sql = @"
+            UPDATE Publicaciones
+            SET Estado = 'Vendido'
+            WHERE Id = @IdPublicacion";
+
+            var filas = await conn.ExecuteAsync(sql, new { IdPublicacion = idPublicacion });
+
+            if (filas == 0)
+                throw new RepositoryException("No se pudo marcar la publicación como vendida.");
+
+            _logger.LogInformation("🟢 Publicación {IdPublicacion} marcada como VENDIDA", idPublicacion);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Error marcando publicación {IdPublicacion} como vendida", idPublicacion);
+            throw new RepositoryException("Error al marcar como vendida", ex);
+        }
+    }
+
+
 }

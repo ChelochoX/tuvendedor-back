@@ -20,4 +20,6 @@ public interface IPublicacionRepository
     Task<bool> EstaPublicacionEnTemporada(int idPublicacion);
     Task<List<TemporadaDto>> ObtenerTemporadasActivas();
     Task<int> CrearSugerencia(int? idUsuario, string comentario);
+    Task<bool> PublicacionEstaVendida(int idPublicacion);
+    Task MarcarComoVendido(int idPublicacion);
 }
