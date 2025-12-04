@@ -201,20 +201,43 @@ public class PublicacionRepository : IPublicacionRepository
 
         try
         {
-            _logger.LogInformation("🗑️ Iniciando eliminación de la publicación {IdPublicacion} del usuario {IdUsuario}", idPublicacion, idUsuario);
+            _logger.LogInformation("Iniciando eliminación de la publicación {IdPublicacion} del usuario {IdUsuario}", idPublicacion, idUsuario);
 
-            // 🔹 Eliminar dependencias primero
+            // 🔹 Eliminar destacados (PublicacionesDestacadas)
+            var filasDestacados = await conn.ExecuteAsync(
+                "DELETE FROM PublicacionesDestacadas WHERE IdPublicacion = @idPublicacion;",
+                new { idPublicacion },
+                tran
+            );
+
+            if (filasDestacados > 0)
+                _logger.LogInformation("Se eliminaron {Cantidad} destacados asociados a la publicación {IdPublicacion}", filasDestacados, idPublicacion);
+
+            // 🔹 Eliminar temporada (PublicacionesTemporada)
+            var filasTemporada = await conn.ExecuteAsync(
+                "DELETE FROM PublicacionesTemporada WHERE IdPublicacion = @idPublicacion;",
+                new { idPublicacion },
+                tran
+            );
+
+            if (filasTemporada > 0)
+                _logger.LogInformation("Se eliminaron {Cantidad} registros de temporada asociados a la publicación {IdPublicacion}", filasTemporada, idPublicacion);
+
+            // 🔹 Eliminar planes de crédito
             var filasPlanes = await conn.ExecuteAsync(
                 "DELETE FROM PlanesCredito WHERE IdPublicacion = @idPublicacion;",
-                new { idPublicacion }, tran
+                new { idPublicacion },
+                tran
             );
 
             if (filasPlanes > 0)
                 _logger.LogInformation("Se eliminaron {Cantidad} planes de crédito asociados a la publicación {IdPublicacion}", filasPlanes, idPublicacion);
 
+            // 🔹 Eliminar imágenes
             var filasImagenes = await conn.ExecuteAsync(
                 "DELETE FROM ImagenesPublicacion WHERE IdPublicacion = @idPublicacion;",
-                new { idPublicacion }, tran
+                new { idPublicacion },
+                tran
             );
 
             if (filasImagenes > 0)
@@ -246,6 +269,7 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al eliminar la publicación", ex);
         }
     }
+
 
     public async Task<List<Publicacion>> ObtenerMisPublicaciones(int idUsuario)
     {
