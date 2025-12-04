@@ -100,7 +100,8 @@ public class CloudinaryStorageService : IImageStorageService
                     .Width(1080).Height(1080)
                     .Crop("limit")
                     .Quality("auto")
-                    .FetchFormat("mp4"), // 🔹 Conversión garantizada a MP4
+                    .FetchFormat("mp4")
+                    .AudioCodec("aac")
             };
 
             var result = await _cloudinary.UploadAsync(uploadParams);
