@@ -27,7 +27,6 @@ public class CloudinaryStorageService : IImageStorageService
     {
         var extension = Path.GetExtension(archivo.FileName).ToLower();
 
-        // Detectamos el tipo de archivo
         var resourceType = extension switch
         {
             ".jpg" or ".jpeg" or ".png" or ".webp" => ResourceType.Image,
@@ -37,42 +36,48 @@ public class CloudinaryStorageService : IImageStorageService
 
         if (resourceType == ResourceType.Image)
         {
-            var webpBytes = await ImagenHelper.ConvertirAWebPAsync(archivo);
+            // 1️⃣ Generamos nosotros la versión principal 1080x1080
+            var mainBytes = await ImagenHelper.GenerarWebPAsync(
+                archivo,
+                width: 1080,
+                height: 1080,
+                calidad: 90,
+                crop: false
+            );
 
-            using var mainStream = new MemoryStream(webpBytes);
+            // 2️⃣ Generamos thumbnail 400x300 (crop)
+            var thumbBytes = await ImagenHelper.GenerarWebPAsync(
+                archivo,
+                width: 400,
+                height: 300,
+                calidad: 85,
+                crop: true
+            );
 
-            // 📌 Imagen principal 1080x1080
+            // 3️⃣ Subimos ambas sin transformación
+            var mainStream = new MemoryStream(mainBytes);
             var mainParams = new ImageUploadParams
             {
                 File = new FileDescription($"{Guid.NewGuid()}.webp", mainStream),
                 Folder = carpetaDestino,
                 UseFilename = true,
                 UniqueFilename = false,
-                Format = "webp",
-                Transformation = new Transformation()
-                 .Width(1080).Height(1080).Crop("pad").Background("white").FetchFormat("webp")
+                Type = "upload"
             };
 
             var mainResult = await _cloudinary.UploadAsync(mainParams);
 
-            using var thumbStream = new MemoryStream(webpBytes);
-
-            // 📌 Miniatura 300x300
+            var thumbStream = new MemoryStream(thumbBytes);
             var thumbParams = new ImageUploadParams
             {
                 File = new FileDescription($"{Guid.NewGuid()}_thumb.webp", thumbStream),
                 Folder = carpetaDestino,
                 UseFilename = true,
                 UniqueFilename = false,
-                Format = "webp",
-                Transformation = new Transformation()
-                .Width(400).Height(300)
-                .Crop("fill").Gravity("auto")
-                .FetchFormat("webp")
+                Type = "upload"
             };
 
             var thumbResult = await _cloudinary.UploadAsync(thumbParams);
-
 
             if (mainResult.StatusCode == HttpStatusCode.OK && thumbResult.StatusCode == HttpStatusCode.OK)
             {
@@ -83,6 +88,8 @@ public class CloudinaryStorageService : IImageStorageService
                 };
             }
         }
+
+        // 4️⃣ Videos (igual que antes, pero sin transformaciones innecesarias)
         else if (resourceType == ResourceType.Video)
         {
             using var stream = new MemoryStream();
@@ -95,13 +102,8 @@ public class CloudinaryStorageService : IImageStorageService
                 Folder = carpetaDestino,
                 UseFilename = true,
                 UniqueFilename = false,
-                Format = "mp4", // 🔹 Fuerza la salida a MP4 optimizado
-                Transformation = new Transformation()
-                    .Width(1080).Height(1080)
-                    .Crop("limit")
-                    .Quality("auto")
-                    .FetchFormat("mp4")
-                    .AudioCodec("aac")
+                Type = "upload",
+                Format = "mp4",
             };
 
             var result = await _cloudinary.UploadAsync(uploadParams);
@@ -110,39 +112,42 @@ public class CloudinaryStorageService : IImageStorageService
             {
                 return new UploadResultDto
                 {
-                    MainUrl = result.SecureUrl?.ToString() ?? string.Empty,
-                    ThumbUrl = result.SecureUrl?.ToString() ?? string.Empty // usamos la misma URL como fallback
+                    MainUrl = result.SecureUrl?.ToString() ?? "",
+                    ThumbUrl = result.SecureUrl?.ToString() ?? ""
                 };
             }
         }
-        else // ResourceType.Raw
+
+        // 5️⃣ Archivos RAW
+        else
         {
             using var stream = new MemoryStream();
-
             await archivo.CopyToAsync(stream);
             stream.Position = 0;
 
-            var uploadParams = new RawUploadParams
+            var rawParams = new RawUploadParams
             {
                 File = new FileDescription(archivo.FileName, stream),
                 Folder = carpetaDestino,
                 UseFilename = true,
-                UniqueFilename = false,
+                UniqueFilename = false
             };
 
-            var result = await _cloudinary.UploadAsync(uploadParams);
+            var result = await _cloudinary.UploadAsync(rawParams);
+
             if (result.StatusCode == HttpStatusCode.OK)
             {
                 return new UploadResultDto
                 {
-                    MainUrl = result.SecureUrl?.ToString() ?? string.Empty,
-                    ThumbUrl = string.Empty
+                    MainUrl = result.SecureUrl?.ToString() ?? "",
+                    ThumbUrl = ""
                 };
             }
         }
 
         throw new Exception("Error al subir archivo a Cloudinary");
     }
+
 
     public async Task EliminarArchivo(string archivoUrl)
     {

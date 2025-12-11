@@ -6,25 +6,26 @@ namespace tuvendedorback.Common;
 
 public static class ImagenHelper
 {
-    public static async Task<byte[]> ConvertirAWebPAsync(IFormFile file, int maxLado = 1280, int calidad = 85)
+    // Genera una versión WebP redimensionada
+    public static async Task<byte[]> GenerarWebPAsync(
+        IFormFile file,
+        int width,
+        int height,
+        int calidad = 85,
+        bool crop = false)
     {
         using var image = await Image.LoadAsync(file.OpenReadStream());
 
-        // Redimensionar si la imagen es más grande que el maxLado
-        image.Mutate(x => x.Resize(new ResizeOptions
+        var opciones = new ResizeOptions
         {
-            Mode = ResizeMode.Max,
-            Size = new Size(maxLado, maxLado) // ejemplo: máximo 1280px de ancho/alto
-        }));
+            Size = new Size(width, height),
+            Mode = crop ? ResizeMode.Crop : ResizeMode.Max
+        };
+
+        image.Mutate(x => x.Resize(opciones));
 
         using var ms = new MemoryStream();
-
-        await image.SaveAsync(ms, new WebpEncoder
-        {
-            Quality = calidad // control de calidad aquí (0-100)
-        });
-
+        await image.SaveAsync(ms, new WebpEncoder { Quality = calidad });
         return ms.ToArray();
     }
-
 }
