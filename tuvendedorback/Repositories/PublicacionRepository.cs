@@ -449,6 +449,7 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
+
     public async Task<bool> EstaPublicacionDestacada(int idPublicacion)
     {
         using var conn = _conexion.CreateSqlConnection();
@@ -523,6 +524,46 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al activar temporada", ex);
         }
     }
+
+    public async Task QuitarDestacado(int idPublicacion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+        UPDATE PublicacionesDestacadas
+        SET Estado = 'Inactivo'
+        WHERE IdPublicacion = @IdPublicacion
+          AND Estado = 'Activo'
+          AND FechaFin >= GETDATE();";
+
+            var filas = await conn.ExecuteAsync(sql, new
+            {
+                IdPublicacion = idPublicacion
+            });
+
+            if (filas == 0)
+                throw new RepositoryException(
+                    "No se encontró un destacado activo para quitar."
+                );
+
+            _logger.LogInformation(
+                "❌ Destacado quitado para la publicación {IdPublicacion}",
+                idPublicacion
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al quitar destacado para la publicación {IdPublicacion}",
+                idPublicacion
+            );
+            throw new RepositoryException("Error al quitar el destacado.", ex);
+        }
+    }
+
 
     public async Task DesactivarTemporada(int idPublicacion)
     {

@@ -11,6 +11,7 @@ public interface IPublicacionService
     Task<List<ProductoDto>> ObtenerMisPublicaciones(int idUsuario);
     Task<List<CategoriaDto>> ObtenerCategoriasActivas();
     Task DestacarPublicacion(DestacarPublicacionRequest request, int idUsuario);
+    Task QuitarDestacadoPublicacion(int idPublicacion, int idUsuario);
     Task ActivarTemporada(ActivarTemporadaRequest request, int idUsuario);
     Task DesactivarTemporada(int idPublicacion, int idUsuario);
     Task<List<TemporadaDto>> ObtenerTemporadasActivas();

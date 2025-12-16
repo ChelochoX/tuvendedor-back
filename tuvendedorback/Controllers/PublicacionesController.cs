@@ -147,6 +147,26 @@ public class PublicacionesController : ControllerBase
         });
     }
 
+    [HttpPost("quitar-destacado-publicacion")]
+    [SwaggerOperation(
+      Summary = "Quita el destacado de una publicación",
+      Description = "Permite quitar manualmente el estado destacado de una publicación activa.")]
+    public async Task<IActionResult> QuitarDestacadoPublicacion([FromBody] QuitarDestacadoPublicacionRequest request)
+    {
+        var idUsuario = _userContext.IdUsuario;
+
+        if (idUsuario == null || idUsuario == 0)
+            throw new UnauthorizedAccessException();
+
+        await _service.QuitarDestacadoPublicacion(request.IdPublicacion, idUsuario.Value);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "La publicación dejó de estar destacada."
+        });
+    }
+
 
     [HttpPost("activar-temporada")]
     [SwaggerOperation(

@@ -13,6 +13,7 @@ public interface IPublicacionRepository
     Task<List<CategoriaDto>> ObtenerCategoriasActivas();
     Task<bool> EsPublicacionDeUsuario(int idPublicacion, int idUsuario);
     Task CrearOActualizarDestacado(int idPublicacion, DateTime fechaInicio, DateTime fechaFin);
+    Task QuitarDestacado(int idPublicacion);
     Task<bool> EstaPublicacionDestacada(int idPublicacion);
     Task ActivarTemporada(ActivarTemporadaRequest request);
     Task DesactivarTemporada(int idPublicacion);

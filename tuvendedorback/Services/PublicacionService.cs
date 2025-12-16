@@ -112,6 +112,30 @@ public class PublicacionService : IPublicacionService
         await _repository.CrearOActualizarDestacado(request.IdPublicacion, fechaInicio, fechaFin);
     }
 
+    public async Task QuitarDestacadoPublicacion(int idPublicacion, int idUsuario)
+    {
+        // ✅ Validar que la publicación pertenece al usuario
+        var esDeUsuario = await _repository.EsPublicacionDeUsuario(idPublicacion, idUsuario);
+
+        if (!esDeUsuario)
+            throw new ReglasdeNegocioException(
+                "No puedes quitar el destacado de una publicación que no te pertenece."
+            );
+
+        // 🟡 Validar si está destacada actualmente
+        var estaDestacada = await _repository.EstaPublicacionDestacada(idPublicacion);
+
+        if (!estaDestacada)
+            throw new ReglasdeNegocioException(
+                "La publicación no se encuentra destacada."
+            );
+
+        // ❌ Quitar destacado
+        await _repository.QuitarDestacado(idPublicacion);
+    }
+
+
+
     public async Task ActivarTemporada(ActivarTemporadaRequest request, int idUsuario)
     {
         //Validar request
