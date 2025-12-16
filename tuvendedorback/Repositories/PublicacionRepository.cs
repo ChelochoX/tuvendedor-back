@@ -126,7 +126,7 @@ public class PublicacionRepository : IPublicacionRepository
                     AND (@Nombre IS NULL OR p.Titulo LIKE '%' + @Nombre + '%')
                 ";
 
-            if (!esAdministrador)
+            if (idUsuario.HasValue && !esAdministrador)
             {
                 sql += " AND p.IdUsuario = @IdUsuario ";
             }
