@@ -58,12 +58,14 @@ public class PublicacionesController : ControllerBase
     [SwaggerOperation(
         Summary = "Obtiene el listado de publicaciones",
         Description = "Devuelve las publicaciones creadas por los vendedores incluyendo imágenes, información del vendedor y planes de crédito. "
-                    + "Permite filtrar opcionalmente por categoría y por nombre del producto."
-    )]
+                    + "Permite filtrar opcionalmente por categoría y por nombre del producto.")]
     public async Task<IActionResult> ObtenerPublicaciones(
         [FromQuery] string? categoria = null, string? nombre = null)
     {
-        var publicaciones = await _service.ObtenerPublicaciones(categoria, nombre);
+
+        var idUsuario = _userContext.IdUsuario;
+
+        var publicaciones = await _service.ObtenerPublicaciones(categoria, nombre, idUsuario);
 
         return Ok(new Response<List<ProductoDto>>
         {
@@ -72,6 +74,7 @@ public class PublicacionesController : ControllerBase
             Message = "Publicaciones obtenidas correctamente"
         });
     }
+
 
     [HttpDelete("eliminar-publicacion/{id}")]
     [SwaggerOperation(
