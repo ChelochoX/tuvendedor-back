@@ -109,7 +109,11 @@ public class ErrorHandlingMiddleware
 
             default:
                 response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                response.Errors.Add("Ocurrió un error inesperado en el servidor.");
+                response.Errors.Add(exception.Message);
+                if (_env.IsDevelopment())
+                {
+                    response.Errors.Add(exception.StackTrace);
+                }
                 break;
         }
 

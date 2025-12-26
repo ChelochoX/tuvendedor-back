@@ -2,6 +2,7 @@
 using tuvendedorback.Repositories;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Services;
+using tuvendedorback.Services.IA;
 using tuvendedorback.Services.Interfaces;
 using tuvendedorback.Services.Storage;
 
@@ -15,6 +16,8 @@ public static class DependencyInjection
         services.AddScoped<IPermisosRepository, PermisosRepository>();
         services.AddScoped<IPublicacionRepository, PublicacionRepository>();
         services.AddScoped<IClientesRepository, ClientesRepository>();
+        services.AddScoped<IConversacionRepository, ConversacionRepository>();
+        services.AddScoped<IPromptIARepository, PromptIARepository>();
         return services;
     }
 
@@ -26,6 +29,9 @@ public static class DependencyInjection
         services.AddScoped<IPublicacionService, PublicacionService>();
         services.AddScoped<IImageStorageService, CloudinaryStorageService>();
         services.AddScoped<IClientesService, ClientesService>();
+        services.AddScoped<IConversacionService, ConversacionService>();
+        services.AddScoped<IAgenteIAService, AgenteIAService>();
+        services.AddScoped<PromptBuilder>();
         return services;
     }
 }
