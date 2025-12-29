@@ -50,7 +50,7 @@ public class AgenteIAService : IAgenteIAService
             var prompt = await _promptBuilder
                 .BuildAsync(mensajeUsuario, contexto, historial);
 
-            _logger.LogInformation("🧠 Prompt generado con historial");
+            _logger.LogInformation("Prompt generado con historial");
 
             if (!_iaEnabled || _chatClient == null)
             {
@@ -88,7 +88,7 @@ public class AgenteIAService : IAgenteIAService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Error en AgenteIAService");
+            _logger.LogError(ex, "Error en AgenteIAService");
 
             throw new ServiceException(
                 "No se pudo generar respuesta con IA",

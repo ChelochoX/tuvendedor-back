@@ -27,32 +27,54 @@ public class ConversacionService : IConversacionService
 
         var contexto = await _repo.ObtenerContexto(idConv);
 
+        try
+        {
 
-        var respuesta = await _ia.GenerarRespuesta(
+            var respuesta = await _ia.GenerarRespuesta(
             idConv,
             request.Mensaje,
             contexto
-        );
+            );
 
-        _logger.LogInformation("RESPUESTA IA (BACK): {@Respuesta}", respuesta);
+            _logger.LogInformation("RESPUESTA IA (BACK): {@Respuesta}", respuesta);
 
-        if (respuesta == null || string.IsNullOrWhiteSpace(respuesta.Texto))
-        {
-            _logger.LogError("IA devolvió respuesta nula");
-            return "En breve te responde un asesor.";
+            if (respuesta == null || string.IsNullOrWhiteSpace(respuesta.Texto))
+            {
+                _logger.LogError("IA devolvió respuesta nula");
+                return "En breve te responde un asesor.";
+            }
+
+            await _repo.RegistrarMensaje(idConv, "IA", respuesta.Texto);
+
+            await _repo.ActualizarContexto(
+                 idConv,
+                 respuesta.NuevoPaso,
+                 respuesta.Intencion,
+                 respuesta.IdPublicacion,
+                 contexto?.CodigoPrompt ?? "GENERIC"
+             );
+
+            return respuesta.Texto;
+
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fallback a atención humana");
 
-        await _repo.RegistrarMensaje(idConv, "IA", respuesta.Texto);
+            // 🔔 ALERTA INTERNA (hook)
+            //NotificarAsesor(idConv, request);
 
-        await _repo.ActualizarContexto(
-             idConv,
-             respuesta.NuevoPaso,
-             respuesta.Intencion,
-             respuesta.IdPublicacion,
-             contexto?.CodigoPrompt ?? "GENERIC"
-         );
+            // ✅ MENSAJE AMIGABLE AL CLIENTE
+            return @"👋 ¡Hola! Gracias por comunicarte con TU VENDEDOR 🙌  
+            En breve te estaré atendiendo personalmente.
 
-        return respuesta.Texto;
+            Para poder brindarte una atención más rápida y personalizada,  
+            ¿me podrías indicar tu nombre y apellido, por favor? 🙌
+
+            Mientras tanto podés seguir viendo nuestras promos acá:
+            www.tuvendedor.com.py";
+
+        }
     }
 
 }
