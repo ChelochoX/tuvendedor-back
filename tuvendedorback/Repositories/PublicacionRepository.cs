@@ -123,7 +123,13 @@ public class PublicacionRepository : IPublicacionRepository
                     AND t.Estado = 'Activo'
                     AND t.FechaFin >= GETDATE()
                 WHERE (@Categoria IS NULL OR p.Categoria = @Categoria)
-                    AND (@Nombre IS NULL OR p.Titulo LIKE '%' + @Nombre + '%')
+                    AND (
+                        @Nombre IS NULL
+                        OR p.Titulo LIKE '%' + @Nombre + '%'
+                        OR p.Descripcion LIKE '%' + @Nombre + '%'
+                        OR p.Ubicacion LIKE '%' + @Nombre + '%'
+                        OR p.Categoria LIKE '%' + @Nombre + '%'
+                    )
                 ";
 
             if (idUsuario.HasValue && !esAdministrador)
