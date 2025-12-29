@@ -250,69 +250,33 @@ public class PublicacionRepository : IPublicacionRepository
         {
             _logger.LogInformation("Iniciando eliminación de la publicación {IdPublicacion} del usuario {IdUsuario}", idPublicacion, idUsuario);
 
-            // 🔹 Eliminar destacados (PublicacionesDestacadas)
-            var filasDestacados = await conn.ExecuteAsync(
-                "DELETE FROM PublicacionesDestacadas WHERE IdPublicacion = @idPublicacion;",
-                new { idPublicacion },
-                tran
-            );
+            await conn.ExecuteAsync(
+            "DELETE FROM PublicacionesDestacadas WHERE IdPublicacion = @id;",
+            new { id = idPublicacion }, tran);
 
-            if (filasDestacados > 0)
-                _logger.LogInformation("Se eliminaron {Cantidad} destacados asociados a la publicación {IdPublicacion}", filasDestacados, idPublicacion);
+            await conn.ExecuteAsync(
+                "DELETE FROM PublicacionesTemporada WHERE IdPublicacion = @id;",
+                new { id = idPublicacion }, tran);
 
-            // 🔹 Eliminar temporada (PublicacionesTemporada)
-            var filasTemporada = await conn.ExecuteAsync(
-                "DELETE FROM PublicacionesTemporada WHERE IdPublicacion = @idPublicacion;",
-                new { idPublicacion },
-                tran
-            );
+            await conn.ExecuteAsync(
+                "DELETE FROM PlanesCredito WHERE IdPublicacion = @id;",
+                new { id = idPublicacion }, tran);
 
-            if (filasTemporada > 0)
-                _logger.LogInformation("Se eliminaron {Cantidad} registros de temporada asociados a la publicación {IdPublicacion}", filasTemporada, idPublicacion);
+            await conn.ExecuteAsync(
+                "DELETE FROM ImagenesPublicacion WHERE IdPublicacion = @id;",
+                new { id = idPublicacion }, tran);
 
-            // 🔹 Eliminar planes de crédito
-            var filasPlanes = await conn.ExecuteAsync(
-                "DELETE FROM PlanesCredito WHERE IdPublicacion = @idPublicacion;",
-                new { idPublicacion },
-                tran
-            );
-
-            if (filasPlanes > 0)
-                _logger.LogInformation("Se eliminaron {Cantidad} planes de crédito asociados a la publicación {IdPublicacion}", filasPlanes, idPublicacion);
-
-            // 🔹 Eliminar imágenes
-            var filasImagenes = await conn.ExecuteAsync(
-                "DELETE FROM ImagenesPublicacion WHERE IdPublicacion = @idPublicacion;",
-                new { idPublicacion },
-                tran
-            );
-
-            if (filasImagenes > 0)
-                _logger.LogInformation("Se eliminaron {Cantidad} imágenes asociadas a la publicación {IdPublicacion}", filasImagenes, idPublicacion);
-
-            // 🔹 Eliminar publicación principal
-            var filasPublicacion = await conn.ExecuteAsync(
-                "DELETE FROM Publicaciones WHERE Id = @idPublicacion AND IdUsuario = @idUsuario;",
-                new { idPublicacion, idUsuario },
-                tran
-            );
-
-            if (filasPublicacion > 0)
-            {
-                _logger.LogInformation("✅ Publicación {IdPublicacion} eliminada correctamente por el usuario {IdUsuario}", idPublicacion, idUsuario);
-            }
-            else
-            {
-                _logger.LogWarning("⚠️ No se encontró la publicación {IdPublicacion} para el usuario {IdUsuario} o ya fue eliminada", idPublicacion, idUsuario);
-            }
+            var filas = await conn.ExecuteAsync(
+                "DELETE FROM Publicaciones WHERE Id = @id;",
+                new { id = idPublicacion }, tran);
 
             tran.Commit();
-            return filasPublicacion;
+            return filas;
         }
         catch (Exception ex)
         {
             tran.Rollback();
-            _logger.LogError(ex, "❌ Error al eliminar la publicación {IdPublicacion} del usuario {IdUsuario}", idPublicacion, idUsuario);
+            _logger.LogError(ex, "Error al eliminar la publicación {IdPublicacion} del usuario {IdUsuario}", idPublicacion, idUsuario);
             throw new RepositoryException("Error al eliminar la publicación", ex);
         }
     }

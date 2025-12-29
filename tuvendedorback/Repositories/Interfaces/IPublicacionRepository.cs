@@ -23,4 +23,5 @@ public interface IPublicacionRepository
     Task<int> CrearSugerencia(int? idUsuario, string comentario);
     Task<bool> PublicacionEstaVendida(int idPublicacion);
     Task MarcarComoVendido(int idPublicacion);
+    Task<bool> EsAdministrador(int? idUsuario);
 }

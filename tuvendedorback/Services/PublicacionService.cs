@@ -58,6 +58,12 @@ public class PublicacionService : IPublicacionService
         if (idUsuario == null || idUsuario == 0)
             throw new UnauthorizedAccessException();
 
+        await ValidarAccesoPublicacion(
+            idPublicacion,
+            idUsuario.Value,
+            "EliminarPublicacion"
+        );
+
         // 🔹 Obtener imágenes asociadas
         var imagenes = await _repository.ObtenerImagenesPorPublicacion(idPublicacion, idUsuario.Value);
         if (imagenes == null || !imagenes.Any())
@@ -93,13 +99,13 @@ public class PublicacionService : IPublicacionService
         // ✅ Validar el request con FluentValidation
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
-        // ✅ Validar que la publicación pertenece al usuario
-        var esDeUsuario = await _repository.EsPublicacionDeUsuario(request.IdPublicacion, idUsuario);
+        await ValidarAccesoPublicacion(
+            request.IdPublicacion,
+            idUsuario,
+            "CrearPublicacionDestacada"
+        );
 
-        if (!esDeUsuario)
-            throw new ReglasdeNegocioException("No puedes destacar una publicación que no te pertenece.");
-
-        // 🟡 Validar si YA ESTÁ destacada actualmente
+        //Validar si YA ESTÁ destacada actualmente
         var yaEstaDestacada = await _repository.EstaPublicacionDestacada(request.IdPublicacion);
 
         if (yaEstaDestacada)
@@ -108,21 +114,19 @@ public class PublicacionService : IPublicacionService
         var fechaInicio = DateTime.Now;
         var fechaFin = fechaInicio.AddDays(request.DuracionDias);
 
-        // ✅ Registrar o actualizar el destacado
+        //Registrar o actualizar el destacado
         await _repository.CrearOActualizarDestacado(request.IdPublicacion, fechaInicio, fechaFin);
     }
 
     public async Task QuitarDestacadoPublicacion(int idPublicacion, int idUsuario)
     {
-        // ✅ Validar que la publicación pertenece al usuario
-        var esDeUsuario = await _repository.EsPublicacionDeUsuario(idPublicacion, idUsuario);
+        await ValidarAccesoPublicacion(
+            idPublicacion,
+            idUsuario,
+            "QuitarPublicacionDestacada"
+        );
 
-        if (!esDeUsuario)
-            throw new ReglasdeNegocioException(
-                "No puedes quitar el destacado de una publicación que no te pertenece."
-            );
-
-        // 🟡 Validar si está destacada actualmente
+        // Validar si está destacada actualmente
         var estaDestacada = await _repository.EstaPublicacionDestacada(idPublicacion);
 
         if (!estaDestacada)
@@ -130,7 +134,7 @@ public class PublicacionService : IPublicacionService
                 "La publicación no se encuentra destacada."
             );
 
-        // ❌ Quitar destacado
+        // Quitar destacado
         await _repository.QuitarDestacado(idPublicacion);
     }
 
@@ -141,15 +145,12 @@ public class PublicacionService : IPublicacionService
         //Validar request
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
-        //Validación de permiso premium
-        var tienePermiso = await _repository.UsuarioTienePermiso(idUsuario, "CrearPublicacionTemporada");
-        if (!tienePermiso)
-            throw new ReglasdeNegocioException("No tienes permiso para crear publicaciones de temporada.");
+        await ValidarAccesoPublicacion(
+            request.IdPublicacion,
+            idUsuario,
+            "CrearPublicacionTemporada"
+        );
 
-        //Verificar que la publicación sea del usuario
-        var esDeUsuario = await _repository.EsPublicacionDeUsuario(request.IdPublicacion, idUsuario);
-        if (!esDeUsuario)
-            throw new ReglasdeNegocioException("No puedes activar temporada en una publicación que no te pertenece.");
 
         //Registrar
         await _repository.ActivarTemporada(request);
@@ -158,22 +159,16 @@ public class PublicacionService : IPublicacionService
 
     public async Task DesactivarTemporada(int idPublicacion, int idUsuario)
     {
-        // 1️⃣ Validar con FluentValidation
+        //Validar con FluentValidation
         await ValidationHelper.ValidarAsync(new DesactivarTemporadaRequest { IdPublicacion = idPublicacion }, _serviceProvider);
 
-        // 2️⃣ Validar que sea dueño (igual a DestacarPublicacion)
-        var esDeUsuario = await _repository.EsPublicacionDeUsuario(idPublicacion, idUsuario);
+        await ValidarAccesoPublicacion(
+            idPublicacion,
+            idUsuario,
+            "QuitarPublicacionTemporada"
+        );
 
-        if (!esDeUsuario)
-            throw new ReglasdeNegocioException("No puedes desactivar una publicación que no te pertenece.");
-
-        // 3️⃣ Validar permiso premium o admin
-        var tienePermiso = await _repository.UsuarioTienePermiso(idUsuario, "AdministrarTemporadas");
-
-        if (!tienePermiso)
-            throw new ReglasdeNegocioException("No tienes permisos para desactivar publicaciones de temporada.");
-
-        // 4️⃣ Ejecutar acción
+        //Ejecutar acción
         await _repository.DesactivarTemporada(idPublicacion);
     }
 
@@ -204,6 +199,30 @@ public class PublicacionService : IPublicacionService
 
         // 3️⃣ Actualizar estado
         await _repository.MarcarComoVendido(idPublicacion);
+    }
+
+
+    private async Task ValidarAccesoPublicacion(int idPublicacion, int idUsuario, string permisoRequerido
+)
+    {
+        //ADMIN → puede TODO
+        var esAdmin = await _repository.EsAdministrador(idUsuario);
+        if (esAdmin)
+            return;
+
+        //Permiso requerido
+        var tienePermiso = await _repository.UsuarioTienePermiso(idUsuario, permisoRequerido);
+        if (!tienePermiso)
+            throw new ReglasdeNegocioException(
+                $"No tienes permiso para realizar esta acción ({permisoRequerido})."
+            );
+
+        //Debe ser dueño
+        var esDeUsuario = await _repository.EsPublicacionDeUsuario(idPublicacion, idUsuario);
+        if (!esDeUsuario)
+            throw new ReglasdeNegocioException(
+                "No puedes realizar esta acción sobre una publicación que no te pertenece."
+            );
     }
 
 }
