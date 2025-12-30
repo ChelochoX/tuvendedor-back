@@ -202,8 +202,7 @@ public class PublicacionService : IPublicacionService
     }
 
 
-    private async Task ValidarAccesoPublicacion(int idPublicacion, int idUsuario, string permisoRequerido
-)
+    private async Task ValidarAccesoPublicacion(int idPublicacion, int idUsuario, string permisoRequerido)
     {
         //ADMIN → puede TODO
         var esAdmin = await _repository.EsAdministrador(idUsuario);
