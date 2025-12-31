@@ -15,6 +15,8 @@ public static class DependencyInjection
         services.AddScoped<IPermisosRepository, PermisosRepository>();
         services.AddScoped<IPublicacionRepository, PublicacionRepository>();
         services.AddScoped<IClientesRepository, ClientesRepository>();
+        services.AddScoped<IPrecioProductoRepository, PrecioProductoRepository>();
+        services.AddScoped<IMarcaRepository, MarcaRepository>();
         return services;
     }
 
@@ -26,6 +28,8 @@ public static class DependencyInjection
         services.AddScoped<IPublicacionService, PublicacionService>();
         services.AddScoped<IImageStorageService, CloudinaryStorageService>();
         services.AddScoped<IClientesService, ClientesService>();
+        services.AddScoped<IPrecioProductoService, PrecioProductoService>();
+        services.AddScoped<IMarcaService, MarcaService>();
         return services;
     }
 }
