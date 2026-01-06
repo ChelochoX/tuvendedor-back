@@ -37,7 +37,8 @@ public class PrecioProductoService : IPrecioProductoService
         var haySolapamiento = await _repository.ExisteSolapamientoListaPrecio(
             request.IdModeloProducto,
             request.FechaDesde,
-            request.FechaHasta
+            request.FechaHasta,
+            request.EsPromo
         );
 
         if (haySolapamiento)
@@ -62,6 +63,11 @@ public class PrecioProductoService : IPrecioProductoService
 
         data.Planes = await _repository.ObtenerPlanesPorListaPrecio(data.IdListaPrecio);
         return data;
+    }
+
+    public async Task<IEnumerable<ModeloProductoDto>> ListarModelos()
+    {
+        return await _repository.ListarModelos();
     }
 
 }

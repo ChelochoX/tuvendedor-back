@@ -10,5 +10,5 @@ public interface IPrecioProductoService
     Task<int> CrearPlanFinanciacionProducto(CrearPlanFinanciacionProductoRequest request);
 
     Task<PrecioVigenteProductoDto> ObtenerPrecioVigentePorCodigo(string rubro, string codigoReferencia, DateTime? fechaActual = null);
-
+    Task<IEnumerable<ModeloProductoDto>> ListarModelos();
 }

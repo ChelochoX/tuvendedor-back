@@ -44,9 +44,9 @@ public class PrecioProductoRepository : IPrecioProductoRepository
         {
             const string sql = @"
             INSERT INTO ListasPreciosProducto
-            (IdModeloProducto, PrecioPublico, PrecioDistribuidor, PrecioBase, FechaDesde, FechaHasta, Estado)
+            (IdModeloProducto, PrecioPublico, PrecioDistribuidor, PrecioBase, FechaDesde, FechaHasta, EsPromo, Estado)
             VALUES
-            (@IdModeloProducto, @PrecioPublico, @PrecioDistribuidor, @PrecioBase, @FechaDesde, @FechaHasta, 'Activo');
+            (@IdModeloProducto, @PrecioPublico, @PrecioDistribuidor, @PrecioBase, @FechaDesde, @FechaHasta, @EsPromo, 'Activo');
             SELECT SCOPE_IDENTITY();";
 
             return await conn.ExecuteScalarAsync<int>(sql, request);
@@ -120,7 +120,12 @@ public class PrecioProductoRepository : IPrecioProductoRepository
     }
 
     // ✅ Detecta solapamiento de fechas para evitar 2 listas vigentes al mismo tiempo
-    public async Task<bool> ExisteSolapamientoListaPrecio(int idModeloProducto, DateTime fechaDesde, DateTime? fechaHasta)
+    public async Task<bool> ExisteSolapamientoListaPrecio(
+        int idModeloProducto,
+        DateTime fechaDesde,
+        DateTime? fechaHasta,
+        bool esPromo   // 👈 NUEVO
+    )
     {
         using var conn = _conexion.CreateSqlConnection();
         try
@@ -131,6 +136,7 @@ public class PrecioProductoRepository : IPrecioProductoRepository
                 FROM ListasPreciosProducto lp
                 WHERE lp.IdModeloProducto = @IdModelo
                   AND lp.Estado = 'Activo'
+                  AND lp.EsPromo = @EsPromo   -- 👈 CLAVE
                   AND (
                        @Desde <= ISNULL(lp.FechaHasta, '9999-12-31')
                    AND ISNULL(@Hasta, '9999-12-31') >= lp.FechaDesde
@@ -141,7 +147,8 @@ public class PrecioProductoRepository : IPrecioProductoRepository
             {
                 IdModelo = idModeloProducto,
                 Desde = fechaDesde.Date,
-                Hasta = fechaHasta?.Date
+                Hasta = fechaHasta?.Date,
+                EsPromo = esPromo
             });
         }
         catch (Exception ex)
@@ -220,6 +227,33 @@ public class PrecioProductoRepository : IPrecioProductoRepository
             throw new RepositoryException("Error obteniendo planes de financiación", ex);
         }
     }
+
+    public async Task<IEnumerable<ModeloProductoDto>> ListarModelos()
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            const string sql = @"
+        SELECT
+            mp.Id                 AS Id,
+            m.Nombre              AS Marca,
+            mp.NombreModelo       AS Modelo,
+            mp.CodigoReferencia   AS Codigo,
+            mp.Rubro              AS Rubro
+        FROM ModelosProducto mp
+        INNER JOIN Marcas m ON m.Id = mp.IdMarca
+        WHERE mp.Estado = 'Activo'
+        ORDER BY m.Nombre, mp.NombreModelo;";
+
+            return await conn.QueryAsync<ModeloProductoDto>(sql);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al listar modelos de producto");
+            throw new RepositoryException("Error al listar modelos de producto", ex);
+        }
+    }
+
 
 
 }

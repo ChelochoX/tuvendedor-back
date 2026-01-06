@@ -21,6 +21,9 @@ public class CrearPlanFinanciacionProductoRequestValidator : AbstractValidator<C
         RuleFor(x => x.EntregaInicial).GreaterThanOrEqualTo(0);
         RuleFor(x => x.CantidadCuotas).GreaterThan(0);
         RuleFor(x => x.ImporteCuota).GreaterThan(0);
-        RuleFor(x => x.CodigoPlan).MaximumLength(20);
+        RuleFor(x => x.CodigoPlan)
+        .MaximumLength(20)
+        .When(x => !string.IsNullOrEmpty(x.CodigoPlan));
+
     }
 }

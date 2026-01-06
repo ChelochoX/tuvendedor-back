@@ -12,9 +12,14 @@ public interface IPrecioProductoRepository
     Task<bool> ExisteModeloPorCodigo(string rubro, string codigoReferencia);
     Task<int?> ObtenerIdModeloPorCodigo(string rubro, string codigoReferencia);
 
-    Task<bool> ExisteSolapamientoListaPrecio(int idModeloProducto, DateTime fechaDesde, DateTime? fechaHasta);
-
+    Task<bool> ExisteSolapamientoListaPrecio(
+        int idModeloProducto,
+        DateTime fechaDesde,
+        DateTime? fechaHasta,
+        bool esPromo);
     Task<PrecioVigenteProductoDto?> ObtenerPrecioVigentePorCodigo(string rubro, string codigoReferencia, DateTime fechaActual);
     Task<List<PlanFinanciacionDto>> ObtenerPlanesPorListaPrecio(int idListaPrecio);
+
+    Task<IEnumerable<ModeloProductoDto>> ListarModelos();
 
 }

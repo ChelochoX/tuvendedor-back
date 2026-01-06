@@ -76,5 +76,21 @@ public class PreciosProductosController : Controller
         });
     }
 
+    [HttpGet("listar-modelos")]
+    [SwaggerOperation(
+    Summary = "Lista modelos de producto",
+    Description = "Obtiene el listado de modelos de productos activos con su marca, modelo, código y rubro.")]
+    public async Task<IActionResult> ListarModelos()
+    {
+        var data = await _service.ListarModelos();
+
+        return Ok(new Response<IEnumerable<ModeloProductoDto>>
+        {
+            Success = true,
+            Data = data,
+            Message = "Modelos obtenidos correctamente"
+        });
+    }
+
 
 }
