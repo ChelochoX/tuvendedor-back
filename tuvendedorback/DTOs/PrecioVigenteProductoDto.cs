@@ -20,6 +20,7 @@ public class PrecioVigenteProductoDto
 public class PlanFinanciacionDto
 {
     public int Id { get; set; }
+    public int IdListaPrecio { get; set; }
     public decimal EntregaInicial { get; set; }
     public int CantidadCuotas { get; set; }
     public decimal ImporteCuota { get; set; }

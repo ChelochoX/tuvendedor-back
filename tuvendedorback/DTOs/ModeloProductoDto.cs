@@ -3,8 +3,10 @@
 public class ModeloProductoDto
 {
     public int Id { get; set; }
-    public string Marca { get; set; } = "";
-    public string NombreModelo { get; set; } = "";
-    public string CodigoReferencia { get; set; } = "";
-    public string Rubro { get; set; } = "";
+    public int IdMarca { get; set; }
+    public string Marca { get; set; } = null!;
+    public string Rubro { get; set; } = null!;
+    public string CodigoReferencia { get; set; } = null!;
+    public string NombreModelo { get; set; } = null!;
+    public string Estado { get; set; } = null!;
 }

@@ -234,16 +234,18 @@ public class PrecioProductoRepository : IPrecioProductoRepository
         try
         {
             const string sql = @"
-        SELECT
-            mp.Id                 AS Id,
-            m.Nombre              AS Marca,
-            mp.NombreModelo       AS Modelo,
-            mp.CodigoReferencia   AS Codigo,
-            mp.Rubro              AS Rubro
-        FROM ModelosProducto mp
-        INNER JOIN Marcas m ON m.Id = mp.IdMarca
-        WHERE mp.Estado = 'Activo'
-        ORDER BY m.Nombre, mp.NombreModelo;";
+             SELECT
+                mp.Id                   AS Id,
+                mp.IdMarca              AS IdMarca,
+                m.Nombre                AS Marca,
+                mp.NombreModelo         AS NombreModelo,
+                mp.CodigoReferencia     AS CodigoReferencia,
+                mp.Rubro                AS Rubro,
+                mp.Estado               AS Estado
+            FROM ModelosProducto mp
+            INNER JOIN Marcas m ON m.Id = mp.IdMarca
+            WHERE mp.Estado = 'Activo'
+            ORDER BY m.Nombre, mp.NombreModelo;";
 
             return await conn.QueryAsync<ModeloProductoDto>(sql);
         }
@@ -253,6 +255,247 @@ public class PrecioProductoRepository : IPrecioProductoRepository
             throw new RepositoryException("Error al listar modelos de producto", ex);
         }
     }
+
+    public async Task<IEnumerable<ModeloPrecioDto>> ListadoPrecios()
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            // =========================
+            // MODELOS
+            // =========================
+            const string sqlModelos = @"
+                SELECT
+                    mp.Id               AS IdModeloProducto,
+                    m.Nombre            AS Marca,
+                    mp.NombreModelo     AS NombreModelo,
+                    mp.CodigoReferencia AS CodigoReferencia
+                FROM ModelosProducto mp
+                INNER JOIN Marcas m ON m.Id = mp.IdMarca
+                WHERE mp.Estado = 'Activo'
+                ORDER BY m.Nombre, mp.NombreModelo;
+            ";
+
+            var modelos = (await conn.QueryAsync<ModeloPrecioDto>(sqlModelos))
+                .ToDictionary(x => x.IdModeloProducto);
+
+            if (!modelos.Any())
+                return modelos.Values;
+
+            // =========================
+            // LISTAS DE PRECIOS
+            // =========================
+            const string sqlListas = @"
+                SELECT
+                    lp.Id               AS IdListaPrecio,
+                    lp.IdModeloProducto,
+                    lp.PrecioPublico,
+                    lp.PrecioDistribuidor,
+                    lp.PrecioBase,
+                    lp.FechaDesde,
+                    lp.FechaHasta,
+                    lp.EsPromo
+                FROM ListasPreciosProducto lp
+                WHERE lp.Estado = 'Activo';
+            ";
+
+            var listas = await conn.QueryAsync<ListaPrecioDto>(sqlListas);
+
+            foreach (var lista in listas)
+            {
+                if (modelos.TryGetValue(lista.IdModeloProducto, out var modelo))
+                {
+                    modelo.ListasPrecios.Add(lista);
+                }
+            }
+
+            // =========================
+            // PLANES / CUOTAS
+            // =========================
+            const string sqlPlanes = @"
+                SELECT
+                    Id,
+                    IdListaPrecio,
+                    EntregaInicial,
+                    CantidadCuotas,
+                    ImporteCuota,
+                    Interes,
+                    CodigoPlan
+                FROM PlanesFinanciacionProducto
+                WHERE Estado = 'Activo';
+            ";
+
+            var planes = await conn.QueryAsync<PlanFinanciacionDto>(sqlPlanes);
+
+            foreach (var modelo in modelos.Values)
+            {
+                foreach (var lista in modelo.ListasPrecios)
+                {
+                    lista.Planes = planes
+                        .Where(p => p.IdListaPrecio == lista.IdListaPrecio)
+                        .ToList();
+                }
+            }
+
+            return modelos.Values;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener listado de precios");
+            throw new RepositoryException("Error al obtener listado de precios", ex);
+        }
+    }
+
+    public async Task EditarListaPrecio(EditarListaPrecioProductoRequest request)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            const string sql = @"
+        UPDATE ListasPreciosProducto
+        SET
+            PrecioPublico = @PrecioPublico,
+            PrecioDistribuidor = @PrecioDistribuidor,
+            PrecioBase = @PrecioBase,
+            FechaDesde = @FechaDesde,
+            FechaHasta = @FechaHasta
+        WHERE Id = @Id;";
+
+            await conn.ExecuteAsync(sql, request);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al editar lista de precio. IdListaPrecio={Id}",
+                request.Id
+            );
+            throw new RepositoryException("Error al editar lista de precio", ex);
+        }
+    }
+
+    public async Task DesactivarListaPrecio(int id)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            const string sql = @"
+        UPDATE ListasPreciosProducto
+        SET Estado = 'Inactivo'
+        WHERE Id = @Id;";
+
+            await conn.ExecuteAsync(sql, new { Id = id });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al desactivar lista de precio. IdListaPrecio={Id}",
+                id
+            );
+            throw new RepositoryException("Error al desactivar lista de precio", ex);
+        }
+    }
+
+    public async Task ActivarListaPrecio(int id)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            const string sql = @"
+        UPDATE ListasPreciosProducto
+        SET Estado = 'Activo'
+        WHERE Id = @Id;";
+
+            await conn.ExecuteAsync(sql, new { Id = id });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al activar lista de precio. IdListaPrecio={Id}",
+                id
+            );
+            throw new RepositoryException("Error al activar lista de precio", ex);
+        }
+    }
+
+    public async Task EditarPlanFinanciacion(EditarPlanFinanciacionProductoRequest request)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            const string sql = @"
+        UPDATE PlanesFinanciacionProducto
+        SET
+            EntregaInicial = @EntregaInicial,
+            CantidadCuotas = @CantidadCuotas,
+            ImporteCuota = @ImporteCuota,
+            Interes = @Interes,
+            CodigoPlan = UPPER(@CodigoPlan)
+        WHERE Id = @Id;";
+
+            await conn.ExecuteAsync(sql, request);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al editar plan de financiación. IdPlan={Id}",
+                request.Id
+            );
+            throw new RepositoryException("Error al editar plan de financiación", ex);
+        }
+    }
+
+    public async Task DesactivarPlanFinanciacion(int id)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            const string sql = @"
+        UPDATE PlanesFinanciacionProducto
+        SET Estado = 'Inactivo'
+        WHERE Id = @Id;";
+
+            await conn.ExecuteAsync(sql, new { Id = id });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al desactivar plan de financiación. IdPlan={Id}",
+                id
+            );
+            throw new RepositoryException("Error al desactivar plan de financiación", ex);
+        }
+    }
+
+    public async Task ActivarPlanFinanciacion(int id)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        try
+        {
+            const string sql = @"
+        UPDATE PlanesFinanciacionProducto
+        SET Estado = 'Activo'
+        WHERE Id = @Id;";
+
+            await conn.ExecuteAsync(sql, new { Id = id });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al activar plan de financiación. IdPlan={Id}",
+                id
+            );
+            throw new RepositoryException("Error al activar plan de financiación", ex);
+        }
+    }
+
+
 
 
 

@@ -33,7 +33,7 @@ public class PrecioProductoService : IPrecioProductoService
     {
         await ValidationHelper.ValidarAsync(request, _provider);
 
-        // ✅ Regla: evitar solapamiento
+        //Regla: evitar solapamiento
         var haySolapamiento = await _repository.ExisteSolapamientoListaPrecio(
             request.IdModeloProducto,
             request.FechaDesde,
@@ -69,5 +69,34 @@ public class PrecioProductoService : IPrecioProductoService
     {
         return await _repository.ListarModelos();
     }
+
+    public async Task<IEnumerable<ModeloPrecioDto>> ListadoPrecios()
+    {
+        return await _repository.ListadoPrecios();
+    }
+
+    public async Task EditarListaPrecio(EditarListaPrecioProductoRequest request)
+    {
+        await ValidationHelper.ValidarAsync(request, _provider);
+        await _repository.EditarListaPrecio(request);
+    }
+
+    public Task ActivarListaPrecio(int id)
+        => _repository.ActivarListaPrecio(id);
+
+    public Task DesactivarListaPrecio(int id)
+        => _repository.DesactivarListaPrecio(id);
+
+    public async Task EditarPlanFinanciacion(EditarPlanFinanciacionProductoRequest request)
+    {
+        await ValidationHelper.ValidarAsync(request, _provider);
+        await _repository.EditarPlanFinanciacion(request);
+    }
+
+    public Task ActivarPlanFinanciacion(int id)
+        => _repository.ActivarPlanFinanciacion(id);
+
+    public Task DesactivarPlanFinanciacion(int id)
+        => _repository.DesactivarPlanFinanciacion(id);
 
 }

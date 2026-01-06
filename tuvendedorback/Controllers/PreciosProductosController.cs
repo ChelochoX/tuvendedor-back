@@ -92,5 +92,119 @@ public class PreciosProductosController : Controller
         });
     }
 
+    [HttpGet("listado-precios")]
+    [SwaggerOperation(
+    Summary = "Listado de precios por modelo",
+    Description = "Devuelve modelos con sus listas de precios y cuotas")]
+    public async Task<IActionResult> ListadoPrecios()
+    {
+        var data = await _service.ListadoPrecios();
+
+        return Ok(new Response<IEnumerable<ModeloPrecioDto>>
+        {
+            Success = true,
+            Data = data
+        });
+    }
+
+    // ===============================
+    // LISTAS DE PRECIOS
+    // ===============================
+
+    [HttpPut("editar-lista-precio")]
+    [SwaggerOperation(
+        Summary = "Edita una lista de precios",
+        Description = "Permite modificar precios, fechas de vigencia y valores base de una lista de precios existente.")]
+    public async Task<IActionResult> EditarListaPrecio(
+        [FromBody] EditarListaPrecioProductoRequest request)
+    {
+        await _service.EditarListaPrecio(request);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Lista de precios actualizada correctamente"
+        });
+    }
+
+    [HttpPost("desactivar-lista-precio/{id}")]
+    [SwaggerOperation(
+        Summary = "Desactiva una lista de precios",
+        Description = "Inactiva una lista de precios. No se elimina físicamente, solo cambia el estado.")]
+    public async Task<IActionResult> DesactivarListaPrecio(int id)
+    {
+        await _service.DesactivarListaPrecio(id);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Lista de precios desactivada correctamente"
+        });
+    }
+
+    [HttpPost("activar-lista-precio/{id}")]
+    [SwaggerOperation(
+        Summary = "Activa una lista de precios",
+        Description = "Reactiva una lista de precios previamente desactivada.")]
+    public async Task<IActionResult> ActivarListaPrecio(int id)
+    {
+        await _service.ActivarListaPrecio(id);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Lista de precios activada correctamente"
+        });
+    }
+
+    // ===============================
+    // PLANES DE FINANCIACIÓN
+    // ===============================
+
+    [HttpPut("editar-plan")]
+    [SwaggerOperation(
+        Summary = "Edita un plan de financiación",
+        Description = "Actualiza cuotas, importe, interés y código del plan. El código se guarda en mayúsculas.")]
+    public async Task<IActionResult> EditarPlan(
+        [FromBody] EditarPlanFinanciacionProductoRequest request)
+    {
+        await _service.EditarPlanFinanciacion(request);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Plan de financiación actualizado correctamente"
+        });
+    }
+
+    [HttpPost("desactivar-plan/{id}")]
+    [SwaggerOperation(
+        Summary = "Desactiva un plan de financiación",
+        Description = "Inactiva un plan de financiación sin eliminarlo de la base de datos.")]
+    public async Task<IActionResult> DesactivarPlan(int id)
+    {
+        await _service.DesactivarPlanFinanciacion(id);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Plan de financiación desactivado correctamente"
+        });
+    }
+
+    [HttpPost("activar-plan/{id}")]
+    [SwaggerOperation(
+        Summary = "Activa un plan de financiación",
+        Description = "Reactiva un plan de financiación previamente desactivado.")]
+    public async Task<IActionResult> ActivarPlan(int id)
+    {
+        await _service.ActivarPlanFinanciacion(id);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Plan de financiación activado correctamente"
+        });
+    }
 
 }

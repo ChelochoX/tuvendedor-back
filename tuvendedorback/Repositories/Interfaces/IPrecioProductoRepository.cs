@@ -8,10 +8,8 @@ public interface IPrecioProductoRepository
     Task<int> CrearModeloProducto(CrearModeloProductoRequest request);
     Task<int> CrearListaPrecioProducto(CrearListaPrecioProductoRequest request);
     Task<int> CrearPlanFinanciacionProducto(CrearPlanFinanciacionProductoRequest request);
-
     Task<bool> ExisteModeloPorCodigo(string rubro, string codigoReferencia);
     Task<int?> ObtenerIdModeloPorCodigo(string rubro, string codigoReferencia);
-
     Task<bool> ExisteSolapamientoListaPrecio(
         int idModeloProducto,
         DateTime fechaDesde,
@@ -19,7 +17,16 @@ public interface IPrecioProductoRepository
         bool esPromo);
     Task<PrecioVigenteProductoDto?> ObtenerPrecioVigentePorCodigo(string rubro, string codigoReferencia, DateTime fechaActual);
     Task<List<PlanFinanciacionDto>> ObtenerPlanesPorListaPrecio(int idListaPrecio);
-
     Task<IEnumerable<ModeloProductoDto>> ListarModelos();
+    Task<IEnumerable<ModeloPrecioDto>> ListadoPrecios();
 
+    // LISTAS DE PRECIOS
+    Task EditarListaPrecio(EditarListaPrecioProductoRequest request);
+    Task ActivarListaPrecio(int id);
+    Task DesactivarListaPrecio(int id);
+
+    // PLANES
+    Task EditarPlanFinanciacion(EditarPlanFinanciacionProductoRequest request);
+    Task ActivarPlanFinanciacion(int id);
+    Task DesactivarPlanFinanciacion(int id);
 }
