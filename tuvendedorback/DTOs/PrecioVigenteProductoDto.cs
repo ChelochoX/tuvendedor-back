@@ -26,4 +26,5 @@ public class PlanFinanciacionDto
     public decimal ImporteCuota { get; set; }
     public decimal? Interes { get; set; }
     public string? CodigoPlan { get; set; }
+    public string Estado { get; set; } = default!;
 }

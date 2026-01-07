@@ -295,7 +295,8 @@ public class PrecioProductoRepository : IPrecioProductoRepository
                     lp.PrecioBase,
                     lp.FechaDesde,
                     lp.FechaHasta,
-                    lp.EsPromo
+                    lp.EsPromo,
+                    lp.Estado 
                 FROM ListasPreciosProducto lp
                 WHERE lp.Estado = 'Activo';
             ";

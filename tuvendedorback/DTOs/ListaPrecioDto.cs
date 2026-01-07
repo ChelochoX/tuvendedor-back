@@ -12,6 +12,7 @@ public class ListaPrecioDto
     public DateTime FechaDesde { get; set; }
     public DateTime? FechaHasta { get; set; }
     public bool EsPromo { get; set; }
+    public string Estado { get; set; }
 
     public List<PlanFinanciacionDto> Planes { get; set; } = new();
 }
