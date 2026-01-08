@@ -266,16 +266,16 @@ public class PrecioProductoRepository : IPrecioProductoRepository
             // MODELOS
             // =========================
             const string sqlModelos = @"
-                SELECT
-                    mp.Id               AS IdModeloProducto,
-                    m.Nombre            AS Marca,
-                    mp.NombreModelo     AS NombreModelo,
-                    mp.CodigoReferencia AS CodigoReferencia
-                FROM ModelosProducto mp
-                INNER JOIN Marcas m ON m.Id = mp.IdMarca
-                WHERE mp.Estado = 'Activo'
-                ORDER BY m.Nombre, mp.NombreModelo;
-            ";
+            SELECT
+                mp.Id               AS IdModeloProducto,
+                m.Nombre            AS Marca,
+                mp.NombreModelo     AS NombreModelo,
+                mp.CodigoReferencia AS CodigoReferencia
+            FROM ModelosProducto mp
+            INNER JOIN Marcas m ON m.Id = mp.IdMarca
+            WHERE mp.Estado = 'Activo'
+            ORDER BY m.Nombre, mp.NombreModelo;
+        ";
 
             var modelos = (await conn.QueryAsync<ModeloPrecioDto>(sqlModelos))
                 .ToDictionary(x => x.IdModeloProducto);
@@ -285,21 +285,21 @@ public class PrecioProductoRepository : IPrecioProductoRepository
 
             // =========================
             // LISTAS DE PRECIOS
+            // 👉 NO filtramos por Estado (pantalla de gestión)
             // =========================
             const string sqlListas = @"
-                SELECT
-                    lp.Id               AS IdListaPrecio,
-                    lp.IdModeloProducto,
-                    lp.PrecioPublico,
-                    lp.PrecioDistribuidor,
-                    lp.PrecioBase,
-                    lp.FechaDesde,
-                    lp.FechaHasta,
-                    lp.EsPromo,
-                    lp.Estado 
-                FROM ListasPreciosProducto lp
-                WHERE lp.Estado = 'Activo';
-            ";
+            SELECT
+                lp.Id               AS IdListaPrecio,
+                lp.IdModeloProducto,
+                lp.PrecioPublico,
+                lp.PrecioDistribuidor,
+                lp.PrecioBase,
+                lp.FechaDesde,
+                lp.FechaHasta,
+                lp.EsPromo,
+                lp.Estado
+            FROM ListasPreciosProducto lp;
+        ";
 
             var listas = await conn.QueryAsync<ListaPrecioDto>(sqlListas);
 
@@ -312,20 +312,20 @@ public class PrecioProductoRepository : IPrecioProductoRepository
             }
 
             // =========================
-            // PLANES / CUOTAS
+            // PLANES DE FINANCIACIÓN
             // =========================
             const string sqlPlanes = @"
-                SELECT
-                    Id,
-                    IdListaPrecio,
-                    EntregaInicial,
-                    CantidadCuotas,
-                    ImporteCuota,
-                    Interes,
-                    CodigoPlan
-                FROM PlanesFinanciacionProducto
-                WHERE Estado = 'Activo';
-            ";
+            SELECT
+                Id,
+                IdListaPrecio,
+                EntregaInicial,
+                CantidadCuotas,
+                ImporteCuota,
+                Interes,
+                CodigoPlan,
+                Estado
+            FROM PlanesFinanciacionProducto;
+        ";
 
             var planes = await conn.QueryAsync<PlanFinanciacionDto>(sqlPlanes);
 
@@ -347,6 +347,7 @@ public class PrecioProductoRepository : IPrecioProductoRepository
             throw new RepositoryException("Error al obtener listado de precios", ex);
         }
     }
+
 
     public async Task EditarListaPrecio(EditarListaPrecioProductoRequest request)
     {
