@@ -31,18 +31,13 @@ public class PrecioProductoService : IPrecioProductoService
 
     public async Task<int> CrearListaPrecioProducto(CrearListaPrecioProductoRequest request)
     {
+        //Fecha automática para precio normal
+        if (!request.EsPromo)
+        {
+            request.FechaDesde = DateTime.Today;
+            request.FechaHasta = null;
+        }
         await ValidationHelper.ValidarAsync(request, _provider);
-
-        //Regla: evitar solapamiento
-        var haySolapamiento = await _repository.ExisteSolapamientoListaPrecio(
-            request.IdModeloProducto,
-            request.FechaDesde,
-            request.FechaHasta,
-            request.EsPromo
-        );
-
-        if (haySolapamiento)
-            throw new ReglasdeNegocioException("Ya existe una lista de precios activa que se solapa con el rango de fechas indicado.");
 
         return await _repository.CrearListaPrecioProducto(request);
     }
