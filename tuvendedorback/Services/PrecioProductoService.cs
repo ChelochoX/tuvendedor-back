@@ -50,6 +50,9 @@ public class PrecioProductoService : IPrecioProductoService
     public async Task<int> CrearPlanFinanciacionProducto(CrearPlanFinanciacionProductoRequest request)
     {
         await ValidationHelper.ValidarAsync(request, _provider);
+        var interes = DecimalHelper.ParseInteres(request.Interes);
+        request.InteresParam = interes;
+
         return await _repository.CrearPlanFinanciacionProducto(request);
     }
 
@@ -90,6 +93,8 @@ public class PrecioProductoService : IPrecioProductoService
     public async Task EditarPlanFinanciacion(EditarPlanFinanciacionProductoRequest request)
     {
         await ValidationHelper.ValidarAsync(request, _provider);
+        var interes = DecimalHelper.ParseInteres(request.Interes);
+        request.InteresParam = interes;
         await _repository.EditarPlanFinanciacion(request);
     }
 

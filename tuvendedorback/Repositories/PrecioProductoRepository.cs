@@ -67,7 +67,7 @@ public class PrecioProductoRepository : IPrecioProductoRepository
             INSERT INTO PlanesFinanciacionProducto
             (IdListaPrecio, EntregaInicial, CantidadCuotas, ImporteCuota, Interes, CodigoPlan, Estado)
             VALUES
-            (@IdListaPrecio, @EntregaInicial, @CantidadCuotas, @ImporteCuota, @Interes, @CodigoPlan, 'Activo');
+            (@IdListaPrecio, @EntregaInicial, @CantidadCuotas, @ImporteCuota, @InteresParam, @CodigoPlan, 'Activo');
             SELECT SCOPE_IDENTITY();";
 
             return await conn.ExecuteScalarAsync<int>(sql, request);
@@ -434,7 +434,7 @@ public class PrecioProductoRepository : IPrecioProductoRepository
             EntregaInicial = @EntregaInicial,
             CantidadCuotas = @CantidadCuotas,
             ImporteCuota = @ImporteCuota,
-            Interes = @Interes,
+            Interes = @InteresParam,
             CodigoPlan = UPPER(@CodigoPlan)
         WHERE Id = @Id;";
 

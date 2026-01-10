@@ -10,7 +10,8 @@ public class CrearPlanFinanciacionProductoRequest
     public int CantidadCuotas { get; set; }
     public decimal ImporteCuota { get; set; }
 
-    public decimal? Interes { get; set; }
+    public string? Interes { get; set; }
+    public decimal? InteresParam { get; set; }
     public string? CodigoPlan { get; set; } // C30, C29PROMO
 }
 public class CrearPlanFinanciacionProductoRequestValidator : AbstractValidator<CrearPlanFinanciacionProductoRequest>
