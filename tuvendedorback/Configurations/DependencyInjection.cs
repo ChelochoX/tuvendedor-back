@@ -11,6 +11,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddRepositories(this IServiceCollection services)
     {
+        // Marketplace
         services.AddScoped<IUsuariosRepository, UsuariosRepository>();
         services.AddScoped<IPermisosRepository, PermisosRepository>();
         services.AddScoped<IPublicacionRepository, PublicacionRepository>();
@@ -23,6 +24,7 @@ public static class DependencyInjection
 
     public static IServiceCollection AddServices(this IServiceCollection services)
     {
+        // Marketplace
         services.AddScoped<IUsuarioService, UsuarioService>();
         services.AddScoped<IPermisosService, PermisosService>();
         services.AddScoped<IPasswordHasher<string>, PasswordHasher<string>>();
