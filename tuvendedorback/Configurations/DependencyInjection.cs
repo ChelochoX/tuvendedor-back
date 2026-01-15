@@ -1,4 +1,8 @@
 ﻿using Microsoft.AspNetCore.Identity;
+using tuvendedorback.ERP.ERPRepositories;
+using tuvendedorback.ERP.ERPRepositories.Interfaces;
+using tuvendedorback.ERP.ERPServices;
+using tuvendedorback.ERP.ERPServices.Interfaces;
 using tuvendedorback.Repositories;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Services;
@@ -19,6 +23,12 @@ public static class DependencyInjection
         services.AddScoped<IPrecioProductoRepository, PrecioProductoRepository>();
         services.AddScoped<IMarcaRepository, MarcaRepository>();
         services.AddScoped<IModeloProductoRepository, ModeloProductoRepository>();
+
+        // ERP
+        services.AddScoped<IERPClienteRepository, ERPClienteRepository>();
+
+
+
         return services;
     }
 
@@ -34,6 +44,12 @@ public static class DependencyInjection
         services.AddScoped<IPrecioProductoService, PrecioProductoService>();
         services.AddScoped<IMarcaService, MarcaService>();
         services.AddScoped<IModeloProductoService, ModeloProductoService>();
+
+        // ERP
+        services.AddScoped<IERPClienteService, ERPClienteService>();
+
+
+
         return services;
     }
 }

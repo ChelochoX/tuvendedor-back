@@ -2,10 +2,11 @@
 using tuvendedorback.ERP.ERPModels;
 using tuvendedorback.ERP.ERPRepositories.Interfaces;
 using tuvendedorback.ERP.ERPRequest;
+using tuvendedorback.ERP.ERPServices.Interfaces;
 
 namespace tuvendedorback.ERP.ERPServices;
 
-public class ERPClienteService
+public class ERPClienteService : IERPClienteService
 {
     private readonly IERPClienteRepository _repo;
 
