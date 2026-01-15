@@ -37,6 +37,8 @@
 
   <ItemGroup>
     <Folder Include="assets\fonts\" />
+    <Folder Include="Marketplace\" />
+    <Folder Include="CRM\" />
   </ItemGroup>
 
 	<PropertyGroup>
