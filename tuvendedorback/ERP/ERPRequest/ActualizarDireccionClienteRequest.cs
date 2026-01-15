@@ -1,9 +1,8 @@
-﻿namespace tuvendedorback.ERP.ERPDTOs;
+﻿namespace tuvendedorback.ERP.ERPRequest;
 
-public class ERPClienteDireccionDto
+public class ActualizarDireccionClienteRequest
 {
     public int DireccionId { get; set; }
-    public int ClienteId { get; set; }
 
     public string TipoDireccion { get; set; } = null!;
     public string Direccion { get; set; } = null!;
@@ -13,5 +12,4 @@ public class ERPClienteDireccionDto
     public decimal? Longitud { get; set; }
 
     public bool EsPrincipal { get; set; }
-    public DateTime FechaCreacion { get; set; }
 }

@@ -145,4 +145,124 @@ public class ERPClienteRepository : IERPClienteRepository
             );
         }
     }
+
+    public async Task ActualizarCliente(ERPCliente cliente)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            UPDATE ERP_Clientes
+            SET RazonSocial = @RazonSocial,
+                NombreFantasia = @NombreFantasia,
+                Telefono = @Telefono,
+                Email = @Email,
+                FechaModificacion = GETDATE(),
+                UsuarioModificacion = @UsuarioModificacion
+            WHERE ClienteId = @ClienteId";
+
+            await conn.ExecuteAsync(sql, cliente);
+
+            _logger.LogInformation("Cliente ERP actualizado. ClienteId: {ClienteId}", cliente.ClienteId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al actualizar cliente ERP {ClienteId}", cliente.ClienteId);
+            throw new RepositoryException("Error al actualizar cliente ERP", ex);
+        }
+    }
+
+    public async Task DesactivarCliente(int clienteId, int? usuarioId)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            UPDATE ERP_Clientes
+            SET Activo = 0,
+                FechaModificacion = GETDATE(),
+                UsuarioModificacion = @UsuarioModificacion
+            WHERE ClienteId = @ClienteId";
+
+            await conn.ExecuteAsync(sql, new
+            {
+                ClienteId = clienteId,
+                UsuarioModificacion = usuarioId
+            });
+
+            _logger.LogInformation("Cliente ERP desactivado. ClienteId: {ClienteId}", clienteId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al desactivar cliente ERP {ClienteId}", clienteId);
+            throw new RepositoryException("Error al desactivar cliente ERP", ex);
+        }
+    }
+
+    public async Task<IEnumerable<ERPClienteDireccion>> ObtenerDirecciones(int clienteId)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            SELECT *
+            FROM ERP_ClientesDirecciones
+            WHERE ClienteId = @ClienteId
+            ORDER BY EsPrincipal DESC, FechaCreacion DESC";
+
+            return await conn.QueryAsync<ERPClienteDireccion>(sql, new { ClienteId = clienteId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener direcciones del cliente {ClienteId}", clienteId);
+            throw new RepositoryException("Error al obtener direcciones del cliente", ex);
+        }
+    }
+
+    public async Task ActualizarDireccion(ERPClienteDireccion direccion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            UPDATE ERP_ClientesDirecciones
+            SET TipoDireccion = @TipoDireccion,
+                Direccion = @Direccion,
+                Ciudad = @Ciudad,
+                Latitud = @Latitud,
+                Longitud = @Longitud,
+                EsPrincipal = @EsPrincipal
+            WHERE DireccionId = @DireccionId";
+
+            await conn.ExecuteAsync(sql, direccion);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al actualizar dirección {DireccionId}", direccion.DireccionId);
+            throw new RepositoryException("Error al actualizar dirección", ex);
+        }
+    }
+
+    public async Task EliminarDireccion(int direccionId)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            await conn.ExecuteAsync(
+                "DELETE FROM ERP_ClientesDirecciones WHERE DireccionId = @DireccionId",
+                new { DireccionId = direccionId }
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al eliminar dirección {DireccionId}", direccionId);
+            throw new RepositoryException("Error al eliminar dirección", ex);
+        }
+    }
+
 }
