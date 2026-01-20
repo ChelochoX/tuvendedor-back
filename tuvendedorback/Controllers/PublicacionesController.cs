@@ -273,4 +273,25 @@ public class PublicacionesController : ControllerBase
         });
     }
 
+    [HttpPut("editar-publicacion")]
+    [Consumes("multipart/form-data")]
+    [SwaggerOperation(
+    Summary = "Edita una publicación existente",
+    Description = "Permite modificar los datos de una publicación, sus imágenes y planes de crédito.")]
+    public async Task<IActionResult> Editar([FromForm] EditarPublicacionRequest request)
+    {
+        var idUsuario = _userContext.IdUsuario;
+
+        if (idUsuario == null || idUsuario == 0)
+            throw new UnauthorizedAccessException();
+
+        await _service.EditarPublicacion(request, idUsuario.Value);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Publicación actualizada correctamente"
+        });
+    }
+
 }

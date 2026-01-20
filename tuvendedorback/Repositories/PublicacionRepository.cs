@@ -375,7 +375,6 @@ public class PublicacionRepository : IPublicacionRepository
     }
 
 
-
     public async Task<List<CategoriaDto>> ObtenerCategoriasActivas()
     {
         using var conn = _conexion.CreateSqlConnection();
@@ -466,7 +465,6 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al destacar la publicación.", ex);
         }
     }
-
 
     public async Task<bool> EstaPublicacionDestacada(int idPublicacion)
     {
@@ -581,7 +579,6 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al quitar el destacado.", ex);
         }
     }
-
 
     public async Task DesactivarTemporada(int idPublicacion)
     {
@@ -731,6 +728,122 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al marcar como vendida", ex);
         }
     }
+
+    public async Task EditarPublicacion(
+    EditarPublicacionRequest request,
+    List<ImagenDto> nuevasImagenes,
+    List<string>? imagenesAEliminar)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        conn.Open();
+        using var tran = conn.BeginTransaction();
+
+        try
+        {
+            // ✏️ Update publicación
+            await conn.ExecuteAsync(@"
+                UPDATE Publicaciones
+                SET Titulo = @Titulo,
+                    Descripcion = @Descripcion,
+                    Precio = @Precio,
+                    Categoria = @Categoria,
+                    Ubicacion = @Ubicacion,
+                    MostrarBotonesCompra = @MostrarBotonesCompra
+                WHERE Id = @IdPublicacion",
+                request,
+                tran
+            );
+
+            // ❌ Eliminar imágenes
+            if (imagenesAEliminar != null && imagenesAEliminar.Any())
+            {
+                await conn.ExecuteAsync(@"
+                    DELETE FROM ImagenesPublicacion
+                    WHERE IdPublicacion = @Id
+                      AND Url IN @Urls",
+                    new
+                    {
+                        Id = request.IdPublicacion,
+                        Urls = imagenesAEliminar
+                    },
+                    tran
+                );
+            }
+
+            // ➕ Insertar nuevas imágenes
+            foreach (var img in nuevasImagenes)
+            {
+                await conn.ExecuteAsync(@"
+                    INSERT INTO ImagenesPublicacion (IdPublicacion, Url, ThumbUrl)
+                    VALUES (@Id, @Url, @ThumbUrl)",
+                    new
+                    {
+                        Id = request.IdPublicacion,
+                        Url = img.MainUrl,
+                        ThumbUrl = img.ThumbUrl
+                    },
+                    tran
+                );
+            }
+
+            // 💳 Reemplazar planes de crédito
+            await conn.ExecuteAsync(
+                "DELETE FROM PlanesCredito WHERE IdPublicacion = @Id",
+                new { Id = request.IdPublicacion },
+                tran
+            );
+
+            if (request.MostrarBotonesCompra && request.PlanCredito != null)
+            {
+                foreach (var plan in request.PlanCredito)
+                {
+                    await conn.ExecuteAsync(@"
+                        INSERT INTO PlanesCredito
+                        (
+                            IdPublicacion,
+                            Cuotas,
+                            ValorCuota,
+                            EntregaInicial,
+                            Interes,
+                            InteresParam,
+                            CodigoPlan
+                        )
+                        VALUES
+                        (
+                            @IdPublicacion,
+                            @Cuotas,
+                            @ValorCuota,
+                            @EntregaInicial,
+                            @Interes,
+                            @InteresParam,
+                            @CodigoPlan
+                        )",
+                        new
+                        {
+                            IdPublicacion = request.IdPublicacion,
+                            Cuotas = plan.CantidadCuotas,     // ✅ CORRECTO
+                            ValorCuota = plan.ImporteCuota,   // ✅ CORRECTO
+                            plan.EntregaInicial,
+                            plan.Interes,
+                            plan.InteresParam,
+                            plan.CodigoPlan
+                        },
+                        tran
+                    );
+                }
+            }
+
+            tran.Commit();
+        }
+        catch (Exception ex)
+        {
+            tran.Rollback();
+            _logger.LogError(ex, "Error al editar publicación {Id}", request.IdPublicacion);
+            throw new RepositoryException("Error al editar la publicación", ex);
+        }
+    }
+
+
 
 
 }

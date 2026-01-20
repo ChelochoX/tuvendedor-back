@@ -224,4 +224,44 @@ public class PublicacionService : IPublicacionService
             );
     }
 
+    public async Task EditarPublicacion(EditarPublicacionRequest request, int idUsuario)
+    {
+        await ValidationHelper.ValidarAsync(request, _serviceProvider);
+
+        // 🔐 Validar acceso
+        await ValidarAccesoPublicacion(request.IdPublicacion, idUsuario, "EditarPublicacion");
+
+        // 📸 Subir nuevas imágenes
+        var nuevasImagenes = new List<ImagenDto>();
+
+        if (request.NuevasImagenes != null)
+        {
+            foreach (var img in request.NuevasImagenes)
+            {
+                var result = await _imageStorage.SubirArchivo(img);
+                nuevasImagenes.Add(new ImagenDto
+                {
+                    MainUrl = result.MainUrl,
+                    ThumbUrl = result.ThumbUrl
+                });
+            }
+        }
+
+        // ❌ Eliminar imágenes solicitadas
+        if (request.ImagenesAEliminar != null)
+        {
+            foreach (var url in request.ImagenesAEliminar)
+            {
+                await _imageStorage.EliminarArchivo(url);
+            }
+        }
+
+        await _repository.EditarPublicacion(
+            request,
+            nuevasImagenes,
+            request.ImagenesAEliminar
+        );
+    }
+
+
 }

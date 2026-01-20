@@ -17,4 +17,5 @@ public interface IPublicacionService
     Task<List<TemporadaDto>> ObtenerTemporadasActivas();
     Task<int> CrearSugerencia(CrearSugerenciaRequest request, int? idUsuario);
     Task MarcarComoVendido(int idPublicacion, int idUsuario);
+    Task EditarPublicacion(EditarPublicacionRequest request, int idUsuario);
 }
