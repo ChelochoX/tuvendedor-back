@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<IPrecioProductoRepository, PrecioProductoRepository>();
         services.AddScoped<IMarcaRepository, MarcaRepository>();
         services.AddScoped<IModeloProductoRepository, ModeloProductoRepository>();
+        services.AddScoped<IPerfilVendedorRepository, PerfilVendedorRepository>();
 
         // ERP
         services.AddScoped<IERPClienteRepository, ERPClienteRepository>();
@@ -44,6 +45,7 @@ public static class DependencyInjection
         services.AddScoped<IPrecioProductoService, PrecioProductoService>();
         services.AddScoped<IMarcaService, MarcaService>();
         services.AddScoped<IModeloProductoService, ModeloProductoService>();
+        services.AddScoped<IPerfilVendedorService, PerfilVendedorService>();
 
         // ERP
         services.AddScoped<IERPClienteService, ERPClienteService>();
