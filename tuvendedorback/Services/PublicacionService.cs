@@ -31,9 +31,16 @@ public class PublicacionService : IPublicacionService
 
         var imagenes = new List<ImagenDto>();
 
+        var carpetaDestino = $"vendedores/{idUsuario}/publicaciones";
+
         foreach (var img in request.Imagenes)
         {
-            var result = await _imageStorage.SubirArchivo(img);
+            var result = await _imageStorage.SubirArchivo(
+                img,
+                carpetaDestino,
+                generarMiniatura: false
+            );
+
             imagenes.Add(new ImagenDto
             {
                 MainUrl = result.MainUrl,
@@ -42,7 +49,6 @@ public class PublicacionService : IPublicacionService
         }
 
         return await _repository.InsertarPublicacion(request, idUsuario, imagenes);
-
     }
 
     public async Task<List<ProductoDto>> ObtenerPublicaciones(string? categoria, string? nombre, int? idUsuario)

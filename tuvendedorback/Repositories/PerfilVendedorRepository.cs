@@ -25,32 +25,31 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
 
         try
         {
-            _logger.LogInformation(
-                "Iniciando obtención de perfil público de vendedor para slug: {Slug}",
-                slug);
+            _logger.LogInformation("Iniciando obtención de perfil público de vendedor para slug: {Slug}", slug);
 
             const string sql = @"
                 SELECT
-                    v.Id                           AS IdVendedor,
-                    v.IdUsuario                    AS IdUsuario,
-                    v.Slug                         AS Slug,
-                    v.NombreNegocio                AS NombreNegocio,
-                    u.NombreUsuario                AS NombreUsuario,
-                    v.Descripcion                  AS Descripcion,
-                    v.BannerUrl                    AS BannerUrl,
-                    u.FotoPerfil                   AS FotoPerfil,
-                    v.Rubro                        AS Rubro,
-                    COALESCE(v.CiudadVisible, u.Ciudad) AS CiudadVisible,
+                    v.Id                                   AS IdVendedor,
+                    v.IdUsuario                            AS IdUsuario,
+                    v.Slug                                 AS Slug,
+                    v.NombreNegocio                        AS NombreNegocio,
+                    u.NombreUsuario                        AS NombreUsuario,
+                    v.Descripcion                          AS Descripcion,
+                    v.BannerUrl                            AS BannerUrl,
+                    v.BannerTipo                           AS BannerTipo,
+                    u.FotoPerfil                           AS FotoPerfil,
+                    v.Rubro                                AS Rubro,
+                    COALESCE(v.CiudadVisible, u.Ciudad)    AS CiudadVisible,
                     CASE 
                         WHEN v.MostrarTelefono = 1 THEN u.Telefono
                         ELSE NULL
-                    END                            AS Telefono,
-                    v.Whatsapp                     AS Whatsapp,
-                    v.InstagramUrl                 AS InstagramUrl,
-                    v.FacebookUrl                  AS FacebookUrl,
-                    v.EsPerfilPublico              AS EsPerfilPublico,
-                    v.EsPremium                    AS EsPremium,
-                    v.MostrarTelefono              AS MostrarTelefono
+                    END                                    AS Telefono,
+                    v.Whatsapp                             AS Whatsapp,
+                    v.InstagramUrl                         AS InstagramUrl,
+                    v.FacebookUrl                          AS FacebookUrl,
+                    v.EsPerfilPublico                      AS EsPerfilPublico,
+                    v.EsPremium                            AS EsPremium,
+                    v.MostrarTelefono                      AS MostrarTelefono
                 FROM dbo.Vendedores v
                 INNER JOIN dbo.Usuarios u
                     ON u.Id = v.IdUsuario
@@ -70,11 +69,7 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "Error al obtener perfil público de vendedor para slug: {Slug}",
-                slug);
-
+            _logger.LogError(ex, "Error al obtener perfil público de vendedor para slug: {Slug}", slug);
             throw new RepositoryException("Error al obtener el perfil público del vendedor.", ex);
         }
     }
@@ -85,9 +80,7 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
 
         try
         {
-            _logger.LogInformation(
-                "Iniciando obtención de publicaciones activas para perfil público. Slug: {Slug}",
-                slug);
+            _logger.LogInformation("Iniciando obtención de publicaciones activas para perfil público. Slug: {Slug}", slug);
 
             const string sql = @"
                 SELECT
@@ -145,12 +138,181 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Error al obtener publicaciones activas del perfil público. Slug: {Slug}", slug);
+            throw new RepositoryException("Error al obtener las publicaciones del perfil público.", ex);
+        }
+    }
+
+    public async Task<PerfilPublicoVendedorDto?> ObtenerMiPerfilVendedor(int idUsuario)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            _logger.LogInformation("Iniciando obtención de mi perfil vendedor. IdUsuario: {IdUsuario}", idUsuario);
+
+            const string sql = @"
+                SELECT
+                    v.Id                                   AS IdVendedor,
+                    v.IdUsuario                            AS IdUsuario,
+                    v.Slug                                 AS Slug,
+                    v.NombreNegocio                        AS NombreNegocio,
+                    u.NombreUsuario                        AS NombreUsuario,
+                    v.Descripcion                          AS Descripcion,
+                    v.BannerUrl                            AS BannerUrl,
+                    v.BannerTipo                           AS BannerTipo,
+                    u.FotoPerfil                           AS FotoPerfil,
+                    v.Rubro                                AS Rubro,
+                    COALESCE(v.CiudadVisible, u.Ciudad)    AS CiudadVisible,
+                    CASE 
+                        WHEN v.MostrarTelefono = 1 THEN u.Telefono
+                        ELSE NULL
+                    END                                    AS Telefono,
+                    v.Whatsapp                             AS Whatsapp,
+                    v.InstagramUrl                         AS InstagramUrl,
+                    v.FacebookUrl                          AS FacebookUrl,
+                    v.EsPerfilPublico                      AS EsPerfilPublico,
+                    v.EsPremium                            AS EsPremium,
+                    v.MostrarTelefono                      AS MostrarTelefono
+                FROM dbo.Vendedores v
+                INNER JOIN dbo.Usuarios u
+                    ON u.Id = v.IdUsuario
+                WHERE v.IdUsuario = @IdUsuario
+                  AND u.Estado = 'Activo';";
+
+            var perfil = await conn.QueryFirstOrDefaultAsync<PerfilPublicoVendedorDto>(
+                sql,
+                new { IdUsuario = idUsuario });
+
+            _logger.LogInformation(
+                "Consulta de mi perfil vendedor finalizada. IdUsuario: {IdUsuario}. Encontrado: {Encontrado}",
+                idUsuario,
+                perfil != null);
+
+            return perfil;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener mi perfil vendedor. IdUsuario: {IdUsuario}", idUsuario);
+            throw new RepositoryException("Error al obtener mi perfil vendedor.", ex);
+        }
+    }
+
+    public async Task<bool> ExisteSlugEnOtroVendedor(string slug, int idUsuario)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+                SELECT COUNT(1)
+                FROM dbo.Vendedores
+                WHERE Slug = @Slug
+                  AND IdUsuario <> @IdUsuario;";
+
+            var cantidad = await conn.ExecuteScalarAsync<int>(
+                sql,
+                new
+                {
+                    Slug = slug,
+                    IdUsuario = idUsuario
+                });
+
+            return cantidad > 0;
+        }
+        catch (Exception ex)
+        {
             _logger.LogError(
                 ex,
-                "Error al obtener publicaciones activas del perfil público. Slug: {Slug}",
-                slug);
+                "Error al validar existencia de slug {Slug} para usuario {IdUsuario}",
+                slug,
+                idUsuario);
 
-            throw new RepositoryException("Error al obtener las publicaciones del perfil público.", ex);
+            throw new RepositoryException("Error al validar el slug del vendedor.", ex);
+        }
+    }
+
+    public async Task ActualizarMiPerfilVendedor(
+        ActualizarMiPerfilVendedorRequest request,
+        int idUsuario,
+        string? fotoPerfilUrl,
+        string? bannerUrl,
+        string? bannerTipo)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        conn.Open();
+
+        using var tran = conn.BeginTransaction();
+
+        try
+        {
+            _logger.LogInformation("Iniciando actualización de perfil vendedor. IdUsuario: {IdUsuario}", idUsuario);
+
+            const string updateUsuarioSql = @"
+                UPDATE dbo.Usuarios
+                SET FotoPerfil = COALESCE(@FotoPerfilUrl, FotoPerfil)
+                WHERE Id = @IdUsuario;";
+
+            await conn.ExecuteAsync(
+                updateUsuarioSql,
+                new
+                {
+                    IdUsuario = idUsuario,
+                    FotoPerfilUrl = fotoPerfilUrl
+                },
+                tran);
+
+            const string updateVendedorSql = @"
+                UPDATE dbo.Vendedores
+                SET
+                    NombreNegocio   = COALESCE(NULLIF(@NombreNegocio, ''), NombreNegocio),
+                    Slug            = COALESCE(NULLIF(@Slug, ''), Slug),
+                    Rubro           = COALESCE(NULLIF(@Rubro, ''), Rubro),
+                    Descripcion     = COALESCE(NULLIF(@Descripcion, ''), Descripcion),
+                    Whatsapp        = COALESCE(NULLIF(@Whatsapp, ''), Whatsapp),
+                    InstagramUrl    = COALESCE(NULLIF(@InstagramUrl, ''), InstagramUrl),
+                    FacebookUrl     = COALESCE(NULLIF(@FacebookUrl, ''), FacebookUrl),
+                    CiudadVisible   = COALESCE(NULLIF(@CiudadVisible, ''), CiudadVisible),
+                    BannerUrl       = COALESCE(@BannerUrl, BannerUrl),
+                    BannerTipo      = COALESCE(@BannerTipo, BannerTipo),
+                    EsPerfilPublico = COALESCE(@EsPerfilPublico, EsPerfilPublico),
+                    MostrarTelefono = COALESCE(@MostrarTelefono, MostrarTelefono)
+                WHERE IdUsuario = @IdUsuario;";
+
+            var filas = await conn.ExecuteAsync(
+                updateVendedorSql,
+                new
+                {
+                    IdUsuario = idUsuario,
+                    request.NombreNegocio,
+                    request.Slug,
+                    request.Rubro,
+                    request.Descripcion,
+                    request.Whatsapp,
+                    request.InstagramUrl,
+                    request.FacebookUrl,
+                    request.CiudadVisible,
+                    BannerUrl = bannerUrl,
+                    BannerTipo = bannerTipo,
+                    request.EsPerfilPublico,
+                    request.MostrarTelefono
+                },
+                tran);
+
+            if (filas == 0)
+                throw new RepositoryException("No se encontró el perfil vendedor para actualizar.");
+
+            tran.Commit();
+
+            _logger.LogInformation("Perfil vendedor actualizado correctamente. IdUsuario: {IdUsuario}", idUsuario);
+        }
+        catch (Exception ex)
+        {
+            tran.Rollback();
+
+            _logger.LogError(ex, "Error al actualizar perfil vendedor. IdUsuario: {IdUsuario}", idUsuario);
+
+            throw new RepositoryException("Error al actualizar el perfil vendedor.", ex);
         }
     }
 }

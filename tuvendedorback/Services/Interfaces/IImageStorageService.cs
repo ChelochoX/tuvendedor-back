@@ -4,6 +4,10 @@ namespace tuvendedorback.Services.Interfaces;
 
 public interface IImageStorageService
 {
-    Task<UploadResultDto> SubirArchivo(IFormFile imagenFile, string carpetaDestino = "publicaciones");
+    Task<UploadResultDto> SubirArchivo(
+        IFormFile archivo,
+        string carpetaDestino = "publicaciones",
+        bool generarMiniatura = false);
+
     Task EliminarArchivo(string archivoUrl);
 }
