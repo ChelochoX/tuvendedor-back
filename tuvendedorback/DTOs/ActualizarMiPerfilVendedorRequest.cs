@@ -10,6 +10,11 @@ public class ActualizarMiPerfilVendedorRequest
     public string? Whatsapp { get; set; }
     public string? InstagramUrl { get; set; }
     public string? FacebookUrl { get; set; }
+
+    // Nuevo
+    public string? CorreoContacto { get; set; }
+    public bool? MostrarEmail { get; set; }
+
     public string? CiudadVisible { get; set; }
 
     public bool? EsPerfilPublico { get; set; }
