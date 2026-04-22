@@ -52,14 +52,6 @@ public class CrearPublicacionRequestValidator : AbstractValidator<CrearPublicaci
             .MaximumLength(1000)
             .When(x => !string.IsNullOrWhiteSpace(x.GoogleMapsUrl));
 
-        RuleFor(x => x.Latitud)
-            .InclusiveBetween(-90, 90)
-            .When(x => x.Latitud.HasValue);
-
-        RuleFor(x => x.Longitud)
-            .InclusiveBetween(-180, 180)
-            .When(x => x.Longitud.HasValue);
-
         RuleFor(x => x.Imagenes)
             .NotEmpty()
             .WithMessage("Debe adjuntar al menos una imagen.")

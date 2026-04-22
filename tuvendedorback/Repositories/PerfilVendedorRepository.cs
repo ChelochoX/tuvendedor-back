@@ -101,7 +101,7 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                 "Iniciando obtención de publicaciones activas para perfil público. Slug: {Slug}",
                 slug);
 
-            const string sql = @"
+            const string sqlPublicaciones = @"
             SELECT
                 p.Id                           AS Id,
                 p.Titulo                       AS Titulo,
@@ -109,12 +109,9 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                 p.Precio                       AS Precio,
                 p.Categoria                    AS Categoria,
                 p.Ubicacion                    AS Ubicacion,
-
-                -- GPS / ubicación exacta del inmueble
                 p.Latitud                      AS Latitud,
                 p.Longitud                     AS Longitud,
                 p.GoogleMapsUrl                AS GoogleMapsUrl,
-
                 p.Estado                       AS Estado,
                 img.Url                        AS ImagenPrincipal,
                 img.ThumbUrl                   AS ThumbUrl,
@@ -151,12 +148,67 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                 p.Fecha DESC;";
 
             var publicaciones = (await conn.QueryAsync<PerfilPublicoPublicacionDto>(
-                sql,
-                new { Slug = slug })).ToList();
+                sqlPublicaciones,
+                new { Slug = slug }
+            )).ToList();
+
+            if (!publicaciones.Any())
+            {
+                _logger.LogInformation(
+                    "No se encontraron publicaciones activas para slug: {Slug}",
+                    slug);
+
+                return publicaciones;
+            }
+
+            var idsPublicaciones = publicaciones.Select(x => x.Id).ToArray();
+
+            const string sqlImagenes = @"
+            SELECT
+                i.IdPublicacion,
+                i.Url,
+                i.ThumbUrl
+            FROM dbo.ImagenesPublicacion i
+            WHERE i.IdPublicacion IN @IdsPublicaciones
+            ORDER BY i.IdPublicacion, i.Id ASC;";
+
+            var imagenes = (await conn.QueryAsync<PerfilPublicacionImagenRow>(
+                sqlImagenes,
+                new { IdsPublicaciones = idsPublicaciones }
+            )).ToList();
+
+            var imagenesPorPublicacion = imagenes
+                .GroupBy(x => x.IdPublicacion)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g
+                        .Select(x => !string.IsNullOrWhiteSpace(x.Url) ? x.Url : x.ThumbUrl)
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .Distinct()
+                        .ToList()!
+                );
+
+            foreach (var publicacion in publicaciones)
+            {
+                if (imagenesPorPublicacion.TryGetValue(publicacion.Id, out var listaImagenes))
+                {
+                    publicacion.Imagenes = listaImagenes;
+                }
+
+                if (!publicacion.Imagenes.Any())
+                {
+                    if (!string.IsNullOrWhiteSpace(publicacion.ImagenPrincipal))
+                        publicacion.Imagenes.Add(publicacion.ImagenPrincipal);
+
+                    if (!string.IsNullOrWhiteSpace(publicacion.ThumbUrl))
+                        publicacion.Imagenes.Add(publicacion.ThumbUrl);
+                }
+            }
 
             _logger.LogInformation(
-                "Se obtuvieron {Cantidad} publicaciones activas para slug: {Slug}",
+                "Se obtuvieron {CantidadPublicaciones} publicaciones y {CantidadImagenes} imágenes para slug: {Slug}",
                 publicaciones.Count,
+                imagenes.Count,
                 slug);
 
             return publicaciones;
@@ -170,6 +222,13 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
 
             throw new RepositoryException("Error al obtener las publicaciones del perfil público.", ex);
         }
+    }
+
+    private sealed class PerfilPublicacionImagenRow
+    {
+        public int IdPublicacion { get; set; }
+        public string? Url { get; set; }
+        public string? ThumbUrl { get; set; }
     }
 
     public async Task<PerfilPublicoVendedorDto?> ObtenerMiPerfilVendedor(int idUsuario)

@@ -17,4 +17,5 @@ public class PerfilPublicoPublicacionDto
     public string? ImagenPrincipal { get; set; }
     public string? ThumbUrl { get; set; }
     public bool EsDestacada { get; set; }
+    public List<string> Imagenes { get; set; } = new();
 }
