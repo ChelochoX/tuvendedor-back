@@ -27,8 +27,8 @@ public class PublicacionesController : ControllerBase
     [HttpPost("crear-publicacion")]
     [Consumes("multipart/form-data")]
     [SwaggerOperation(
-        Summary = "Crea una nueva publicación",
-        Description = "Permite al usuario vendedor crear una publicación con imágenes.")]
+       Summary = "Crea una nueva publicación",
+       Description = "Permite al usuario vendedor crear una publicación con imágenes.")]
     public async Task<IActionResult> Crear([FromForm] CrearPublicacionRequest request)
     {
         var idUsuario = _userContext.IdUsuario;
@@ -42,7 +42,39 @@ public class PublicacionesController : ControllerBase
                 StatusCode = 401
             });
         }
-        request.Ubicacion = _userContext.Ubicacion ?? "";
+
+        var esInmueble = EsCategoriaInmobiliaria(request.Categoria);
+
+        if (esInmueble)
+        {
+            // Para inmuebles, la ubicación es la del inmueble.
+            // Si no cargó nada, usamos la ubicación del vendedor como respaldo.
+            request.Ubicacion = string.IsNullOrWhiteSpace(request.Ubicacion)
+                ? _userContext.Ubicacion ?? ""
+                : request.Ubicacion.Trim();
+
+            request.GoogleMapsUrl = request.GoogleMapsUrl?.Trim();
+
+            // Si no vino URL pero sí coordenadas, generamos el link.
+            if (string.IsNullOrWhiteSpace(request.GoogleMapsUrl)
+                && request.Latitud.HasValue
+                && request.Longitud.HasValue)
+            {
+                request.GoogleMapsUrl =
+                    $"https://www.google.com/maps?q={request.Latitud.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)},{request.Longitud.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            }
+        }
+        else
+        {
+            // Para marketplace común, se usa ubicación del vendedor.
+            request.Ubicacion = _userContext.Ubicacion ?? "";
+
+            // GPS no aplica a publicaciones comunes.
+            request.Latitud = null;
+            request.Longitud = null;
+            request.GoogleMapsUrl = null;
+        }
+
         var publicacionId = await _service.CrearPublicacion(request, idUsuario.Value);
 
         return Ok(new Response<object>
@@ -51,6 +83,59 @@ public class PublicacionesController : ControllerBase
             Message = "Publicación creada correctamente",
             Data = new { Id = publicacionId }
         });
+    }
+
+    private static bool EsCategoriaInmobiliaria(string? categoria)
+    {
+        if (string.IsNullOrWhiteSpace(categoria))
+            return false;
+
+        var texto = categoria.Trim().ToLower();
+
+        string[] categoriasInmobiliarias =
+        {
+        "inmueble",
+        "inmuebles",
+        "terreno",
+        "terrenos",
+        "casa",
+        "casas",
+        "departamento",
+        "departamentos",
+        "dúplex",
+        "duplex",
+        "salon",
+        "salón",
+        "salones",
+        "local",
+        "locales",
+        "oficina",
+        "oficinas",
+        "quinta",
+        "quintas",
+        "lote",
+        "lotes",
+        "deposito",
+        "depósito",
+        "depósitos",
+        "tinglado",
+        "tinglados",
+        "campo",
+        "campos",
+        "alquiler",
+        "alquileres",
+        "propiedad",
+        "propiedades",
+        "monoambiente",
+        "monoambientes",
+        "habitacion",
+        "habitación",
+        "habitaciones",
+        "garaje",
+        "garajes"
+    };
+
+        return categoriasInmobiliarias.Any(x => texto.Contains(x));
     }
 
 

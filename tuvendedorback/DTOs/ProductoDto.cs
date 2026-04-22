@@ -26,6 +26,11 @@ public class ProductoDto
     public string? BadgeTexto { get; set; }
     public string? BadgeColor { get; set; }
 
+    //GPS
+    public decimal? Latitud { get; set; }
+    public decimal? Longitud { get; set; }
+    public string? GoogleMapsUrl { get; set; }
+
     // 👤 Vendedor
     public VendedorDto Vendedor { get; set; }
 

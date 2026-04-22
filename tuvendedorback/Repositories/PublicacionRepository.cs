@@ -32,26 +32,76 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             const string insertPub = @"
-            INSERT INTO Publicaciones (Titulo, Descripcion, Precio, Categoria, IdUsuario, MostrarBotonesCompra, Fecha,Ubicacion)
-            VALUES (@Titulo, @Descripcion, @Precio, @Categoria, @IdUsuario, @MostrarBotonesCompra, GETDATE(), @Ubicacion);
-            SELECT SCOPE_IDENTITY();";
+        INSERT INTO Publicaciones 
+        (
+            Titulo, 
+            Descripcion, 
+            Precio, 
+            Categoria, 
+            IdUsuario, 
+            MostrarBotonesCompra, 
+            Fecha,
+            Ubicacion,
+            Latitud,
+            Longitud,
+            GoogleMapsUrl
+        )
+        VALUES 
+        (
+            @Titulo, 
+            @Descripcion, 
+            @Precio, 
+            @Categoria, 
+            @IdUsuario, 
+            @MostrarBotonesCompra, 
+            GETDATE(), 
+            @Ubicacion,
+            @Latitud,
+            @Longitud,
+            @GoogleMapsUrl
+        );
 
-            var publicacionId = await conn.ExecuteScalarAsync<int>(insertPub, new
-            {
-                request.Titulo,
-                request.Descripcion,
-                request.Precio,
-                request.Categoria,
-                IdUsuario = idUsuario,
-                request.MostrarBotonesCompra,
-                request.Ubicacion
-            }, tran);
+        SELECT CAST(SCOPE_IDENTITY() AS INT);";
+
+            var publicacionId = await conn.ExecuteScalarAsync<int>(
+                insertPub,
+                new
+                {
+                    request.Titulo,
+                    request.Descripcion,
+                    request.Precio,
+                    request.Categoria,
+                    IdUsuario = idUsuario,
+                    request.MostrarBotonesCompra,
+                    Ubicacion = request.Ubicacion?.Trim(),
+                    request.Latitud,
+                    request.Longitud,
+                    GoogleMapsUrl = request.GoogleMapsUrl?.Trim()
+                },
+                tran
+            );
 
             foreach (var img in imagenes)
             {
                 await conn.ExecuteAsync(
-                    "INSERT INTO ImagenesPublicacion (IdPublicacion, Url, ThumbUrl) VALUES (@Id, @Url, @ThumbUrl);",
-                    new { Id = publicacionId, Url = img.MainUrl, ThumbUrl = img.ThumbUrl },
+                    @"INSERT INTO ImagenesPublicacion 
+                  (
+                      IdPublicacion, 
+                      Url, 
+                      ThumbUrl
+                  ) 
+                  VALUES 
+                  (
+                      @Id, 
+                      @Url, 
+                      @ThumbUrl
+                  );",
+                    new
+                    {
+                        Id = publicacionId,
+                        Url = img.MainUrl,
+                        ThumbUrl = img.ThumbUrl
+                    },
                     tran
                 );
             }
@@ -60,23 +110,57 @@ public class PublicacionRepository : IPublicacionRepository
             {
                 foreach (var plan in request.PlanCredito)
                 {
-                    await conn.ExecuteAsync(@"INSERT INTO PlanesCredito (IdPublicacion, Cuotas, ValorCuota)
-                                              VALUES (@IdPublicacion, @Cuotas, @ValorCuota);", new
-                    {
-                        IdPublicacion = publicacionId,
-                        Cuotas = plan.Cuotas,
-                        ValorCuota = plan.ValorCuota
-                    }, tran);
+                    await conn.ExecuteAsync(
+                        @"INSERT INTO PlanesCredito 
+                      (
+                          IdPublicacion, 
+                          Cuotas, 
+                          ValorCuota
+                      )
+                      VALUES 
+                      (
+                          @IdPublicacion, 
+                          @Cuotas, 
+                          @ValorCuota
+                      );",
+                        new
+                        {
+                            IdPublicacion = publicacionId,
+                            Cuotas = plan.Cuotas,
+                            ValorCuota = plan.ValorCuota
+                        },
+                        tran
+                    );
                 }
             }
 
             tran.Commit();
+
+            _logger.LogInformation(
+                "Publicación creada correctamente. IdPublicacion={IdPublicacion}, IdUsuario={IdUsuario}, Categoria={Categoria}, Ubicacion={Ubicacion}, Latitud={Latitud}, Longitud={Longitud}",
+                publicacionId,
+                idUsuario,
+                request.Categoria,
+                request.Ubicacion,
+                request.Latitud,
+                request.Longitud
+            );
+
             return publicacionId;
         }
         catch (Exception ex)
         {
             tran.Rollback();
-            _logger.LogError(ex, "Error al insertar la publicación");
+
+            _logger.LogError(
+                ex,
+                "Error al insertar la publicación. IdUsuario={IdUsuario}, Titulo={Titulo}, Categoria={Categoria}, Ubicacion={Ubicacion}",
+                idUsuario,
+                request.Titulo,
+                request.Categoria,
+                request.Ubicacion
+            );
+
             throw new RepositoryException("Error al insertar la publicación", ex);
         }
     }
@@ -97,6 +181,9 @@ public class PublicacionRepository : IPublicacionRepository
                     p.Precio              AS Precio,
                     p.Categoria           AS Categoria,
                     p.Ubicacion           AS Ubicacion,
+                    p.Latitud             AS Latitud,
+                    p.Longitud            AS Longitud,
+                    p.GoogleMapsUrl       AS GoogleMapsUrl,
                     p.MostrarBotonesCompra,
                     p.Estado              AS Estado,  
                     v.NombreNegocio       AS VendedorNombre,
@@ -287,7 +374,7 @@ public class PublicacionRepository : IPublicacionRepository
         using var conn = _conexion.CreateSqlConnection();
         try
         {
-            // 🔐 Verificar si es admin (DESDE BD)
+            //Verificar si es admin (DESDE BD)
             var esAdmin = await EsAdministrador(idUsuario);
 
             var sql = @"
@@ -298,6 +385,9 @@ public class PublicacionRepository : IPublicacionRepository
                 p.Precio                AS Precio,
                 p.Categoria             AS Categoria,
                 p.Ubicacion             AS Ubicacion,
+                p.Latitud               AS Latitud,
+                p.Longitud              AS Longitud,
+                p.GoogleMapsUrl         AS GoogleMapsUrl,
                 p.Estado                AS Estado,
                 p.MostrarBotonesCompra  AS MostrarBotonesCompra,
 
@@ -309,7 +399,7 @@ public class PublicacionRepository : IPublicacionRepository
                 CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
                 d.FechaFin              AS FechaFinDestacado,
 
-                -- 🎉 Temporada
+                -- Temporada
                 CASE WHEN pt.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
                 pt.FechaFin             AS FechaFinTemporada,
                 pt.BadgeTexto           AS BadgeTexto,

@@ -102,47 +102,53 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                 slug);
 
             const string sql = @"
-                SELECT
-                    p.Id                           AS Id,
-                    p.Titulo                       AS Titulo,
-                    p.Descripcion                  AS Descripcion,
-                    p.Precio                       AS Precio,
-                    p.Categoria                    AS Categoria,
-                    p.Ubicacion                    AS Ubicacion,
-                    p.Estado                       AS Estado,
-                    img.Url                        AS ImagenPrincipal,
-                    img.ThumbUrl                   AS ThumbUrl,
-                    CAST(
-                        CASE 
-                            WHEN d.Id IS NOT NULL THEN 1 
-                            ELSE 0 
-                        END AS bit
-                    )                              AS EsDestacada
-                FROM dbo.Vendedores v
-                INNER JOIN dbo.Usuarios u
-                    ON u.Id = v.IdUsuario
-                INNER JOIN dbo.Publicaciones p
-                    ON p.IdUsuario = v.IdUsuario
-                OUTER APPLY
-                (
-                    SELECT TOP 1
-                        i.Url,
-                        i.ThumbUrl
-                    FROM dbo.ImagenesPublicacion i
-                    WHERE i.IdPublicacion = p.Id
-                    ORDER BY i.Id ASC
-                ) img
-                LEFT JOIN dbo.PublicacionesDestacadas d
-                    ON d.IdPublicacion = p.Id
-                   AND d.Estado = 'Activo'
-                   AND d.FechaFin >= GETDATE()
-                WHERE v.Slug = @Slug
-                  AND v.EsPerfilPublico = 1
-                  AND u.Estado = 'Activo'
-                  AND p.Estado = 'Activo'
-                ORDER BY
-                    CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-                    p.Fecha DESC;";
+            SELECT
+                p.Id                           AS Id,
+                p.Titulo                       AS Titulo,
+                p.Descripcion                  AS Descripcion,
+                p.Precio                       AS Precio,
+                p.Categoria                    AS Categoria,
+                p.Ubicacion                    AS Ubicacion,
+
+                -- GPS / ubicación exacta del inmueble
+                p.Latitud                      AS Latitud,
+                p.Longitud                     AS Longitud,
+                p.GoogleMapsUrl                AS GoogleMapsUrl,
+
+                p.Estado                       AS Estado,
+                img.Url                        AS ImagenPrincipal,
+                img.ThumbUrl                   AS ThumbUrl,
+                CAST(
+                    CASE 
+                        WHEN d.Id IS NOT NULL THEN 1 
+                        ELSE 0 
+                    END AS bit
+                )                              AS EsDestacada
+            FROM dbo.Vendedores v
+            INNER JOIN dbo.Usuarios u
+                ON u.Id = v.IdUsuario
+            INNER JOIN dbo.Publicaciones p
+                ON p.IdUsuario = v.IdUsuario
+            OUTER APPLY
+            (
+                SELECT TOP 1
+                    i.Url,
+                    i.ThumbUrl
+                FROM dbo.ImagenesPublicacion i
+                WHERE i.IdPublicacion = p.Id
+                ORDER BY i.Id ASC
+            ) img
+            LEFT JOIN dbo.PublicacionesDestacadas d
+                ON d.IdPublicacion = p.Id
+               AND d.Estado = 'Activo'
+               AND d.FechaFin >= GETDATE()
+            WHERE v.Slug = @Slug
+              AND v.EsPerfilPublico = 1
+              AND u.Estado = 'Activo'
+              AND p.Estado = 'Activo'
+            ORDER BY
+                CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+                p.Fecha DESC;";
 
             var publicaciones = (await conn.QueryAsync<PerfilPublicoPublicacionDto>(
                 sql,
