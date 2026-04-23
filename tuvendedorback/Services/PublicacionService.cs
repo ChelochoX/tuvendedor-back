@@ -53,9 +53,9 @@ public class PublicacionService : IPublicacionService
         return await _repository.InsertarPublicacion(request, idUsuario, imagenes);
     }
 
-    public async Task<List<ProductoDto>> ObtenerPublicaciones(string? categoria, string? nombre, int? idUsuario)
+    public async Task<List<ProductoDto>> ObtenerPublicaciones(string? categoria, string? nombre)
     {
-        var publicaciones = await _repository.ObtenerPublicaciones(categoria, nombre, idUsuario);
+        var publicaciones = await _repository.ObtenerPublicaciones(categoria, nombre);
         return _mapper.Map<List<ProductoDto>>(publicaciones);
     }
 

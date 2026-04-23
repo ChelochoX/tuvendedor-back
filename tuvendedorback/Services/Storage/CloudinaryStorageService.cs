@@ -282,7 +282,21 @@ public class CloudinaryStorageService : IImageStorageService
 
         try
         {
-            var uri = new Uri(archivoUrl);
+            if (!Uri.TryCreate(archivoUrl, UriKind.Absolute, out var uri))
+            {
+                _logger.LogWarning(
+                    "La URL del archivo no es válida. Se omite eliminación remota. Url={ArchivoUrl}",
+                    archivoUrl);
+                return;
+            }
+
+            if (!EsUrlCloudinary(uri))
+            {
+                _logger.LogInformation(
+                    "La URL no pertenece a Cloudinary. Se omite eliminación remota. Url={ArchivoUrl}",
+                    archivoUrl);
+                return;
+            }
 
             var segmentos = uri.AbsolutePath
                 .Split('/', StringSplitOptions.RemoveEmptyEntries)
@@ -294,11 +308,9 @@ public class CloudinaryStorageService : IImageStorageService
             if (uploadIndex == -1)
             {
                 _logger.LogWarning(
-                    "No se pudo identificar el segmento 'upload' en la URL: {ArchivoUrl}",
+                    "No se pudo identificar el segmento 'upload' en la URL. Se omite eliminación. Url={ArchivoUrl}",
                     archivoUrl);
-
-                throw new RepositoryException(
-                    $"No se pudo identificar el publicId del archivo a eliminar. Url={archivoUrl}");
+                return;
             }
 
             var partesPublicId = segmentos
@@ -309,17 +321,23 @@ public class CloudinaryStorageService : IImageStorageService
             if (!partesPublicId.Any())
             {
                 _logger.LogWarning(
-                    "No se pudo construir PublicId desde la URL: {ArchivoUrl}",
+                    "No se pudo construir PublicId desde la URL. Se omite eliminación. Url={ArchivoUrl}",
                     archivoUrl);
-
-                throw new RepositoryException(
-                    $"No se pudo construir el publicId del archivo. Url={archivoUrl}");
+                return;
             }
 
             var ultimo = partesPublicId[^1];
             partesPublicId[^1] = Path.GetFileNameWithoutExtension(ultimo);
 
             var publicId = string.Join("/", partesPublicId);
+
+            if (string.IsNullOrWhiteSpace(publicId))
+            {
+                _logger.LogWarning(
+                    "PublicId vacío al intentar eliminar archivo. Se omite eliminación. Url={ArchivoUrl}",
+                    archivoUrl);
+                return;
+            }
 
             var extension = Path.GetExtension(segmentos[^1]).ToLowerInvariant();
             var resourceType = ObtenerResourceType(extension, string.Empty);
@@ -336,17 +354,18 @@ public class CloudinaryStorageService : IImageStorageService
 
             var result = await _cloudinary.DestroyAsync(deletionParams);
 
-            if (result.Result == "ok")
+            if (result.Result == "ok" || result.Result == "not found")
             {
                 _logger.LogInformation(
-                    "Archivo eliminado correctamente de Cloudinary. PublicId={PublicId}",
-                    publicId);
+                    "Resultado de eliminación en Cloudinary. PublicId={PublicId}, Resultado={Resultado}",
+                    publicId,
+                    result.Result);
 
                 return;
             }
 
             _logger.LogWarning(
-                "No se pudo eliminar archivo de Cloudinary. PublicId={PublicId}, Resultado={Resultado}, Error={Error}",
+                "Cloudinary no confirmó eliminación. PublicId={PublicId}, Resultado={Resultado}, Error={Error}",
                 publicId,
                 result.Result,
                 result.Error?.Message);
@@ -369,6 +388,11 @@ public class CloudinaryStorageService : IImageStorageService
                 $"Error al eliminar archivo de Cloudinary. Url={archivoUrl}",
                 ex);
         }
+    }
+
+    private static bool EsUrlCloudinary(Uri uri)
+    {
+        return uri.Host.Contains("cloudinary.com", StringComparison.OrdinalIgnoreCase);
     }
 
     private static ResourceType ObtenerResourceType(string extension, string? contentType)

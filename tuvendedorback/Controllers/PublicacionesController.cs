@@ -138,19 +138,16 @@ public class PublicacionesController : ControllerBase
         return categoriasInmobiliarias.Any(x => texto.Contains(x));
     }
 
-
     [HttpGet("obtener-publicaciones")]
     [SwaggerOperation(
         Summary = "Obtiene el listado de publicaciones",
-        Description = "Devuelve las publicaciones creadas por los vendedores incluyendo imágenes, información del vendedor y planes de crédito. "
+        Description = "Devuelve las publicaciones activas del marketplace incluyendo imágenes, información del vendedor y planes de crédito. "
                     + "Permite filtrar opcionalmente por categoría y por nombre del producto.")]
     public async Task<IActionResult> ObtenerPublicaciones(
-        [FromQuery] string? categoria = null, string? nombre = null)
+        [FromQuery] string? categoria = null,
+        [FromQuery] string? nombre = null)
     {
-
-        var idUsuario = _userContext.IdUsuario;
-
-        var publicaciones = await _service.ObtenerPublicaciones(categoria, nombre, idUsuario);
+        var publicaciones = await _service.ObtenerPublicaciones(categoria, nombre);
 
         return Ok(new Response<List<ProductoDto>>
         {

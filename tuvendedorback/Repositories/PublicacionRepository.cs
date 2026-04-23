@@ -165,110 +165,126 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
-    public async Task<List<Publicacion>> ObtenerPublicaciones(string? categoria, string? nombre, int? idUsuario)
+    public async Task<List<Publicacion>> ObtenerPublicaciones(string? categoria, string? nombre)
     {
         using var conn = _conexion.CreateSqlConnection();
+
         try
         {
-            // Verificar si el usuario es administrador
-            bool esAdministrador = await EsAdministrador(idUsuario);
+            const string sql = @"
+        SELECT 
+            p.Id,
+            p.Titulo              AS Titulo,
+            p.Descripcion         AS Descripcion,
+            p.Precio              AS Precio,
+            p.Categoria           AS Categoria,
+            p.Ubicacion           AS Ubicacion,
+            p.Latitud             AS Latitud,
+            p.Longitud            AS Longitud,
+            p.GoogleMapsUrl       AS GoogleMapsUrl,
+            p.MostrarBotonesCompra,
+            p.Estado              AS Estado,
+            v.NombreNegocio       AS VendedorNombre,
+            u.Telefono            AS VendedorTelefono,
 
-            var sql = @"
-                SELECT 
-                    p.Id,
-                    p.Titulo              AS Titulo,
-                    p.Descripcion         AS Descripcion,
-                    p.Precio              AS Precio,
-                    p.Categoria           AS Categoria,
-                    p.Ubicacion           AS Ubicacion,
-                    p.Latitud             AS Latitud,
-                    p.Longitud            AS Longitud,
-                    p.GoogleMapsUrl       AS GoogleMapsUrl,
-                    p.MostrarBotonesCompra,
-                    p.Estado              AS Estado,  
-                    v.NombreNegocio       AS VendedorNombre,
-                    u.Telefono            AS VendedorTelefono,
+            CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+            d.FechaFin            AS FechaFinDestacado,
 
-                    -- ⭐ DESTACADO
-                    CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
-                    d.FechaFin AS FechaFinDestacado,
-
-                    -- ⭐ TEMPORADA
-                    CASE WHEN t.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
-                    t.FechaFin   AS FechaFinTemporada,
-                    t.BadgeTexto AS BadgeTexto,
-                    t.BadgeColor AS BadgeColor
-                FROM Publicaciones p
-                LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
-                LEFT JOIN Usuarios u   ON u.Id = p.IdUsuario
-                LEFT JOIN PublicacionesDestacadas d
-                    ON d.IdPublicacion = p.Id
-                    AND d.Estado = 'Activo'
-                    AND d.FechaFin >= GETDATE()
-                LEFT JOIN PublicacionesTemporada t
-                    ON t.IdPublicacion = p.Id
-                    AND t.Estado = 'Activo'
-                    AND t.FechaFin >= GETDATE()
-                WHERE (@Categoria IS NULL OR p.Categoria = @Categoria)
-                    AND (
-                        @Nombre IS NULL
-                        OR p.Titulo LIKE '%' + @Nombre + '%'
-                        OR p.Descripcion LIKE '%' + @Nombre + '%'
-                        OR p.Ubicacion LIKE '%' + @Nombre + '%'
-                        OR p.Categoria LIKE '%' + @Nombre + '%'
-                    )
-                ";
-
-            if (idUsuario.HasValue && !esAdministrador)
-            {
-                sql += " AND p.IdUsuario = @IdUsuario ";
-            }
-
-            sql += @"
-
-                ORDER BY 
-                    CASE WHEN t.Id IS NOT NULL THEN 0 ELSE 1 END,
-                    CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-                    p.Fecha DESC;
-                ";
-
+            CASE WHEN t.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
+            t.FechaFin            AS FechaFinTemporada,
+            t.BadgeTexto          AS BadgeTexto,
+            t.BadgeColor          AS BadgeColor
+        FROM Publicaciones p
+        LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
+        LEFT JOIN Usuarios u   ON u.Id = p.IdUsuario
+        LEFT JOIN PublicacionesDestacadas d
+            ON d.IdPublicacion = p.Id
+            AND d.Estado = 'Activo'
+            AND d.FechaFin >= GETDATE()
+        LEFT JOIN PublicacionesTemporada t
+            ON t.IdPublicacion = p.Id
+            AND t.Estado = 'Activo'
+            AND t.FechaFin >= GETDATE()
+        WHERE p.Estado = 'Activo'
+          AND (@Categoria IS NULL OR p.Categoria = @Categoria)
+          AND (
+                @Nombre IS NULL
+                OR p.Titulo LIKE '%' + @Nombre + '%'
+                OR p.Descripcion LIKE '%' + @Nombre + '%'
+                OR p.Ubicacion LIKE '%' + @Nombre + '%'
+                OR p.Categoria LIKE '%' + @Nombre + '%'
+              )
+        ORDER BY
+            CASE WHEN t.Id IS NOT NULL THEN 0 ELSE 1 END,
+            CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+            p.Fecha DESC;";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(
-                sql,
-                new
-                {
-                    Categoria = categoria,
-                    Nombre = nombre,
-                    IdUsuario = idUsuario
-                }
+                new CommandDefinition(
+                    sql,
+                    new
+                    {
+                        Categoria = categoria,
+                        Nombre = nombre
+                    },
+                    commandTimeout: 30
+                )
             )).ToList();
 
+            if (!publicaciones.Any())
+                return new List<Publicacion>();
+
+            var ids = publicaciones.Select(x => x.Id).Distinct().ToArray();
+
+            var imagenes = (await conn.QueryAsync<(int IdPublicacion, string Url)>(
+                new CommandDefinition(
+                    @"SELECT IdPublicacion, Url
+                  FROM ImagenesPublicacion
+                  WHERE IdPublicacion IN @Ids",
+                    new { Ids = ids },
+                    commandTimeout: 30
+                )
+            )).ToList();
+
+            var planes = (await conn.QueryAsync<PlanCredito>(
+                new CommandDefinition(
+                    @"SELECT 
+                    pc.Id,
+                    pc.IdPublicacion AS PublicacionId,
+                    pc.Cuotas,
+                    pc.ValorCuota
+                  FROM PlanesCredito pc
+                  WHERE pc.IdPublicacion IN @Ids",
+                    new { Ids = ids },
+                    commandTimeout: 30
+                )
+            )).ToList();
+
+            var imagenesPorPublicacion = imagenes
+                .GroupBy(x => x.IdPublicacion)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Url).ToList());
+
+            var planesPorPublicacion = planes
+                .GroupBy(x => x.PublicacionId)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
             foreach (var pub in publicaciones)
             {
-                // 📸 Imágenes
-                var imagenes = await conn.QueryAsync<string>(@"
-                    SELECT Url
-                    FROM ImagenesPublicacion
-                    WHERE IdPublicacion = @Id",
-                    new { Id = pub.Id });
+                pub.Imagenes = imagenesPorPublicacion.TryGetValue(pub.Id, out var imgs)
+                    ? imgs
+                    : new List<string>();
 
-                // 💳 Planes de crédito
-                var planes = await conn.QueryAsync<PlanCredito>(@"
-                    SELECT 
-                        pc.Id,
-                        pc.IdPublicacion,
-                        pc.Cuotas,
-                        pc.ValorCuota
-                    FROM PlanesCredito pc
-                    WHERE pc.IdPublicacion = @Id",
-                    new { Id = pub.Id });
-
-                pub.Imagenes = imagenes.ToList();
-                pub.PlanCredito = planes.ToList();
+                pub.PlanCredito = planesPorPublicacion.TryGetValue(pub.Id, out var pcs)
+                    ? pcs
+                    : new List<PlanCredito>();
             }
 
             return publicaciones;
+        }
+        catch (SqlException ex) when (ex.Number == -2)
+        {
+            _logger.LogError(ex, "Timeout al obtener publicaciones del marketplace.");
+            return new List<Publicacion>();
         }
         catch (Exception ex)
         {
@@ -276,7 +292,6 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al obtener publicaciones", ex);
         }
     }
-
     public async Task<bool> EsAdministrador(int? idUsuario)
     {
         using var conn = _conexion.CreateSqlConnection();
@@ -363,6 +378,11 @@ public class PublicacionRepository : IPublicacionRepository
             }
 
             await conn.ExecuteAsync(
+                "DELETE FROM SolicitudesVisitaPublicacion WHERE IdPublicacion = @id;",
+                new { id = idPublicacion },
+                tran);
+
+            await conn.ExecuteAsync(
                 "DELETE FROM PublicacionesDestacadas WHERE IdPublicacion = @id;",
                 new { id = idPublicacion },
                 tran);
@@ -434,9 +454,6 @@ public class PublicacionRepository : IPublicacionRepository
         using var conn = _conexion.CreateSqlConnection();
         try
         {
-            //Verificar si es admin (DESDE BD)
-            var esAdmin = await EsAdministrador(idUsuario);
-
             var sql = @"
             SELECT 
                 p.Id                    AS Id,
@@ -455,11 +472,9 @@ public class PublicacionRepository : IPublicacionRepository
                 NULL                    AS VendedorAvatar,
                 NULL                    AS VendedorTelefono,
 
-                -- ⭐ Destacado
                 CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
                 d.FechaFin              AS FechaFinDestacado,
 
-                -- Temporada
                 CASE WHEN pt.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
                 pt.FechaFin             AS FechaFinTemporada,
                 pt.BadgeTexto           AS BadgeTexto,
@@ -481,15 +496,9 @@ public class PublicacionRepository : IPublicacionRepository
                   AND FechaFin >= GETDATE()
             ) pt
                 ON pt.IdPublicacion = p.Id
-        ";
 
-            // 👇 SOLO si NO es admin filtramos por usuario
-            if (!esAdmin)
-            {
-                sql += " WHERE p.IdUsuario = @IdUsuario ";
-            }
+            WHERE p.IdUsuario = @IdUsuario
 
-            sql += @"
             ORDER BY 
                 CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
                 p.Fecha DESC;
