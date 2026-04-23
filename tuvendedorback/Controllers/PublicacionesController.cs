@@ -358,4 +358,21 @@ public class PublicacionesController : ControllerBase
         });
     }
 
+    [HttpPut("actualizar-publicacion/{id}")]
+    [Consumes("multipart/form-data")]
+    [SwaggerOperation(
+     Summary = "Actualiza una publicación existente",
+     Description = "Permite al usuario vendedor actualizar una publicación ya creada, incluyendo datos generales, ubicación, GPS, planes de crédito e imágenes nuevas.")]
+    public async Task<IActionResult> ActualizarPublicacion(int id, [FromForm] ActualizarPublicacionRequest request)
+    {
+        await _service.ActualizarPublicacion(id, request);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Publicación actualizada correctamente",
+            Data = new { Id = id }
+        });
+    }
+
 }

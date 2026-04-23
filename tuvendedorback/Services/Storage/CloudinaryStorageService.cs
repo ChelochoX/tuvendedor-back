@@ -297,7 +297,8 @@ public class CloudinaryStorageService : IImageStorageService
                     "No se pudo identificar el segmento 'upload' en la URL: {ArchivoUrl}",
                     archivoUrl);
 
-                return;
+                throw new RepositoryException(
+                    $"No se pudo identificar el publicId del archivo a eliminar. Url={archivoUrl}");
             }
 
             var partesPublicId = segmentos
@@ -311,7 +312,8 @@ public class CloudinaryStorageService : IImageStorageService
                     "No se pudo construir PublicId desde la URL: {ArchivoUrl}",
                     archivoUrl);
 
-                return;
+                throw new RepositoryException(
+                    $"No se pudo construir el publicId del archivo. Url={archivoUrl}");
             }
 
             var ultimo = partesPublicId[^1];
@@ -339,15 +341,22 @@ public class CloudinaryStorageService : IImageStorageService
                 _logger.LogInformation(
                     "Archivo eliminado correctamente de Cloudinary. PublicId={PublicId}",
                     publicId);
+
+                return;
             }
-            else
-            {
-                _logger.LogWarning(
-                    "No se pudo eliminar archivo de Cloudinary. PublicId={PublicId}, Resultado={Resultado}, Error={Error}",
-                    publicId,
-                    result.Result,
-                    result.Error?.Message);
-            }
+
+            _logger.LogWarning(
+                "No se pudo eliminar archivo de Cloudinary. PublicId={PublicId}, Resultado={Resultado}, Error={Error}",
+                publicId,
+                result.Result,
+                result.Error?.Message);
+
+            throw new RepositoryException(
+                $"Cloudinary no confirmó la eliminación del archivo. PublicId={publicId}, Resultado={result.Result}, Error={result.Error?.Message}");
+        }
+        catch (RepositoryException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -355,6 +364,10 @@ public class CloudinaryStorageService : IImageStorageService
                 ex,
                 "Error al intentar eliminar archivo de Cloudinary. Url={ArchivoUrl}",
                 archivoUrl);
+
+            throw new RepositoryException(
+                $"Error al eliminar archivo de Cloudinary. Url={archivoUrl}",
+                ex);
         }
     }
 

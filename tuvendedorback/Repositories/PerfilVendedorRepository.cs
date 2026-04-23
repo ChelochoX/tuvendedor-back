@@ -44,7 +44,7 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                     COALESCE(v.CiudadVisible, u.Ciudad)    AS CiudadVisible,
 
                     CASE 
-                        WHEN v.MostrarTelefono = 1 THEN u.Telefono
+                        WHEN v.MostrarTelefono = 1 THEN v.Whatsapp
                         ELSE NULL
                     END                                    AS Telefono,
 
@@ -101,114 +101,56 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                 "Iniciando obtención de publicaciones activas para perfil público. Slug: {Slug}",
                 slug);
 
-            const string sqlPublicaciones = @"
-            SELECT
-                p.Id                           AS Id,
-                p.Titulo                       AS Titulo,
-                p.Descripcion                  AS Descripcion,
-                p.Precio                       AS Precio,
-                p.Categoria                    AS Categoria,
-                p.Ubicacion                    AS Ubicacion,
-                p.Latitud                      AS Latitud,
-                p.Longitud                     AS Longitud,
-                p.GoogleMapsUrl                AS GoogleMapsUrl,
-                p.Estado                       AS Estado,
-                img.Url                        AS ImagenPrincipal,
-                img.ThumbUrl                   AS ThumbUrl,
-                CAST(
-                    CASE 
-                        WHEN d.Id IS NOT NULL THEN 1 
-                        ELSE 0 
-                    END AS bit
-                )                              AS EsDestacada
-            FROM dbo.Vendedores v
-            INNER JOIN dbo.Usuarios u
-                ON u.Id = v.IdUsuario
-            INNER JOIN dbo.Publicaciones p
-                ON p.IdUsuario = v.IdUsuario
-            OUTER APPLY
-            (
-                SELECT TOP 1
-                    i.Url,
-                    i.ThumbUrl
-                FROM dbo.ImagenesPublicacion i
-                WHERE i.IdPublicacion = p.Id
-                ORDER BY i.Id ASC
-            ) img
-            LEFT JOIN dbo.PublicacionesDestacadas d
-                ON d.IdPublicacion = p.Id
-               AND d.Estado = 'Activo'
-               AND d.FechaFin >= GETDATE()
-            WHERE v.Slug = @Slug
-              AND v.EsPerfilPublico = 1
-              AND u.Estado = 'Activo'
-              AND p.Estado = 'Activo'
-            ORDER BY
-                CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-                p.Fecha DESC;";
+            const string sql = @"
+                SELECT
+                    p.Id                           AS Id,
+                    p.Titulo                       AS Titulo,
+                    p.Descripcion                  AS Descripcion,
+                    p.Precio                       AS Precio,
+                    p.Categoria                    AS Categoria,
+                    p.Ubicacion                    AS Ubicacion,
+                    p.Estado                       AS Estado,
+                    img.Url                        AS ImagenPrincipal,
+                    img.ThumbUrl                   AS ThumbUrl,
+                    CAST(
+                        CASE 
+                            WHEN d.Id IS NOT NULL THEN 1 
+                            ELSE 0 
+                        END AS bit
+                    )                              AS EsDestacada
+                FROM dbo.Vendedores v
+                INNER JOIN dbo.Usuarios u
+                    ON u.Id = v.IdUsuario
+                INNER JOIN dbo.Publicaciones p
+                    ON p.IdUsuario = v.IdUsuario
+                OUTER APPLY
+                (
+                    SELECT TOP 1
+                        i.Url,
+                        i.ThumbUrl
+                    FROM dbo.ImagenesPublicacion i
+                    WHERE i.IdPublicacion = p.Id
+                    ORDER BY i.Id ASC
+                ) img
+                LEFT JOIN dbo.PublicacionesDestacadas d
+                    ON d.IdPublicacion = p.Id
+                   AND d.Estado = 'Activo'
+                   AND d.FechaFin >= GETDATE()
+                WHERE v.Slug = @Slug
+                  AND v.EsPerfilPublico = 1
+                  AND u.Estado = 'Activo'
+                  AND p.Estado = 'Activo'
+                ORDER BY
+                    CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+                    p.Fecha DESC;";
 
             var publicaciones = (await conn.QueryAsync<PerfilPublicoPublicacionDto>(
-                sqlPublicaciones,
-                new { Slug = slug }
-            )).ToList();
-
-            if (!publicaciones.Any())
-            {
-                _logger.LogInformation(
-                    "No se encontraron publicaciones activas para slug: {Slug}",
-                    slug);
-
-                return publicaciones;
-            }
-
-            var idsPublicaciones = publicaciones.Select(x => x.Id).ToArray();
-
-            const string sqlImagenes = @"
-            SELECT
-                i.IdPublicacion,
-                i.Url,
-                i.ThumbUrl
-            FROM dbo.ImagenesPublicacion i
-            WHERE i.IdPublicacion IN @IdsPublicaciones
-            ORDER BY i.IdPublicacion, i.Id ASC;";
-
-            var imagenes = (await conn.QueryAsync<PerfilPublicacionImagenRow>(
-                sqlImagenes,
-                new { IdsPublicaciones = idsPublicaciones }
-            )).ToList();
-
-            var imagenesPorPublicacion = imagenes
-                .GroupBy(x => x.IdPublicacion)
-                .ToDictionary(
-                    g => g.Key,
-                    g => g
-                        .Select(x => !string.IsNullOrWhiteSpace(x.Url) ? x.Url : x.ThumbUrl)
-                        .Where(x => !string.IsNullOrWhiteSpace(x))
-                        .Distinct()
-                        .ToList()!
-                );
-
-            foreach (var publicacion in publicaciones)
-            {
-                if (imagenesPorPublicacion.TryGetValue(publicacion.Id, out var listaImagenes))
-                {
-                    publicacion.Imagenes = listaImagenes;
-                }
-
-                if (!publicacion.Imagenes.Any())
-                {
-                    if (!string.IsNullOrWhiteSpace(publicacion.ImagenPrincipal))
-                        publicacion.Imagenes.Add(publicacion.ImagenPrincipal);
-
-                    if (!string.IsNullOrWhiteSpace(publicacion.ThumbUrl))
-                        publicacion.Imagenes.Add(publicacion.ThumbUrl);
-                }
-            }
+                sql,
+                new { Slug = slug })).ToList();
 
             _logger.LogInformation(
-                "Se obtuvieron {CantidadPublicaciones} publicaciones y {CantidadImagenes} imágenes para slug: {Slug}",
+                "Se obtuvieron {Cantidad} publicaciones activas para slug: {Slug}",
                 publicaciones.Count,
-                imagenes.Count,
                 slug);
 
             return publicaciones;
@@ -222,13 +164,6 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
 
             throw new RepositoryException("Error al obtener las publicaciones del perfil público.", ex);
         }
-    }
-
-    private sealed class PerfilPublicacionImagenRow
-    {
-        public int IdPublicacion { get; set; }
-        public string? Url { get; set; }
-        public string? ThumbUrl { get; set; }
     }
 
     public async Task<PerfilPublicoVendedorDto?> ObtenerMiPerfilVendedor(int idUsuario)
@@ -256,7 +191,7 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                     COALESCE(v.CiudadVisible, u.Ciudad)    AS CiudadVisible,
 
                     CASE 
-                        WHEN v.MostrarTelefono = 1 THEN u.Telefono
+                        WHEN v.MostrarTelefono = 1 THEN v.Whatsapp
                         ELSE NULL
                     END                                    AS Telefono,
 

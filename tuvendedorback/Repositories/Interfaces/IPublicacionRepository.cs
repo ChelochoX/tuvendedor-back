@@ -24,4 +24,9 @@ public interface IPublicacionRepository
     Task<bool> PublicacionEstaVendida(int idPublicacion);
     Task MarcarComoVendido(int idPublicacion);
     Task<bool> EsAdministrador(int? idUsuario);
+    Task<int> ActualizarPublicacion(
+    int idPublicacion,
+    int idUsuario,
+    ActualizarPublicacionRequest request,
+    List<ImagenDto> nuevasImagenes);
 }

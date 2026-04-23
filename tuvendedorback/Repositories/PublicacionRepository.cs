@@ -298,7 +298,6 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
-
     public async Task<IEnumerable<ImagenDto>> ObtenerImagenesPorPublicacion(int idPublicacion, int idUsuario)
     {
         using var conn = _conexion.CreateSqlConnection();
@@ -335,35 +334,96 @@ public class PublicacionRepository : IPublicacionRepository
 
         try
         {
-            _logger.LogInformation("Iniciando eliminación de la publicación {IdPublicacion} del usuario {IdUsuario}", idPublicacion, idUsuario);
+            _logger.LogInformation(
+                "Iniciando eliminación de la publicación {IdPublicacion} del usuario {IdUsuario}",
+                idPublicacion,
+                idUsuario);
+
+            const string sqlValidar = @"
+            SELECT COUNT(1)
+            FROM Publicaciones
+            WHERE Id = @idPublicacion
+              AND IdUsuario = @idUsuario;";
+
+            var existeYPertenece = await conn.ExecuteScalarAsync<int>(
+                sqlValidar,
+                new { idPublicacion, idUsuario },
+                tran);
+
+            if (existeYPertenece == 0)
+            {
+                tran.Rollback();
+
+                _logger.LogWarning(
+                    "No se encontró la publicación {IdPublicacion} del usuario {IdUsuario} para eliminar.",
+                    idPublicacion,
+                    idUsuario);
+
+                return 0;
+            }
 
             await conn.ExecuteAsync(
-            "DELETE FROM PublicacionesDestacadas WHERE IdPublicacion = @id;",
-            new { id = idPublicacion }, tran);
+                "DELETE FROM PublicacionesDestacadas WHERE IdPublicacion = @id;",
+                new { id = idPublicacion },
+                tran);
 
             await conn.ExecuteAsync(
                 "DELETE FROM PublicacionesTemporada WHERE IdPublicacion = @id;",
-                new { id = idPublicacion }, tran);
+                new { id = idPublicacion },
+                tran);
 
             await conn.ExecuteAsync(
                 "DELETE FROM PlanesCredito WHERE IdPublicacion = @id;",
-                new { id = idPublicacion }, tran);
+                new { id = idPublicacion },
+                tran);
 
             await conn.ExecuteAsync(
                 "DELETE FROM ImagenesPublicacion WHERE IdPublicacion = @id;",
-                new { id = idPublicacion }, tran);
+                new { id = idPublicacion },
+                tran);
 
             var filas = await conn.ExecuteAsync(
-                "DELETE FROM Publicaciones WHERE Id = @id;",
-                new { id = idPublicacion }, tran);
+                @"DELETE FROM Publicaciones
+              WHERE Id = @id
+                AND IdUsuario = @idUsuario;",
+                new
+                {
+                    id = idPublicacion,
+                    idUsuario
+                },
+                tran);
+
+            if (filas == 0)
+            {
+                tran.Rollback();
+
+                _logger.LogWarning(
+                    "No se pudo eliminar la publicación {IdPublicacion} del usuario {IdUsuario}.",
+                    idPublicacion,
+                    idUsuario);
+
+                return 0;
+            }
 
             tran.Commit();
+
+            _logger.LogInformation(
+                "Publicación {IdPublicacion} eliminada correctamente para el usuario {IdUsuario}.",
+                idPublicacion,
+                idUsuario);
+
             return filas;
         }
         catch (Exception ex)
         {
             tran.Rollback();
-            _logger.LogError(ex, "Error al eliminar la publicación {IdPublicacion} del usuario {IdUsuario}", idPublicacion, idUsuario);
+
+            _logger.LogError(
+                ex,
+                "Error al eliminar la publicación {IdPublicacion} del usuario {IdUsuario}",
+                idPublicacion,
+                idUsuario);
+
             throw new RepositoryException("Error al eliminar la publicación", ex);
         }
     }
@@ -464,8 +524,6 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
-
-
     public async Task<List<CategoriaDto>> ObtenerCategoriasActivas()
     {
         using var conn = _conexion.CreateSqlConnection();
@@ -556,7 +614,6 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al destacar la publicación.", ex);
         }
     }
-
 
     public async Task<bool> EstaPublicacionDestacada(int idPublicacion)
     {
@@ -671,7 +728,6 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al quitar el destacado.", ex);
         }
     }
-
 
     public async Task DesactivarTemporada(int idPublicacion)
     {
@@ -822,5 +878,158 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
+    public async Task<int> ActualizarPublicacion(
+    int idPublicacion,
+    int idUsuario,
+    ActualizarPublicacionRequest request,
+    List<ImagenDto> nuevasImagenes)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        conn.Open();
+        using var tran = conn.BeginTransaction();
 
+        try
+        {
+            _logger.LogInformation(
+                "Iniciando actualización de la publicación {IdPublicacion} del usuario {IdUsuario}",
+                idPublicacion,
+                idUsuario);
+
+            const string sqlValidar = @"
+            SELECT COUNT(1)
+            FROM Publicaciones
+            WHERE Id = @idPublicacion
+              AND IdUsuario = @idUsuario;";
+
+            var existeYPertenece = await conn.ExecuteScalarAsync<int>(
+                sqlValidar,
+                new { idPublicacion, idUsuario },
+                tran);
+
+            if (existeYPertenece == 0)
+            {
+                tran.Rollback();
+
+                _logger.LogWarning(
+                    "No se encontró la publicación {IdPublicacion} del usuario {IdUsuario} para actualizar.",
+                    idPublicacion,
+                    idUsuario);
+
+                return 0;
+            }
+
+            const string sqlUpdate = @"
+            UPDATE Publicaciones
+            SET
+                Titulo = @Titulo,
+                Descripcion = @Descripcion,
+                Precio = @Precio,
+                Categoria = @Categoria,
+                Ubicacion = @Ubicacion,
+                Latitud = @Latitud,
+                Longitud = @Longitud,
+                GoogleMapsUrl = @GoogleMapsUrl,
+                MostrarBotonesCompra = @MostrarBotonesCompra
+            WHERE Id = @IdPublicacion
+              AND IdUsuario = @IdUsuario;";
+
+            var filas = await conn.ExecuteAsync(
+                sqlUpdate,
+                new
+                {
+                    IdPublicacion = idPublicacion,
+                    IdUsuario = idUsuario,
+                    request.Titulo,
+                    request.Descripcion,
+                    request.Precio,
+                    request.Categoria,
+                    Ubicacion = request.Ubicacion?.Trim(),
+                    request.Latitud,
+                    request.Longitud,
+                    GoogleMapsUrl = request.GoogleMapsUrl?.Trim(),
+                    request.MostrarBotonesCompra
+                },
+                tran);
+
+            await conn.ExecuteAsync(
+                "DELETE FROM PlanesCredito WHERE IdPublicacion = @IdPublicacion;",
+                new { IdPublicacion = idPublicacion },
+                tran);
+
+            if (request.MostrarBotonesCompra && request.PlanCredito != null && request.PlanCredito.Any())
+            {
+                foreach (var plan in request.PlanCredito)
+                {
+                    await conn.ExecuteAsync(
+                        @"INSERT INTO PlanesCredito
+                      (
+                          IdPublicacion,
+                          Cuotas,
+                          ValorCuota
+                      )
+                      VALUES
+                      (
+                          @IdPublicacion,
+                          @Cuotas,
+                          @ValorCuota
+                      );",
+                        new
+                        {
+                            IdPublicacion = idPublicacion,
+                            Cuotas = plan.Cuotas,
+                            ValorCuota = plan.ValorCuota
+                        },
+                        tran);
+                }
+            }
+
+            if (nuevasImagenes != null && nuevasImagenes.Any())
+            {
+                foreach (var img in nuevasImagenes)
+                {
+                    await conn.ExecuteAsync(
+                        @"INSERT INTO ImagenesPublicacion
+                      (
+                          IdPublicacion,
+                          Url,
+                          ThumbUrl
+                      )
+                      VALUES
+                      (
+                          @IdPublicacion,
+                          @Url,
+                          @ThumbUrl
+                      );",
+                        new
+                        {
+                            IdPublicacion = idPublicacion,
+                            Url = img.MainUrl,
+                            ThumbUrl = img.ThumbUrl
+                        },
+                        tran);
+                }
+            }
+
+            tran.Commit();
+
+            _logger.LogInformation(
+                "Publicación {IdPublicacion} actualizada correctamente para el usuario {IdUsuario}",
+                idPublicacion,
+                idUsuario);
+
+            return filas;
+        }
+        catch (Exception ex)
+        {
+            tran.Rollback();
+
+            _logger.LogError(
+                ex,
+                "Error al actualizar la publicación {IdPublicacion} del usuario {IdUsuario}",
+                idPublicacion,
+                idUsuario);
+
+            throw new RepositoryException("Error al actualizar la publicación", ex);
+        }
+    }
 }
