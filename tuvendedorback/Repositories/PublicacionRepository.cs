@@ -486,14 +486,12 @@ public class PublicacionRepository : IPublicacionRepository
 
             LEFT JOIN PublicacionesDestacadas d
                 ON d.IdPublicacion = p.Id
-                AND d.Estado = 'Activo'
-                AND d.FechaFin >= GETDATE()
+                AND d.Estado = 'Activo'             
 
             LEFT JOIN (
                 SELECT *
                 FROM PublicacionesTemporada
-                WHERE Estado = 'Activo'
-                  AND FechaFin >= GETDATE()
+                WHERE Estado = 'Activo'             
             ) pt
                 ON pt.IdPublicacion = p.Id
 
