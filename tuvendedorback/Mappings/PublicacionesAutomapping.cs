@@ -10,6 +10,13 @@ public class PublicacionesAutomapping : Profile
         CreateMap<Publicacion, ProductoDto>()
             .ForMember(dest => dest.Nombre, opt => opt.MapFrom(src => src.Titulo))
 
+            // Precio / Moneda
+            .ForMember(dest => dest.Moneda, opt => opt.MapFrom(src =>
+                string.IsNullOrWhiteSpace(src.Moneda)
+                    ? "PYG"
+                    : src.Moneda.Trim().ToUpper()
+            ))
+
             // Imagen principal: primera imagen
             .ForMember(dest => dest.Imagen,
                 opt => opt.MapFrom(src =>

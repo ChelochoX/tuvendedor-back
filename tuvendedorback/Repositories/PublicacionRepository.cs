@@ -32,54 +32,59 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             const string insertPub = @"
-        INSERT INTO Publicaciones 
-        (
-            Titulo, 
-            Descripcion, 
-            Precio, 
-            Categoria, 
-            IdUsuario, 
-            MostrarBotonesCompra, 
-            Fecha,
-            Ubicacion,
-            Latitud,
-            Longitud,
-            GoogleMapsUrl
-        )
-        VALUES 
-        (
-            @Titulo, 
-            @Descripcion, 
-            @Precio, 
-            @Categoria, 
-            @IdUsuario, 
-            @MostrarBotonesCompra, 
-            GETDATE(), 
-            @Ubicacion,
-            @Latitud,
-            @Longitud,
-            @GoogleMapsUrl
-        );
+                INSERT INTO Publicaciones 
+                (
+                    Titulo, 
+                    Descripcion, 
+                    Precio,
+                    Moneda,
+                    Categoria, 
+                    IdUsuario, 
+                    MostrarBotonesCompra, 
+                    Fecha,
+                    Ubicacion,
+                    Latitud,
+                    Longitud,
+                    GoogleMapsUrl
+                )
+                VALUES 
+                (
+                    @Titulo, 
+                    @Descripcion, 
+                    @Precio,
+                    @Moneda,
+                    @Categoria, 
+                    @IdUsuario, 
+                    @MostrarBotonesCompra, 
+                    GETDATE(), 
+                    @Ubicacion,
+                    @Latitud,
+                    @Longitud,
+                    @GoogleMapsUrl
+                );
 
-        SELECT CAST(SCOPE_IDENTITY() AS INT);";
+                SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
             var publicacionId = await conn.ExecuteScalarAsync<int>(
-                insertPub,
-                new
-                {
-                    request.Titulo,
-                    request.Descripcion,
-                    request.Precio,
-                    request.Categoria,
-                    IdUsuario = idUsuario,
-                    request.MostrarBotonesCompra,
-                    Ubicacion = request.Ubicacion?.Trim(),
-                    request.Latitud,
-                    request.Longitud,
-                    GoogleMapsUrl = request.GoogleMapsUrl?.Trim()
-                },
-                tran
-            );
+                   insertPub,
+                   new
+                   {
+                       request.Titulo,
+                       request.Descripcion,
+                       request.Precio,
+                       Moneda = string.IsNullOrWhiteSpace(request.Moneda)
+                           ? "PYG"
+                           : request.Moneda.Trim().ToUpper(),
+                       request.Categoria,
+                       IdUsuario = idUsuario,
+                       request.MostrarBotonesCompra,
+                       Ubicacion = request.Ubicacion?.Trim(),
+                       request.Latitud,
+                       request.Longitud,
+                       GoogleMapsUrl = request.GoogleMapsUrl?.Trim()
+                   },
+                   tran
+               );
 
             foreach (var img in imagenes)
             {
@@ -172,52 +177,53 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             const string sql = @"
-        SELECT 
-            p.Id,
-            p.Titulo              AS Titulo,
-            p.Descripcion         AS Descripcion,
-            p.Precio              AS Precio,
-            p.Categoria           AS Categoria,
-            p.Ubicacion           AS Ubicacion,
-            p.Latitud             AS Latitud,
-            p.Longitud            AS Longitud,
-            p.GoogleMapsUrl       AS GoogleMapsUrl,
-            p.MostrarBotonesCompra,
-            p.Estado              AS Estado,
-            v.NombreNegocio       AS VendedorNombre,
-            u.Telefono            AS VendedorTelefono,
+                SELECT 
+                    p.Id,
+                    p.Titulo              AS Titulo,
+                    p.Descripcion         AS Descripcion,
+                    p.Precio              AS Precio,
+                    p.Moneda              AS Moneda,
+                    p.Categoria           AS Categoria,
+                    p.Ubicacion           AS Ubicacion,
+                    p.Latitud             AS Latitud,
+                    p.Longitud            AS Longitud,
+                    p.GoogleMapsUrl       AS GoogleMapsUrl,
+                    p.MostrarBotonesCompra,
+                    p.Estado              AS Estado,
+                    v.NombreNegocio       AS VendedorNombre,
+                    u.Telefono            AS VendedorTelefono,
 
-            CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
-            d.FechaFin            AS FechaFinDestacado,
+                    CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+                    d.FechaFin            AS FechaFinDestacado,
 
-            CASE WHEN t.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
-            t.FechaFin            AS FechaFinTemporada,
-            t.BadgeTexto          AS BadgeTexto,
-            t.BadgeColor          AS BadgeColor
-        FROM Publicaciones p
-        LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
-        LEFT JOIN Usuarios u   ON u.Id = p.IdUsuario
-        LEFT JOIN PublicacionesDestacadas d
-            ON d.IdPublicacion = p.Id
-            AND d.Estado = 'Activo'
-            AND d.FechaFin >= GETDATE()
-        LEFT JOIN PublicacionesTemporada t
-            ON t.IdPublicacion = p.Id
-            AND t.Estado = 'Activo'
-            AND t.FechaFin >= GETDATE()
-        WHERE p.Estado = 'Activo'
-          AND (@Categoria IS NULL OR p.Categoria = @Categoria)
-          AND (
-                @Nombre IS NULL
-                OR p.Titulo LIKE '%' + @Nombre + '%'
-                OR p.Descripcion LIKE '%' + @Nombre + '%'
-                OR p.Ubicacion LIKE '%' + @Nombre + '%'
-                OR p.Categoria LIKE '%' + @Nombre + '%'
-              )
-        ORDER BY
-            CASE WHEN t.Id IS NOT NULL THEN 0 ELSE 1 END,
-            CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-            p.Fecha DESC;";
+                    CASE WHEN t.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
+                    t.FechaFin            AS FechaFinTemporada,
+                    t.BadgeTexto          AS BadgeTexto,
+                    t.BadgeColor          AS BadgeColor
+                FROM Publicaciones p
+                LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
+                LEFT JOIN Usuarios u   ON u.Id = p.IdUsuario
+                LEFT JOIN PublicacionesDestacadas d
+                    ON d.IdPublicacion = p.Id
+                    AND d.Estado = 'Activo'
+                    AND d.FechaFin >= GETDATE()
+                LEFT JOIN PublicacionesTemporada t
+                    ON t.IdPublicacion = p.Id
+                    AND t.Estado = 'Activo'
+                    AND t.FechaFin >= GETDATE()
+                WHERE p.Estado = 'Activo'
+                  AND (@Categoria IS NULL OR p.Categoria = @Categoria)
+                  AND (
+                        @Nombre IS NULL
+                        OR p.Titulo LIKE '%' + @Nombre + '%'
+                        OR p.Descripcion LIKE '%' + @Nombre + '%'
+                        OR p.Ubicacion LIKE '%' + @Nombre + '%'
+                        OR p.Categoria LIKE '%' + @Nombre + '%'
+                      )
+                ORDER BY
+                    CASE WHEN t.Id IS NOT NULL THEN 0 ELSE 1 END,
+                    CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+                    p.Fecha DESC;";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(
                 new CommandDefinition(
@@ -455,52 +461,53 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             var sql = @"
-            SELECT 
-                p.Id                    AS Id,
-                p.Titulo                AS Titulo,
-                p.Descripcion           AS Descripcion,
-                p.Precio                AS Precio,
-                p.Categoria             AS Categoria,
-                p.Ubicacion             AS Ubicacion,
-                p.Latitud               AS Latitud,
-                p.Longitud              AS Longitud,
-                p.GoogleMapsUrl         AS GoogleMapsUrl,
-                p.Estado                AS Estado,
-                p.MostrarBotonesCompra  AS MostrarBotonesCompra,
+                SELECT 
+                    p.Id                    AS Id,
+                    p.Titulo                AS Titulo,
+                    p.Descripcion           AS Descripcion,
+                    p.Precio                AS Precio,
+                    p.Moneda                AS Moneda,
+                    p.Categoria             AS Categoria,
+                    p.Ubicacion             AS Ubicacion,
+                    p.Latitud               AS Latitud,
+                    p.Longitud              AS Longitud,
+                    p.GoogleMapsUrl         AS GoogleMapsUrl,
+                    p.Estado                AS Estado,
+                    p.MostrarBotonesCompra  AS MostrarBotonesCompra,
 
-                v.NombreNegocio         AS VendedorNombre,
-                NULL                    AS VendedorAvatar,
-                NULL                    AS VendedorTelefono,
+                    v.NombreNegocio         AS VendedorNombre,
+                    NULL                    AS VendedorAvatar,
+                    NULL                    AS VendedorTelefono,
 
-                CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
-                d.FechaFin              AS FechaFinDestacado,
+                    CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+                    d.FechaFin              AS FechaFinDestacado,
 
-                CASE WHEN pt.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
-                pt.FechaFin             AS FechaFinTemporada,
-                pt.BadgeTexto           AS BadgeTexto,
-                pt.BadgeColor           AS BadgeColor
+                    CASE WHEN pt.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
+                    pt.FechaFin             AS FechaFinTemporada,
+                    pt.BadgeTexto           AS BadgeTexto,
+                    pt.BadgeColor           AS BadgeColor
 
-            FROM Publicaciones p
-            LEFT JOIN Vendedores v 
-                ON v.IdUsuario = p.IdUsuario
+                FROM Publicaciones p
+                LEFT JOIN Vendedores v 
+                    ON v.IdUsuario = p.IdUsuario
 
-            LEFT JOIN PublicacionesDestacadas d
-                ON d.IdPublicacion = p.Id
-                AND d.Estado = 'Activo'             
+                LEFT JOIN PublicacionesDestacadas d
+                    ON d.IdPublicacion = p.Id
+                    AND d.Estado = 'Activo'             
 
-            LEFT JOIN (
-                SELECT *
-                FROM PublicacionesTemporada
-                WHERE Estado = 'Activo'             
-            ) pt
-                ON pt.IdPublicacion = p.Id
+                LEFT JOIN (
+                    SELECT *
+                    FROM PublicacionesTemporada
+                    WHERE Estado = 'Activo'             
+                ) pt
+                    ON pt.IdPublicacion = p.Id
 
-            WHERE p.IdUsuario = @IdUsuario
+                WHERE p.IdUsuario = @IdUsuario
 
-            ORDER BY 
-                CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-                p.Fecha DESC;
-        ";
+                ORDER BY 
+                    CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+                    p.Fecha DESC;
+                ";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(
                 sql,
@@ -926,37 +933,41 @@ public class PublicacionRepository : IPublicacionRepository
             }
 
             const string sqlUpdate = @"
-            UPDATE Publicaciones
-            SET
-                Titulo = @Titulo,
-                Descripcion = @Descripcion,
-                Precio = @Precio,
-                Categoria = @Categoria,
-                Ubicacion = @Ubicacion,
-                Latitud = @Latitud,
-                Longitud = @Longitud,
-                GoogleMapsUrl = @GoogleMapsUrl,
-                MostrarBotonesCompra = @MostrarBotonesCompra
-            WHERE Id = @IdPublicacion
-              AND IdUsuario = @IdUsuario;";
+                UPDATE Publicaciones
+                SET
+                    Titulo = @Titulo,
+                    Descripcion = @Descripcion,
+                    Precio = @Precio,
+                    Moneda = @Moneda,
+                    Categoria = @Categoria,
+                    Ubicacion = @Ubicacion,
+                    Latitud = @Latitud,
+                    Longitud = @Longitud,
+                    GoogleMapsUrl = @GoogleMapsUrl,
+                    MostrarBotonesCompra = @MostrarBotonesCompra
+                WHERE Id = @IdPublicacion
+                  AND IdUsuario = @IdUsuario;";
 
             var filas = await conn.ExecuteAsync(
-                sqlUpdate,
-                new
-                {
-                    IdPublicacion = idPublicacion,
-                    IdUsuario = idUsuario,
-                    request.Titulo,
-                    request.Descripcion,
-                    request.Precio,
-                    request.Categoria,
-                    Ubicacion = request.Ubicacion?.Trim(),
-                    request.Latitud,
-                    request.Longitud,
-                    GoogleMapsUrl = request.GoogleMapsUrl?.Trim(),
-                    request.MostrarBotonesCompra
-                },
-                tran);
+                 sqlUpdate,
+                 new
+                 {
+                     IdPublicacion = idPublicacion,
+                     IdUsuario = idUsuario,
+                     request.Titulo,
+                     request.Descripcion,
+                     request.Precio,
+                     Moneda = string.IsNullOrWhiteSpace(request.Moneda)
+                         ? "PYG"
+                         : request.Moneda.Trim().ToUpper(),
+                     request.Categoria,
+                     Ubicacion = request.Ubicacion?.Trim(),
+                     request.Latitud,
+                     request.Longitud,
+                     GoogleMapsUrl = request.GoogleMapsUrl?.Trim(),
+                     request.MostrarBotonesCompra
+                 },
+                 tran);
 
             await conn.ExecuteAsync(
                 "DELETE FROM PlanesCredito WHERE IdPublicacion = @IdPublicacion;",

@@ -256,6 +256,10 @@ public class PublicacionService : IPublicacionService
             "ActualizarPublicacion"
         );
 
+        request.Moneda = string.IsNullOrWhiteSpace(request.Moneda)
+        ? "PYG"
+        : request.Moneda.Trim().ToUpper();
+
         var esInmueble = EsCategoriaInmobiliaria(request.Categoria);
 
         if (esInmueble)

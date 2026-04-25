@@ -7,6 +7,7 @@ public class ActualizarPublicacionRequest
     public string Titulo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
     public decimal Precio { get; set; }
+    public string Moneda { get; set; } = "PYG";
     public string Categoria { get; set; } = string.Empty;
     public string? Ubicacion { get; set; } = string.Empty;
     public bool MostrarBotonesCompra { get; set; }
