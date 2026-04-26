@@ -1,8 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
+using System.Net;
+using System.Text;
 using tuvendedorback.Common;
 using tuvendedorback.DTOs;
 using tuvendedorback.Request;
+using tuvendedorback.Services;
 using tuvendedorback.Services.Interfaces;
 using tuvendedorback.Wrappers;
 
@@ -372,4 +375,115 @@ public class PublicacionesController : ControllerBase
         });
     }
 
+    [HttpGet("producto/{id:int}")]
+    public async Task<IActionResult> Producto(int id)
+    {
+        var producto = await _service.ObtenerProductoSharePreview(id);
+
+        if (producto == null)
+            return NotFound("Publicación no encontrada.");
+
+        var titulo = Limitar(
+            string.IsNullOrWhiteSpace(producto.Titulo)
+                ? "TuVendedor Marketplace"
+                : producto.Titulo,
+            90);
+
+        var descripcionBase = !string.IsNullOrWhiteSpace(producto.Descripcion)
+            ? producto.Descripcion
+            : $"{producto.Categoria} en {producto.Ubicacion}";
+
+        var descripcion = Limitar(LimpiarTexto(descripcionBase), 180);
+
+        var imagen = !string.IsNullOrWhiteSpace(producto.ImagenUrl)
+            ? producto.ImagenUrl
+            : "https://www.tuvendedor.com.py/logoTuVendedor.png";
+
+        var slug = string.IsNullOrWhiteSpace(producto.SlugVendedor)
+            ? ""
+            : producto.SlugVendedor.Trim();
+
+        var destino = !string.IsNullOrWhiteSpace(slug)
+            ? $"https://www.tuvendedor.com.py/vendedor/{WebUtility.UrlEncode(slug)}?producto={producto.Id}"
+            : $"https://www.tuvendedor.com.py/producto/{producto.Id}";
+
+        var html = ConstruirHtmlPreview(
+            titulo,
+            descripcion,
+            imagen,
+            destino
+        );
+
+        return Content(html, "text/html; charset=utf-8", Encoding.UTF8);
+    }
+
+    private static string ConstruirHtmlPreview(
+        string titulo,
+        string descripcion,
+        string imagen,
+        string destino)
+    {
+        var safeTitle = WebUtility.HtmlEncode(titulo);
+        var safeDescription = WebUtility.HtmlEncode(descripcion);
+        var safeImage = WebUtility.HtmlEncode(imagen);
+        var safeDestino = WebUtility.HtmlEncode(destino);
+
+        return $@"<!DOCTYPE html>
+            <html lang=""es"">
+            <head>
+              <meta charset=""utf-8"" />
+              <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
+
+              <title>{safeTitle}</title>
+              <meta name=""description"" content=""{safeDescription}"" />
+
+              <meta property=""og:type"" content=""product"" />
+              <meta property=""og:site_name"" content=""TuVendedor Marketplace"" />
+              <meta property=""og:title"" content=""{safeTitle}"" />
+              <meta property=""og:description"" content=""{safeDescription}"" />
+              <meta property=""og:image"" content=""{safeImage}"" />
+              <meta property=""og:image:secure_url"" content=""{safeImage}"" />
+              <meta property=""og:url"" content=""{safeDestino}"" />
+
+              <meta name=""twitter:card"" content=""summary_large_image"" />
+              <meta name=""twitter:title"" content=""{safeTitle}"" />
+              <meta name=""twitter:description"" content=""{safeDescription}"" />
+              <meta name=""twitter:image"" content=""{safeImage}"" />
+
+              <meta http-equiv=""refresh"" content=""0;url={safeDestino}"" />
+
+              <script>
+                window.location.replace(""{safeDestino}"");
+              </script>
+            </head>
+            <body>
+              <p>Redirigiendo a la publicación...</p>
+              <p><a href=""{safeDestino}"">Ver publicación</a></p>
+            </body>
+            </html>";
+    }
+
+    private static string LimpiarTexto(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+            return "Publicación disponible en TuVendedor Marketplace.";
+
+        return texto
+            .Replace("\r", " ")
+            .Replace("\n", " ")
+            .Replace("\t", " ")
+            .Trim();
+    }
+
+    private static string Limitar(string texto, int max)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+            return string.Empty;
+
+        texto = texto.Trim();
+
+        return texto.Length <= max
+            ? texto
+            : texto.Substring(0, max).Trim() + "...";
+    }
 }

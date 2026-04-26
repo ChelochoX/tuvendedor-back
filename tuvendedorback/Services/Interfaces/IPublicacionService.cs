@@ -18,4 +18,5 @@ public interface IPublicacionService
     Task<int> CrearSugerencia(CrearSugerenciaRequest request, int? idUsuario);
     Task MarcarComoVendido(int idPublicacion, int idUsuario);
     Task ActualizarPublicacion(int idPublicacion, ActualizarPublicacionRequest request);
+    Task<ProductoSharePreviewDto?> ObtenerProductoSharePreview(int idPublicacion);
 }

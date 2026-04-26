@@ -1050,4 +1050,50 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al actualizar la publicación", ex);
         }
     }
+
+    public async Task<ProductoSharePreviewDto?> ObtenerProductoSharePreview(int idPublicacion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            SELECT TOP 1
+                p.Id,
+                p.Titulo,
+                p.Descripcion,
+                p.Precio,
+                p.Moneda,
+                p.Categoria,
+                p.Ubicacion,
+                img.Url AS ImagenUrl,
+                v.Slug AS SlugVendedor,
+                v.NombreNegocio AS NombreVendedor
+            FROM Publicaciones p
+            LEFT JOIN Vendedores v
+                ON v.IdUsuario = p.IdUsuario
+            OUTER APPLY (
+                SELECT TOP 1 i.Url
+                FROM ImagenesPublicacion i
+                WHERE i.IdPublicacion = p.Id
+                ORDER BY i.Id ASC
+            ) img
+            WHERE p.Id = @IdPublicacion
+              AND p.Estado = 'Activo';";
+
+            return await conn.QueryFirstOrDefaultAsync<ProductoSharePreviewDto>(
+                sql,
+                new { IdPublicacion = idPublicacion }
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al obtener preview Open Graph para publicación {IdPublicacion}",
+                idPublicacion);
+
+            throw new RepositoryException("Error al obtener preview de publicación", ex);
+        }
+    }
 }

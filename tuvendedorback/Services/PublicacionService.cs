@@ -401,4 +401,9 @@ public class PublicacionService : IPublicacionService
 
         return categoriasInmobiliarias.Any(x => texto.Contains(x));
     }
+
+    public async Task<ProductoSharePreviewDto?> ObtenerProductoSharePreview(int idPublicacion)
+    {
+        return await _repository.ObtenerProductoSharePreview(idPublicacion);
+    }
 }
