@@ -1,11 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
-using System.Net;
-using System.Text;
 using tuvendedorback.Common;
 using tuvendedorback.DTOs;
 using tuvendedorback.Request;
-using tuvendedorback.Services;
 using tuvendedorback.Services.Interfaces;
 using tuvendedorback.Wrappers;
 
@@ -19,19 +16,21 @@ public class PublicacionesController : ControllerBase
     private readonly ILogger<PublicacionesController> _logger;
     private readonly UserContext _userContext;
 
-    public PublicacionesController(IPublicacionService service, ILogger<PublicacionesController> logger, UserContext userContext)
+    public PublicacionesController(
+        IPublicacionService service,
+        ILogger<PublicacionesController> logger,
+        UserContext userContext)
     {
         _service = service;
         _logger = logger;
         _userContext = userContext;
     }
 
-
     [HttpPost("crear-publicacion")]
     [Consumes("multipart/form-data")]
     [SwaggerOperation(
-       Summary = "Crea una nueva publicación",
-       Description = "Permite al usuario vendedor crear una publicación con imágenes.")]
+        Summary = "Crea una nueva publicación",
+        Description = "Permite al usuario vendedor crear una publicación con imágenes.")]
     public async Task<IActionResult> Crear([FromForm] CrearPublicacionRequest request)
     {
         var idUsuario = _userContext.IdUsuario;
@@ -50,15 +49,12 @@ public class PublicacionesController : ControllerBase
 
         if (esInmueble)
         {
-            // Para inmuebles, la ubicación es la del inmueble.
-            // Si no cargó nada, usamos la ubicación del vendedor como respaldo.
             request.Ubicacion = string.IsNullOrWhiteSpace(request.Ubicacion)
                 ? _userContext.Ubicacion ?? ""
                 : request.Ubicacion.Trim();
 
             request.GoogleMapsUrl = request.GoogleMapsUrl?.Trim();
 
-            // Si no vino URL pero sí coordenadas, generamos el link.
             if (string.IsNullOrWhiteSpace(request.GoogleMapsUrl)
                 && request.Latitud.HasValue
                 && request.Longitud.HasValue)
@@ -69,10 +65,7 @@ public class PublicacionesController : ControllerBase
         }
         else
         {
-            // Para marketplace común, se usa ubicación del vendedor.
             request.Ubicacion = _userContext.Ubicacion ?? "";
-
-            // GPS no aplica a publicaciones comunes.
             request.Latitud = null;
             request.Longitud = null;
             request.GoogleMapsUrl = null;
@@ -88,64 +81,10 @@ public class PublicacionesController : ControllerBase
         });
     }
 
-    private static bool EsCategoriaInmobiliaria(string? categoria)
-    {
-        if (string.IsNullOrWhiteSpace(categoria))
-            return false;
-
-        var texto = categoria.Trim().ToLower();
-
-        string[] categoriasInmobiliarias =
-        {
-        "inmueble",
-        "inmuebles",
-        "terreno",
-        "terrenos",
-        "casa",
-        "casas",
-        "departamento",
-        "departamentos",
-        "dúplex",
-        "duplex",
-        "salon",
-        "salón",
-        "salones",
-        "local",
-        "locales",
-        "oficina",
-        "oficinas",
-        "quinta",
-        "quintas",
-        "lote",
-        "lotes",
-        "deposito",
-        "depósito",
-        "depósitos",
-        "tinglado",
-        "tinglados",
-        "campo",
-        "campos",
-        "alquiler",
-        "alquileres",
-        "propiedad",
-        "propiedades",
-        "monoambiente",
-        "monoambientes",
-        "habitacion",
-        "habitación",
-        "habitaciones",
-        "garaje",
-        "garajes"
-    };
-
-        return categoriasInmobiliarias.Any(x => texto.Contains(x));
-    }
-
     [HttpGet("obtener-publicaciones")]
     [SwaggerOperation(
         Summary = "Obtiene el listado de publicaciones",
-        Description = "Devuelve las publicaciones activas del marketplace incluyendo imágenes, información del vendedor y planes de crédito. "
-                    + "Permite filtrar opcionalmente por categoría y por nombre del producto.")]
+        Description = "Devuelve las publicaciones activas del marketplace incluyendo imágenes, información del vendedor y planes de crédito. Permite filtrar opcionalmente por categoría y por nombre del producto.")]
     public async Task<IActionResult> ObtenerPublicaciones(
         [FromQuery] string? categoria = null,
         [FromQuery] string? nombre = null)
@@ -160,26 +99,10 @@ public class PublicacionesController : ControllerBase
         });
     }
 
-
-    [HttpDelete("eliminar-publicacion/{id}")]
-    [SwaggerOperation(
-    Summary = "Elimina una publicación",
-    Description = "Elimina una publicación junto con sus imágenes en Cloudinary y sus planes de crédito asociados.")]
-    public async Task<IActionResult> EliminarPublicacion(int id)
-    {
-        await _service.EliminarPublicacion(id);
-
-        return Ok(new Response<object>
-        {
-            Success = true,
-            Message = "Publicación eliminada correctamente"
-        });
-    }
-
     [HttpGet("mis-publicaciones")]
     [SwaggerOperation(
-    Summary = "Obtiene las publicaciones del usuario autenticado",
-    Description = "Devuelve solo las publicaciones creadas por el usuario logueado.")]
+        Summary = "Obtiene las publicaciones del usuario autenticado",
+        Description = "Devuelve solo las publicaciones creadas por el usuario logueado.")]
     public async Task<IActionResult> ObtenerMisPublicaciones()
     {
         var idUsuario = _userContext.IdUsuario;
@@ -197,11 +120,10 @@ public class PublicacionesController : ControllerBase
         });
     }
 
-
     [HttpGet("listar-categorias")]
     [SwaggerOperation(
-       Summary = "Obtiene todas las categorías activas",
-       Description = "Devuelve categorías de la base de datos con estado = Activo.")]
+        Summary = "Obtiene todas las categorías activas",
+        Description = "Devuelve categorías de la base de datos con estado = Activo.")]
     public async Task<IActionResult> ObtenerCategorias()
     {
         var categorias = await _service.ObtenerCategoriasActivas();
@@ -214,11 +136,44 @@ public class PublicacionesController : ControllerBase
         });
     }
 
+    [HttpPut("actualizar-publicacion/{id}")]
+    [Consumes("multipart/form-data")]
+    [SwaggerOperation(
+        Summary = "Actualiza una publicación existente",
+        Description = "Permite al usuario vendedor actualizar una publicación ya creada, incluyendo datos generales, ubicación, GPS, planes de crédito e imágenes nuevas.")]
+    public async Task<IActionResult> ActualizarPublicacion(
+        int id,
+        [FromForm] ActualizarPublicacionRequest request)
+    {
+        await _service.ActualizarPublicacion(id, request);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Publicación actualizada correctamente",
+            Data = new { Id = id }
+        });
+    }
+
+    [HttpDelete("eliminar-publicacion/{id}")]
+    [SwaggerOperation(
+        Summary = "Elimina una publicación",
+        Description = "Elimina una publicación junto con sus imágenes en Cloudinary y sus planes de crédito asociados.")]
+    public async Task<IActionResult> EliminarPublicacion(int id)
+    {
+        await _service.EliminarPublicacion(id);
+
+        return Ok(new Response<object>
+        {
+            Success = true,
+            Message = "Publicación eliminada correctamente"
+        });
+    }
+
     [HttpPost("destacar-publicacion")]
     [SwaggerOperation(
-      Summary = "Destaca una publicación existente",
-      Description = "Permite al usuario vendedor destacar una publicación ya creada por un período determinado (en días)." +
-        " Solo el dueño de la publicación puede destacarla.")]
+        Summary = "Destaca una publicación existente",
+        Description = "Permite al usuario vendedor destacar una publicación ya creada por un período determinado en días. Solo el dueño de la publicación puede destacarla.")]
     public async Task<IActionResult> DestacarPublicacion([FromBody] DestacarPublicacionRequest request)
     {
         var idUsuario = _userContext.IdUsuario;
@@ -237,8 +192,8 @@ public class PublicacionesController : ControllerBase
 
     [HttpPost("quitar-destacado-publicacion")]
     [SwaggerOperation(
-      Summary = "Quita el destacado de una publicación",
-      Description = "Permite quitar manualmente el estado destacado de una publicación activa.")]
+        Summary = "Quita el destacado de una publicación",
+        Description = "Permite quitar manualmente el estado destacado de una publicación activa.")]
     public async Task<IActionResult> QuitarDestacadoPublicacion([FromBody] QuitarDestacadoPublicacionRequest request)
     {
         var idUsuario = _userContext.IdUsuario;
@@ -255,12 +210,10 @@ public class PublicacionesController : ControllerBase
         });
     }
 
-
     [HttpPost("activar-temporada")]
     [SwaggerOperation(
-    Summary = "Activa una publicación como temporada",
-    Description = "Permite a vendedores Premium o administradores activar una publicación como oferta de temporada. "
-                + "Solo el dueño de la publicación o un administrador puede activarla.")]
+        Summary = "Activa una publicación como temporada",
+        Description = "Permite a vendedores Premium o administradores activar una publicación como oferta de temporada. Solo el dueño de la publicación o un administrador puede activarla.")]
     public async Task<IActionResult> ActivarTemporada([FromBody] ActivarTemporadaRequest request)
     {
         var idUsuario = _userContext.IdUsuario;
@@ -278,11 +231,10 @@ public class PublicacionesController : ControllerBase
         });
     }
 
-
     [HttpPost("desactivar-temporada")]
     [SwaggerOperation(
-    Summary = "Desactiva una publicación de temporada",
-    Description = "Permite a administradores o vendedores premium desactivar una publicación marcada como temporada.")]
+        Summary = "Desactiva una publicación de temporada",
+        Description = "Permite a administradores o vendedores premium desactivar una publicación marcada como temporada.")]
     public async Task<IActionResult> DesactivarTemporada([FromBody] DesactivarTemporadaRequest request)
     {
         var idUsuario = _userContext.IdUsuario;
@@ -300,12 +252,10 @@ public class PublicacionesController : ControllerBase
         });
     }
 
-
     [HttpGet("listar-temporadas")]
     [SwaggerOperation(
-    Summary = "Obtiene el listado de temporadas activas",
-    Description = "Devuelve todas las temporadas configuradas por el administrador que están en estado 'Activo'. "
-                + "Incluye nombre, colores del badge y rango de fechas definido para la temporada.")]
+        Summary = "Obtiene el listado de temporadas activas",
+        Description = "Devuelve todas las temporadas configuradas por el administrador que están en estado Activo. Incluye nombre, colores del badge y rango de fechas definido para la temporada.")]
     public async Task<IActionResult> ListarTemporadas()
     {
         var data = await _service.ObtenerTemporadasActivas();
@@ -318,11 +268,10 @@ public class PublicacionesController : ControllerBase
         });
     }
 
-
     [HttpPost("crear-sugerencia")]
     [SwaggerOperation(
-       Summary = "Crea una sugerencia",
-       Description = "Guarda un comentario, feedback o sugerencia del usuario en la base de datos.")]
+        Summary = "Crea una sugerencia",
+        Description = "Guarda un comentario, feedback o sugerencia del usuario en la base de datos.")]
     public async Task<IActionResult> CrearSugerencia([FromBody] CrearSugerenciaRequest request)
     {
         var idUsuario = _userContext.IdUsuario;
@@ -339,8 +288,8 @@ public class PublicacionesController : ControllerBase
 
     [HttpPost("marcar-vendido")]
     [SwaggerOperation(
-    Summary = "Marca una publicación como vendida",
-    Description = "Permite al usuario dueño de la publicación marcarla con estado VENDIDO.")]
+        Summary = "Marca una publicación como vendida",
+        Description = "Permite al usuario dueño de la publicación marcarla con estado VENDIDO.")]
     public async Task<IActionResult> MarcarComoVendido([FromBody] MarcarVendidoRequest request)
     {
         var idUsuario = _userContext.IdUsuario;
@@ -358,132 +307,56 @@ public class PublicacionesController : ControllerBase
         });
     }
 
-    [HttpPut("actualizar-publicacion/{id}")]
-    [Consumes("multipart/form-data")]
-    [SwaggerOperation(
-     Summary = "Actualiza una publicación existente",
-     Description = "Permite al usuario vendedor actualizar una publicación ya creada, incluyendo datos generales, ubicación, GPS, planes de crédito e imágenes nuevas.")]
-    public async Task<IActionResult> ActualizarPublicacion(int id, [FromForm] ActualizarPublicacionRequest request)
+    private static bool EsCategoriaInmobiliaria(string? categoria)
     {
-        await _service.ActualizarPublicacion(id, request);
+        if (string.IsNullOrWhiteSpace(categoria))
+            return false;
 
-        return Ok(new Response<object>
+        var texto = categoria.Trim().ToLower();
+
+        string[] categoriasInmobiliarias =
         {
-            Success = true,
-            Message = "Publicación actualizada correctamente",
-            Data = new { Id = id }
-        });
-    }
+            "inmueble",
+            "inmuebles",
+            "terreno",
+            "terrenos",
+            "casa",
+            "casas",
+            "departamento",
+            "departamentos",
+            "dúplex",
+            "duplex",
+            "salon",
+            "salón",
+            "salones",
+            "local",
+            "locales",
+            "oficina",
+            "oficinas",
+            "quinta",
+            "quintas",
+            "lote",
+            "lotes",
+            "deposito",
+            "depósito",
+            "depósitos",
+            "tinglado",
+            "tinglados",
+            "campo",
+            "campos",
+            "alquiler",
+            "alquileres",
+            "propiedad",
+            "propiedades",
+            "monoambiente",
+            "monoambientes",
+            "habitacion",
+            "habitación",
+            "habitaciones",
+            "garaje",
+            "garajes"
+        };
 
-    [HttpGet("producto/{id:int}")]
-    public async Task<IActionResult> Producto(int id)
-    {
-        var producto = await _service.ObtenerProductoSharePreview(id);
-
-        if (producto == null)
-            return NotFound("Publicación no encontrada.");
-
-        var titulo = Limitar(
-            string.IsNullOrWhiteSpace(producto.Titulo)
-                ? "TuVendedor Marketplace"
-                : producto.Titulo,
-            90);
-
-        var descripcionBase = !string.IsNullOrWhiteSpace(producto.Descripcion)
-            ? producto.Descripcion
-            : $"{producto.Categoria} en {producto.Ubicacion}";
-
-        var descripcion = Limitar(LimpiarTexto(descripcionBase), 180);
-
-        var imagen = !string.IsNullOrWhiteSpace(producto.ImagenUrl)
-            ? producto.ImagenUrl
-            : "https://www.tuvendedor.com.py/logoTuVendedor.png";
-
-        var slug = string.IsNullOrWhiteSpace(producto.SlugVendedor)
-            ? ""
-            : producto.SlugVendedor.Trim();
-
-        var destino = !string.IsNullOrWhiteSpace(slug)
-            ? $"https://www.tuvendedor.com.py/vendedor/{WebUtility.UrlEncode(slug)}?producto={producto.Id}"
-            : $"https://www.tuvendedor.com.py/producto/{producto.Id}";
-
-        var html = ConstruirHtmlPreview(
-            titulo,
-            descripcion,
-            imagen,
-            destino
-        );
-
-        return Content(html, "text/html; charset=utf-8", Encoding.UTF8);
-    }
-
-    private static string ConstruirHtmlPreview(
-        string titulo,
-        string descripcion,
-        string imagen,
-        string destino)
-    {
-        var safeTitle = WebUtility.HtmlEncode(titulo);
-        var safeDescription = WebUtility.HtmlEncode(descripcion);
-        var safeImage = WebUtility.HtmlEncode(imagen);
-        var safeDestino = WebUtility.HtmlEncode(destino);
-
-        return $@"<!DOCTYPE html>
-            <html lang=""es"">
-            <head>
-              <meta charset=""utf-8"" />
-              <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
-
-              <title>{safeTitle}</title>
-              <meta name=""description"" content=""{safeDescription}"" />
-
-              <meta property=""og:type"" content=""product"" />
-              <meta property=""og:site_name"" content=""TuVendedor Marketplace"" />
-              <meta property=""og:title"" content=""{safeTitle}"" />
-              <meta property=""og:description"" content=""{safeDescription}"" />
-              <meta property=""og:image"" content=""{safeImage}"" />
-              <meta property=""og:image:secure_url"" content=""{safeImage}"" />
-              <meta property=""og:url"" content=""{safeDestino}"" />
-
-              <meta name=""twitter:card"" content=""summary_large_image"" />
-              <meta name=""twitter:title"" content=""{safeTitle}"" />
-              <meta name=""twitter:description"" content=""{safeDescription}"" />
-              <meta name=""twitter:image"" content=""{safeImage}"" />
-
-              <meta http-equiv=""refresh"" content=""0;url={safeDestino}"" />
-
-              <script>
-                window.location.replace(""{safeDestino}"");
-              </script>
-            </head>
-            <body>
-              <p>Redirigiendo a la publicación...</p>
-              <p><a href=""{safeDestino}"">Ver publicación</a></p>
-            </body>
-            </html>";
-    }
-
-    private static string LimpiarTexto(string? texto)
-    {
-        if (string.IsNullOrWhiteSpace(texto))
-            return "Publicación disponible en TuVendedor Marketplace.";
-
-        return texto
-            .Replace("\r", " ")
-            .Replace("\n", " ")
-            .Replace("\t", " ")
-            .Trim();
-    }
-
-    private static string Limitar(string texto, int max)
-    {
-        if (string.IsNullOrWhiteSpace(texto))
-            return string.Empty;
-
-        texto = texto.Trim();
-
-        return texto.Length <= max
-            ? texto
-            : texto.Substring(0, max).Trim() + "...";
+        return categoriasInmobiliarias.Any(x => texto.Contains(x));
     }
 }

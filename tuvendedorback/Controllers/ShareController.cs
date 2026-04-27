@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using tuvendedorback.Services.Interfaces;
 
 namespace tuvendedorback.Controllers;
@@ -98,8 +99,9 @@ public class ShareController : ControllerBase
         var safeDescription = WebUtility.HtmlEncode(descripcion);
         var safeImage = WebUtility.HtmlEncode(imagen);
         var safeDestino = WebUtility.HtmlEncode(destino);
+        var destinoJs = JsonSerializer.Serialize(destino);
 
-        return $@"<!DOCTYPE html>
+                    return $@"<!DOCTYPE html>
             <html lang=""es"">
             <head>
               <meta charset=""utf-8"" />
@@ -124,7 +126,7 @@ public class ShareController : ControllerBase
               <meta http-equiv=""refresh"" content=""0;url={safeDestino}"" />
 
               <script>
-                window.location.replace(""{safeDestino}"");
+                window.location.replace({destinoJs});
               </script>
             </head>
             <body>
