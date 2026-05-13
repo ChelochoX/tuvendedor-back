@@ -84,12 +84,13 @@ public class PublicacionesController : ControllerBase
     [HttpGet("obtener-publicaciones")]
     [SwaggerOperation(
         Summary = "Obtiene el listado de publicaciones",
-        Description = "Devuelve las publicaciones activas del marketplace incluyendo imágenes, información del vendedor y planes de crédito. Permite filtrar opcionalmente por categoría y por nombre del producto.")]
+        Description = "Devuelve las publicaciones activas del marketplace incluyendo imágenes, información del vendedor, planes de crédito y métricas de interacción.")]
     public async Task<IActionResult> ObtenerPublicaciones(
         [FromQuery] string? categoria = null,
-        [FromQuery] string? nombre = null)
+        [FromQuery] string? nombre = null,
+        [FromQuery] string? visitorId = null)
     {
-        var publicaciones = await _service.ObtenerPublicaciones(categoria, nombre);
+        var publicaciones = await _service.ObtenerPublicaciones(categoria, nombre, visitorId);
 
         return Ok(new Response<List<ProductoDto>>
         {

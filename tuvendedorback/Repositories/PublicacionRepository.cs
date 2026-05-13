@@ -170,60 +170,103 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
-    public async Task<List<Publicacion>> ObtenerPublicaciones(string? categoria, string? nombre)
+    public async Task<List<Publicacion>> ObtenerPublicaciones(
+    string? categoria,
+    string? nombre,
+    int? idUsuario,
+    string? visitorId)
     {
         using var conn = _conexion.CreateSqlConnection();
 
         try
         {
             const string sql = @"
-                SELECT 
-                    p.Id,
-                    p.Titulo              AS Titulo,
-                    p.Descripcion         AS Descripcion,
-                    p.Precio              AS Precio,
-                    p.Moneda              AS Moneda,
-                    p.Categoria           AS Categoria,
-                    p.Ubicacion           AS Ubicacion,
-                    p.Latitud             AS Latitud,
-                    p.Longitud            AS Longitud,
-                    p.GoogleMapsUrl       AS GoogleMapsUrl,
-                    p.MostrarBotonesCompra,
-                    p.Estado              AS Estado,
-                    v.NombreNegocio       AS VendedorNombre,
-                    u.Telefono            AS VendedorTelefono,
+            SELECT 
+                p.Id,
+                p.Titulo              AS Titulo,
+                p.Descripcion         AS Descripcion,
+                p.Precio              AS Precio,
+                p.Moneda              AS Moneda,
+                p.Categoria           AS Categoria,
+                p.Ubicacion           AS Ubicacion,
+                p.Latitud             AS Latitud,
+                p.Longitud            AS Longitud,
+                p.GoogleMapsUrl       AS GoogleMapsUrl,
+                p.MostrarBotonesCompra,
+                p.Estado              AS Estado,
+                v.NombreNegocio       AS VendedorNombre,
+                u.Telefono            AS VendedorTelefono,
 
-                    CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
-                    d.FechaFin            AS FechaFinDestacado,
+                CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+                d.FechaFin            AS FechaFinDestacado,
 
-                    CASE WHEN t.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
-                    t.FechaFin            AS FechaFinTemporada,
-                    t.BadgeTexto          AS BadgeTexto,
-                    t.BadgeColor          AS BadgeColor
-                FROM Publicaciones p
-                LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
-                LEFT JOIN Usuarios u   ON u.Id = p.IdUsuario
-                LEFT JOIN PublicacionesDestacadas d
-                    ON d.IdPublicacion = p.Id
-                    AND d.Estado = 'Activo'
-                    AND d.FechaFin >= GETDATE()
-                LEFT JOIN PublicacionesTemporada t
-                    ON t.IdPublicacion = p.Id
-                    AND t.Estado = 'Activo'
-                    AND t.FechaFin >= GETDATE()
-                WHERE p.Estado = 'Activo'
-                  AND (@Categoria IS NULL OR p.Categoria = @Categoria)
-                  AND (
-                        @Nombre IS NULL
-                        OR p.Titulo LIKE '%' + @Nombre + '%'
-                        OR p.Descripcion LIKE '%' + @Nombre + '%'
-                        OR p.Ubicacion LIKE '%' + @Nombre + '%'
-                        OR p.Categoria LIKE '%' + @Nombre + '%'
-                      )
-                ORDER BY
-                    CASE WHEN t.Id IS NOT NULL THEN 0 ELSE 1 END,
-                    CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-                    p.Fecha DESC;";
+                CASE WHEN t.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
+                t.FechaFin            AS FechaFinTemporada,
+                t.BadgeTexto          AS BadgeTexto,
+                t.BadgeColor          AS BadgeColor,
+
+                (
+                    SELECT COUNT(1)
+                    FROM PublicacionFavoritos pf
+                    WHERE pf.IdPublicacion = p.Id
+                      AND pf.Activo = 1
+                ) AS CantidadFavoritos,
+
+                (
+                    SELECT COUNT(1)
+                    FROM PublicacionEventos pe
+                    WHERE pe.IdPublicacion = p.Id
+                      AND pe.TipoEvento = 'VIEW_DETAIL'
+                ) AS CantidadVistas,
+
+                (
+                    SELECT COUNT(1)
+                    FROM PublicacionEventos pe
+                    WHERE pe.IdPublicacion = p.Id
+                      AND pe.TipoEvento = 'CLICK_WHATSAPP'
+                ) AS CantidadClicksWhatsapp,
+
+                CASE 
+                    WHEN EXISTS
+                    (
+                        SELECT 1
+                        FROM PublicacionFavoritos pf
+                        WHERE pf.IdPublicacion = p.Id
+                          AND pf.Activo = 1
+                          AND (
+                                (@IdUsuario IS NOT NULL AND pf.IdUsuario = @IdUsuario)
+                                OR
+                                (@IdUsuario IS NULL AND @VisitorId IS NOT NULL AND pf.VisitorId = @VisitorId)
+                              )
+                    )
+                    THEN 1
+                    ELSE 0
+                END AS EsFavorito
+
+            FROM Publicaciones p
+            LEFT JOIN Vendedores v ON v.IdUsuario = p.IdUsuario
+            LEFT JOIN Usuarios u   ON u.Id = p.IdUsuario
+            LEFT JOIN PublicacionesDestacadas d
+                ON d.IdPublicacion = p.Id
+                AND d.Estado = 'Activo'
+                AND d.FechaFin >= GETDATE()
+            LEFT JOIN PublicacionesTemporada t
+                ON t.IdPublicacion = p.Id
+                AND t.Estado = 'Activo'
+                AND t.FechaFin >= GETDATE()
+            WHERE p.Estado = 'Activo'
+              AND (@Categoria IS NULL OR p.Categoria = @Categoria)
+              AND (
+                    @Nombre IS NULL
+                    OR p.Titulo LIKE '%' + @Nombre + '%'
+                    OR p.Descripcion LIKE '%' + @Nombre + '%'
+                    OR p.Ubicacion LIKE '%' + @Nombre + '%'
+                    OR p.Categoria LIKE '%' + @Nombre + '%'
+                  )
+            ORDER BY
+                CASE WHEN t.Id IS NOT NULL THEN 0 ELSE 1 END,
+                CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+                p.Fecha DESC;";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(
                 new CommandDefinition(
@@ -231,7 +274,11 @@ public class PublicacionRepository : IPublicacionRepository
                     new
                     {
                         Categoria = categoria,
-                        Nombre = nombre
+                        Nombre = nombre,
+                        IdUsuario = idUsuario,
+                        VisitorId = string.IsNullOrWhiteSpace(visitorId)
+                            ? null
+                            : visitorId.Trim()
                     },
                     commandTimeout: 30
                 )
@@ -383,31 +430,56 @@ public class PublicacionRepository : IPublicacionRepository
                 return 0;
             }
 
+            // Solicitudes de visita asociadas a la publicación
             await conn.ExecuteAsync(
-                "DELETE FROM SolicitudesVisitaPublicacion WHERE IdPublicacion = @id;",
+                @"DELETE FROM SolicitudesVisitaPublicacion 
+              WHERE IdPublicacion = @id;",
                 new { id = idPublicacion },
                 tran);
 
+            // Nuevas interacciones: favoritos de la publicación
             await conn.ExecuteAsync(
-                "DELETE FROM PublicacionesDestacadas WHERE IdPublicacion = @id;",
+                @"DELETE FROM PublicacionFavoritos 
+              WHERE IdPublicacion = @id;",
                 new { id = idPublicacion },
                 tran);
 
+            // Nuevas interacciones: vistas, clicks de WhatsApp, etc.
             await conn.ExecuteAsync(
-                "DELETE FROM PublicacionesTemporada WHERE IdPublicacion = @id;",
+                @"DELETE FROM PublicacionEventos 
+              WHERE IdPublicacion = @id;",
                 new { id = idPublicacion },
                 tran);
 
+            // Destacados de la publicación
             await conn.ExecuteAsync(
-                "DELETE FROM PlanesCredito WHERE IdPublicacion = @id;",
+                @"DELETE FROM PublicacionesDestacadas 
+              WHERE IdPublicacion = @id;",
                 new { id = idPublicacion },
                 tran);
 
+            // Temporadas de la publicación
             await conn.ExecuteAsync(
-                "DELETE FROM ImagenesPublicacion WHERE IdPublicacion = @id;",
+                @"DELETE FROM PublicacionesTemporada 
+              WHERE IdPublicacion = @id;",
                 new { id = idPublicacion },
                 tran);
 
+            // Planes de crédito asociados
+            await conn.ExecuteAsync(
+                @"DELETE FROM PlanesCredito 
+              WHERE IdPublicacion = @id;",
+                new { id = idPublicacion },
+                tran);
+
+            // Imágenes asociadas
+            await conn.ExecuteAsync(
+                @"DELETE FROM ImagenesPublicacion 
+              WHERE IdPublicacion = @id;",
+                new { id = idPublicacion },
+                tran);
+
+            // Publicación principal
             var filas = await conn.ExecuteAsync(
                 @"DELETE FROM Publicaciones
               WHERE Id = @id
@@ -458,56 +530,80 @@ public class PublicacionRepository : IPublicacionRepository
     public async Task<List<Publicacion>> ObtenerMisPublicaciones(int idUsuario)
     {
         using var conn = _conexion.CreateSqlConnection();
+
         try
         {
             var sql = @"
-                SELECT 
-                    p.Id                    AS Id,
-                    p.Titulo                AS Titulo,
-                    p.Descripcion           AS Descripcion,
-                    p.Precio                AS Precio,
-                    p.Moneda                AS Moneda,
-                    p.Categoria             AS Categoria,
-                    p.Ubicacion             AS Ubicacion,
-                    p.Latitud               AS Latitud,
-                    p.Longitud              AS Longitud,
-                    p.GoogleMapsUrl         AS GoogleMapsUrl,
-                    p.Estado                AS Estado,
-                    p.MostrarBotonesCompra  AS MostrarBotonesCompra,
+            SELECT 
+                p.Id                    AS Id,
+                p.Titulo                AS Titulo,
+                p.Descripcion           AS Descripcion,
+                p.Precio                AS Precio,
+                p.Moneda                AS Moneda,
+                p.Categoria             AS Categoria,
+                p.Ubicacion             AS Ubicacion,
+                p.Latitud               AS Latitud,
+                p.Longitud              AS Longitud,
+                p.GoogleMapsUrl         AS GoogleMapsUrl,
+                p.Estado                AS Estado,
+                p.MostrarBotonesCompra  AS MostrarBotonesCompra,
 
-                    v.NombreNegocio         AS VendedorNombre,
-                    NULL                    AS VendedorAvatar,
-                    NULL                    AS VendedorTelefono,
+                v.NombreNegocio         AS VendedorNombre,
+                NULL                    AS VendedorAvatar,
+                NULL                    AS VendedorTelefono,
 
-                    CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
-                    d.FechaFin              AS FechaFinDestacado,
+                CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
+                d.FechaFin              AS FechaFinDestacado,
 
-                    CASE WHEN pt.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
-                    pt.FechaFin             AS FechaFinTemporada,
-                    pt.BadgeTexto           AS BadgeTexto,
-                    pt.BadgeColor           AS BadgeColor
+                CASE WHEN pt.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
+                pt.FechaFin             AS FechaFinTemporada,
+                pt.BadgeTexto           AS BadgeTexto,
+                pt.BadgeColor           AS BadgeColor,
 
-                FROM Publicaciones p
-                LEFT JOIN Vendedores v 
-                    ON v.IdUsuario = p.IdUsuario
+                (
+                    SELECT COUNT(1)
+                    FROM PublicacionFavoritos pf
+                    WHERE pf.IdPublicacion = p.Id
+                      AND pf.Activo = 1
+                ) AS CantidadFavoritos,
 
-                LEFT JOIN PublicacionesDestacadas d
-                    ON d.IdPublicacion = p.Id
-                    AND d.Estado = 'Activo'             
+                (
+                    SELECT COUNT(1)
+                    FROM PublicacionEventos pe
+                    WHERE pe.IdPublicacion = p.Id
+                      AND pe.TipoEvento = 'VIEW_DETAIL'
+                ) AS CantidadVistas,
 
-                LEFT JOIN (
-                    SELECT *
-                    FROM PublicacionesTemporada
-                    WHERE Estado = 'Activo'             
-                ) pt
-                    ON pt.IdPublicacion = p.Id
+                (
+                    SELECT COUNT(1)
+                    FROM PublicacionEventos pe
+                    WHERE pe.IdPublicacion = p.Id
+                      AND pe.TipoEvento = 'CLICK_WHATSAPP'
+                ) AS CantidadClicksWhatsapp,
 
-                WHERE p.IdUsuario = @IdUsuario
+                0 AS EsFavorito
 
-                ORDER BY 
-                    CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-                    p.Fecha DESC;
-                ";
+            FROM Publicaciones p
+            LEFT JOIN Vendedores v 
+                ON v.IdUsuario = p.IdUsuario
+
+            LEFT JOIN PublicacionesDestacadas d
+                ON d.IdPublicacion = p.Id
+                AND d.Estado = 'Activo'             
+
+            LEFT JOIN (
+                SELECT *
+                FROM PublicacionesTemporada
+                WHERE Estado = 'Activo'             
+            ) pt
+                ON pt.IdPublicacion = p.Id
+
+            WHERE p.IdUsuario = @IdUsuario
+
+            ORDER BY 
+                CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
+                p.Fecha DESC;
+            ";
 
             var publicaciones = (await conn.QueryAsync<Publicacion>(
                 sql,

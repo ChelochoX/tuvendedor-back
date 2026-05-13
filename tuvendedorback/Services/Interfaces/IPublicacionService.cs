@@ -6,7 +6,7 @@ namespace tuvendedorback.Services.Interfaces;
 public interface IPublicacionService
 {
     Task<int> CrearPublicacion(CrearPublicacionRequest request, int idUsuario);
-    Task<List<ProductoDto>> ObtenerPublicaciones(string? categoria, string? nombre);
+    Task<List<ProductoDto>> ObtenerPublicaciones(string? categoria, string? nombre, string? visitorId = null);
     Task EliminarPublicacion(int idPublicacion);
     Task<List<ProductoDto>> ObtenerMisPublicaciones(int idUsuario);
     Task<List<CategoriaDto>> ObtenerCategoriasActivas();
@@ -18,5 +18,5 @@ public interface IPublicacionService
     Task<int> CrearSugerencia(CrearSugerenciaRequest request, int? idUsuario);
     Task MarcarComoVendido(int idPublicacion, int idUsuario);
     Task ActualizarPublicacion(int idPublicacion, ActualizarPublicacionRequest request);
-    Task<ProductoSharePreviewDto?> ObtenerProductoSharePreview(int idPublicacion);
+    Task<ProductoSharePreviewDto?> ObtenerProductoSharePreview(int idPublicacion);  
 }

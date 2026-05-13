@@ -37,6 +37,12 @@ public class ProductoDto
 
     // 💳 Planes crédito
     public PlanCreditoDto? PlanCredito { get; set; }
+
+    //Me Gusta/Vistas/WA
+    public int CantidadFavoritos { get; set; }
+    public int CantidadVistas { get; set; }
+    public int CantidadClicksWhatsapp { get; set; }
+    public bool EsFavorito { get; set; }
 }
 
 public class VendedorDto

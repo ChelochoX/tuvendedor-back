@@ -31,6 +31,12 @@ public class Publicacion
     public decimal? Longitud { get; set; }
     public string? GoogleMapsUrl { get; set; }
 
+    //ME GUSTA/VISTOS/WA
+    public int CantidadFavoritos { get; set; }
+    public int CantidadVistas { get; set; }
+    public int CantidadClicksWhatsapp { get; set; }
+    public bool EsFavorito { get; set; }
+
     // Relacionados
     public List<string> Imagenes { get; set; } = new();
     public List<PlanCredito> PlanCredito { get; set; } = new();
