@@ -1,4 +1,5 @@
 ﻿using Dapper;
+using Microsoft.Data.SqlClient;
 using tuvendedorback.Data;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
@@ -179,34 +180,33 @@ public class PublicacionInteraccionRepository : IPublicacionInteraccionRepositor
         try
         {
             const string sql = @"
-                INSERT INTO PublicacionEventos
-                (
-                    IdPublicacion,
-                    IdUsuario,
-                    VisitorId,
-                    TipoEvento,
-                    FechaCreacion
-                )
-                SELECT
-                    @IdPublicacion,
-                    @IdUsuario,
-                    @VisitorId,
-                    @TipoEvento,
-                    GETDATE()
-                WHERE NOT EXISTS
-                (
-                    SELECT 1
-                    FROM PublicacionEventos
-                    WHERE IdPublicacion = @IdPublicacion
-                      AND TipoEvento = @TipoEvento
-                      AND FechaCreacion >= CAST(GETDATE() AS DATE)
-                      AND FechaCreacion < DATEADD(DAY, 1, CAST(GETDATE() AS DATE))
-                      AND (
-                            (@IdUsuario IS NOT NULL AND IdUsuario = @IdUsuario)
-                            OR
-                            (@IdUsuario IS NULL AND @VisitorId IS NOT NULL AND VisitorId = @VisitorId)
-                          )
-                );";
+            INSERT INTO PublicacionEventos
+            (
+                IdPublicacion,
+                IdUsuario,
+                VisitorId,
+                TipoEvento,
+                FechaCreacion
+            )
+            SELECT
+                @IdPublicacion,
+                @IdUsuario,
+                @VisitorId,
+                @TipoEvento,
+                GETDATE()
+            WHERE NOT EXISTS
+            (
+                SELECT 1
+                FROM PublicacionEventos WITH (UPDLOCK, HOLDLOCK)
+                WHERE IdPublicacion = @IdPublicacion
+                  AND TipoEvento = @TipoEvento
+                  AND FechaEvento = CONVERT(DATE, GETDATE())
+                  AND (
+                        (@IdUsuario IS NOT NULL AND IdUsuario = @IdUsuario)
+                        OR
+                        (@IdUsuario IS NULL AND @VisitorId IS NOT NULL AND VisitorId = @VisitorId)
+                      )
+            );";
 
             await conn.ExecuteAsync(
                 sql,
@@ -217,6 +217,19 @@ public class PublicacionInteraccionRepository : IPublicacionInteraccionRepositor
                     VisitorId = idUsuario.HasValue ? null : visitorId,
                     TipoEvento = tipoEvento
                 });
+        }
+        catch (SqlException ex) when (ex.Number == 2601 || ex.Number == 2627)
+        {
+            // Evento duplicado del mismo usuario/visitante en el mismo día.
+            // No se considera error funcional.
+            _logger.LogInformation(
+                "Evento duplicado ignorado. IdPublicacion={IdPublicacion}, IdUsuario={IdUsuario}, VisitorId={VisitorId}, TipoEvento={TipoEvento}",
+                idPublicacion,
+                idUsuario,
+                visitorId,
+                tipoEvento);
+
+            return;
         }
         catch (Exception ex)
         {
