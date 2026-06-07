@@ -366,6 +366,41 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
+    public async Task<bool> PuedeCrearPublicaciones(int idUsuario)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            SELECT COUNT(1)
+            FROM UsuarioRoles ur
+            INNER JOIN Roles r ON ur.IdRol = r.Id
+            WHERE ur.IdUsuario = @IdUsuario
+              AND r.NombreRol IN ('Vendedor', 'Administrador');";
+
+            var cantidad = await conn.ExecuteScalarAsync<int>(
+                sql,
+                new { IdUsuario = idUsuario }
+            );
+
+            return cantidad > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al validar si el usuario {IdUsuario} puede crear publicaciones",
+                idUsuario
+            );
+
+            throw new RepositoryException(
+                "Error al validar si el usuario puede crear publicaciones",
+                ex
+            );
+        }
+    }
+
     public async Task<IEnumerable<ImagenDto>> ObtenerImagenesPorPublicacion(int idPublicacion, int idUsuario)
     {
         using var conn = _conexion.CreateSqlConnection();

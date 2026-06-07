@@ -30,4 +30,5 @@ public interface IPublicacionRepository
     ActualizarPublicacionRequest request,
     List<ImagenDto> nuevasImagenes);
     Task<ProductoSharePreviewDto?> ObtenerProductoSharePreview(int idPublicacion);
+    Task<bool> PuedeCrearPublicaciones(int idUsuario);
 }

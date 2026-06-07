@@ -29,6 +29,17 @@ public class PublicacionService : IPublicacionService
 
     public async Task<int> CrearPublicacion(CrearPublicacionRequest request, int idUsuario)
     {
+
+        var puedeCrearPublicaciones =
+            await _repository.PuedeCrearPublicaciones(idUsuario);
+
+        if (!puedeCrearPublicaciones)
+        {
+            throw new ReglasdeNegocioException(
+                "Solo los vendedores pueden crear publicaciones."
+            );
+        }
+
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
         var imagenes = new List<ImagenDto>();
@@ -75,11 +86,10 @@ public class PublicacionService : IPublicacionService
         if (idUsuario == null || idUsuario == 0)
             throw new UnauthorizedAccessException();
 
-        await ValidarAccesoPublicacion(
-            idPublicacion,
-            idUsuario.Value,
-            "EliminarPublicacion"
-        );
+        await ValidarPropiedadPublicacion(
+       idPublicacion,
+       idUsuario.Value
+   );
 
         var imagenes = await _repository.ObtenerImagenesPorPublicacion(
             idPublicacion,
@@ -228,6 +238,23 @@ public class PublicacionService : IPublicacionService
         await _repository.MarcarComoVendido(idPublicacion);
     }
 
+    private async Task ValidarPropiedadPublicacion(
+    int idPublicacion,
+    int idUsuario)
+    {
+        var esDeUsuario = await _repository.EsPublicacionDeUsuario(
+            idPublicacion,
+            idUsuario
+        );
+
+        if (!esDeUsuario)
+        {
+            throw new ReglasdeNegocioException(
+                "No puedes realizar esta acción sobre una publicación que no te pertenece."
+            );
+        }
+    }
+
     private async Task ValidarAccesoPublicacion(int idPublicacion, int idUsuario, string permisoRequerido)
     {
         //ADMIN → puede TODO
@@ -259,11 +286,10 @@ public class PublicacionService : IPublicacionService
 
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
-        await ValidarAccesoPublicacion(
-            idPublicacion,
-            idUsuario.Value,
-            "ActualizarPublicacion"
-        );
+        await ValidarPropiedadPublicacion(
+         idPublicacion,
+         idUsuario.Value
+     );
 
         request.Moneda = string.IsNullOrWhiteSpace(request.Moneda)
         ? "PYG"
