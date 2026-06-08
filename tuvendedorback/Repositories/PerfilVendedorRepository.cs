@@ -67,6 +67,7 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                     ON u.Id = v.IdUsuario
                 WHERE v.Slug = @Slug
                   AND v.EsPerfilPublico = 1
+                  AND v.EsPremium = 1
                   AND u.Estado = 'Activo';";
 
             var perfil = await conn.QueryFirstOrDefaultAsync<PerfilPublicoVendedorDto>(
@@ -138,6 +139,7 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                    AND d.FechaFin >= GETDATE()
                 WHERE v.Slug = @Slug
                   AND v.EsPerfilPublico = 1
+                  AND v.EsPremium = 1
                   AND u.Estado = 'Activo'
                   AND p.Estado = 'Activo'
                 ORDER BY

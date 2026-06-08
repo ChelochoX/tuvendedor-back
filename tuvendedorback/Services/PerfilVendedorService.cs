@@ -74,6 +74,13 @@ public class PerfilVendedorService : IPerfilVendedorService
         if (perfilActual == null)
             throw new NoDataFoundException("No se encontró el perfil vendedor del usuario.");
 
+        if (!perfilActual.EsPremium)
+        {
+            throw new ReglasdeNegocioException(
+                "La edición de la vitrina pública está disponible para cuentas Premium."
+            );
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Slug))
         {
             request.Slug = NormalizarSlug(request.Slug);
