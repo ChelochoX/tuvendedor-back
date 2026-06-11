@@ -80,17 +80,20 @@ public class CloudinaryStorageService : IImageStorageService
     }
 
     private async Task<UploadResultDto> SubirImagenOptimizadaAsync(
-        IFormFile archivo,
-        string carpetaDestino,
-        bool generarMiniatura)
+         IFormFile archivo,
+         string carpetaDestino,
+         bool generarMiniatura,
+         int width = 1080,
+         int height = 1080,
+         int calidad = 90)
     {
         var mainBytes = await ImagenHelper.GenerarWebPAsync(
-            archivo,
-            width: 1080,
-            height: 1080,
-            calidad: 90,
-            crop: false
-        );
+        archivo,
+        width: width,
+        height: height,
+        calidad: calidad,
+        crop: false
+    );
 
         var mainPublicId = Guid.NewGuid().ToString("N");
 
@@ -436,5 +439,70 @@ public class CloudinaryStorageService : IImageStorageService
         return segmento
             .Skip(1)
             .All(char.IsDigit);
+    }
+
+    public async Task<UploadResultDto> SubirImagenOptimizada(
+    IFormFile archivo,
+    string carpetaDestino,
+    int width,
+    int height,
+    int calidad = 90)
+    {
+        if (archivo == null || archivo.Length == 0)
+        {
+            throw new ReglasdeNegocioException(
+                "La imagen no puede estar vacía.");
+        }
+
+        if (
+            string.IsNullOrWhiteSpace(archivo.ContentType)
+            || !archivo.ContentType.StartsWith(
+                "image/",
+                StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new ReglasdeNegocioException(
+                "El archivo enviado debe ser una imagen.");
+        }
+
+        if (width <= 0 || height <= 0)
+        {
+            throw new ReglasdeNegocioException(
+                "Las dimensiones deben ser mayores a cero.");
+        }
+
+        carpetaDestino =
+            NormalizarCarpeta(carpetaDestino);
+
+        try
+        {
+            return await SubirImagenOptimizadaAsync(
+                archivo,
+                carpetaDestino,
+                generarMiniatura: false,
+                width: width,
+                height: height,
+                calidad: calidad);
+        }
+        catch (ReglasdeNegocioException)
+        {
+            throw;
+        }
+        catch (RepositoryException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al subir imagen optimizada. Nombre={Nombre}, Carpeta={Carpeta}",
+                archivo.FileName,
+                carpetaDestino);
+
+            throw new RepositoryException(
+                "Error al subir imagen optimizada a Cloudinary.",
+                ex);
+        }
     }
 }

@@ -28,6 +28,8 @@ public static class DependencyInjection
         services.AddScoped<ISolicitudVisitaRepository, SolicitudVisitaRepository>();
         services.AddScoped<IPublicacionInteraccionRepository, PublicacionInteraccionRepository>();
         services.AddScoped<IServicioPremiumRepository,ServicioPremiumRepository>();
+        services.AddScoped<IPublicacionInteraccionRepository,PublicacionInteraccionRepository>();
+        services.AddScoped<IBannerPublicitarioRepository,BannerPublicitarioRepository>();
 
         // ERP
         services.AddScoped<IERPClienteRepository, ERPClienteRepository>();
@@ -53,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<IWhatsAppNotificationService, WhatsAppNotificationService>();
         services.AddScoped<IPublicacionInteraccionService, PublicacionInteraccionService>();
         services.AddScoped<IServicioPremiumService,ServicioPremiumService>();
+        services.AddScoped<IBannerPublicitarioService,BannerPublicitarioService>();
 
         // ERP
         services.AddScoped<IERPClienteService, ERPClienteService>();

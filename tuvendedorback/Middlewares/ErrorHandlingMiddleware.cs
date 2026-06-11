@@ -61,6 +61,15 @@ public class ErrorHandlingMiddleware
                 response.Errors.Add(credencialesEx.Message);
                 break;
 
+            case UnauthorizedAccessException:
+                response.StatusCode =
+                    (int)HttpStatusCode.Unauthorized;
+
+                response.Errors.Add(
+                    "No estás autorizado para acceder a este recurso.");
+
+                break;
+
             case RepositoryException repositoryException:
                 // ⚠️ Usar 400 si es validación → si no, se queda como 500
                 var marca = repositoryException.Marca;
