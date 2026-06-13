@@ -13,9 +13,7 @@ public static class ServiceConfiguration
 {
     public static void AddConfiguration(this IServiceCollection services, IConfiguration configuration)
     {
-        _ = services.AddSingleton<DbConnections>();
-
-        _ = services.AddSingleton<DbConnections>();
+        _ = services.AddSingleton<DbConnections>();      
 
         _ = services.AddCors(options =>
         {

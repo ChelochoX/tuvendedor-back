@@ -32,11 +32,13 @@ internal static class BannerPublicitarioValidatorHelper
 
         validator.RuleFor(x => x.Subtitulo)
             .MaximumLength(250)
-            .When(x => !string.IsNullOrWhiteSpace(x.Subtitulo));
+            .When(
+                x => !string.IsNullOrWhiteSpace(x.Subtitulo));
 
         validator.RuleFor(x => x.Descripcion)
             .MaximumLength(600)
-            .When(x => !string.IsNullOrWhiteSpace(x.Descripcion));
+            .When(
+                x => !string.IsNullOrWhiteSpace(x.Descripcion));
 
         validator.RuleFor(x => x.Etiqueta)
             .NotEmpty()
@@ -44,19 +46,47 @@ internal static class BannerPublicitarioValidatorHelper
 
         validator.RuleFor(x => x.TextoBoton)
             .MaximumLength(80)
-            .When(x => !string.IsNullOrWhiteSpace(x.TextoBoton));
+            .When(
+                x => !string.IsNullOrWhiteSpace(x.TextoBoton));
+
+        validator.RuleFor(x => x.TipoDestino)
+            .NotEmpty()
+            .Must(EsTipoDestinoPermitido)
+            .WithMessage(
+                "El tipo de destino debe ser WEB, FACEBOOK, " +
+                "INSTAGRAM, WHATSAPP, VITRINA_INTERNA u OTRO.");
 
         validator.RuleFor(x => x.UrlDestino)
+            .NotEmpty()
             .MaximumLength(1000)
-            .Must(url => EsUrlValida(url, permitirRutaRelativa: true))
-            .WithMessage("La URL de destino no es válida.")
-            .When(x => !string.IsNullOrWhiteSpace(x.UrlDestino));
+            .Must(
+                (request, url) =>
+                    EsDestinoValido(
+                        request.TipoDestino,
+                        url))
+            .WithMessage(
+                "La URL de destino no coincide con " +
+                "el tipo de destino seleccionado.");
 
         validator.RuleFor(x => x.WhatsappUrl)
             .MaximumLength(1000)
-            .Must(url => EsUrlValida(url, permitirRutaRelativa: false))
-            .WithMessage("La URL de WhatsApp no es válida.")
-            .When(x => !string.IsNullOrWhiteSpace(x.WhatsappUrl));
+            .Must(EsWhatsappValido)
+            .WithMessage(
+                "Ingresá un número o una URL válida de WhatsApp.")
+            .When(
+                x => !string.IsNullOrWhiteSpace(x.WhatsappUrl));
+
+        validator.RuleFor(x => x.WhatsappUrl)
+            .NotEmpty()
+            .WithMessage(
+                "Ingresá el WhatsApp secundario o desactivá " +
+                "el botón de WhatsApp.")
+            .When(x => x.MostrarBotonWhatsapp);
+
+        validator.RuleFor(x => x.TextoBotonWhatsapp)
+            .NotEmpty()
+            .MaximumLength(80)
+            .When(x => x.MostrarBotonWhatsapp);
 
         validator.RuleFor(x => x.FechaInicio)
             .NotEmpty();
@@ -65,13 +95,15 @@ internal static class BannerPublicitarioValidatorHelper
             .NotEmpty()
             .GreaterThan(x => x.FechaInicio)
             .WithMessage(
-                "La fecha fin debe ser posterior a la fecha inicio.");
+                "La fecha fin debe ser posterior " +
+                "a la fecha inicio.");
 
         validator.RuleFor(x => x.Estado)
             .NotEmpty()
             .Must(EsEstadoEditable)
             .WithMessage(
-                "El estado debe ser BORRADOR, ACTIVO o PAUSADO.");
+                "El estado debe ser BORRADOR, ACTIVO, " +
+                "PAUSADO o FINALIZADO.");
 
         validator.RuleFor(x => x.Orden)
             .InclusiveBetween(0, 999);
@@ -98,7 +130,8 @@ internal static class BannerPublicitarioValidatorHelper
         if (archivo == null)
             return false;
 
-        return archivo.Length <= megabytes * 1024L * 1024L;
+        return archivo.Length
+            <= megabytes * 1024L * 1024L;
     }
 
     public static bool EsUbicacionPermitida(string? ubicacion)
@@ -108,7 +141,20 @@ internal static class BannerPublicitarioValidatorHelper
 
         return BannerPublicitarioConstantes
             .UbicacionesPermitidas
-            .Contains(ubicacion.Trim().ToUpperInvariant());
+            .Contains(
+                ubicacion.Trim().ToUpperInvariant());
+    }
+
+    public static bool EsTipoDestinoPermitido(
+        string? tipoDestino)
+    {
+        if (string.IsNullOrWhiteSpace(tipoDestino))
+            return false;
+
+        return BannerPublicitarioConstantes
+            .TiposDestinoPermitidos
+            .Contains(
+                tipoDestino.Trim().ToUpperInvariant());
     }
 
     public static bool EsEstadoEditable(string? estado)
@@ -118,7 +164,8 @@ internal static class BannerPublicitarioValidatorHelper
 
         return BannerPublicitarioConstantes
             .EstadosEditables
-            .Contains(estado.Trim().ToUpperInvariant());
+            .Contains(
+                estado.Trim().ToUpperInvariant());
     }
 
     public static bool EsEstadoFiltroPermitido(string? estado)
@@ -128,22 +175,75 @@ internal static class BannerPublicitarioValidatorHelper
 
         return BannerPublicitarioConstantes
             .EstadosFiltro
-            .Contains(estado.Trim().ToUpperInvariant());
+            .Contains(
+                estado.Trim().ToUpperInvariant());
     }
 
-    private static bool EsUrlValida(
-        string? valor,
-        bool permitirRutaRelativa)
+    private static bool EsDestinoValido(
+        string? tipoDestino,
+        string? valor)
+    {
+        if (
+            string.IsNullOrWhiteSpace(tipoDestino)
+            || string.IsNullOrWhiteSpace(valor)
+        )
+        {
+            return false;
+        }
+
+        var tipo =
+            tipoDestino.Trim().ToUpperInvariant();
+
+        var destino =
+            valor.Trim();
+
+        if (
+            tipo ==
+            BannerPublicitarioConstantes
+                .TipoDestinoVitrinaInterna
+        )
+        {
+            return destino.StartsWith('/');
+        }
+
+        if (
+            tipo ==
+            BannerPublicitarioConstantes
+                .TipoDestinoWhatsapp
+        )
+        {
+            return EsWhatsappValido(destino);
+        }
+
+        return EsUrlHttpValida(destino);
+    }
+
+    private static bool EsWhatsappValido(string? valor)
     {
         if (string.IsNullOrWhiteSpace(valor))
             return true;
 
-        var url = valor.Trim();
+        var texto =
+            valor.Trim();
 
-        if (permitirRutaRelativa && url.StartsWith('/'))
+        if (EsUrlHttpValida(texto))
             return true;
 
-        return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        var numero =
+            new string(
+                texto
+                    .Where(char.IsDigit)
+                    .ToArray());
+
+        return numero.Length >= 8;
+    }
+
+    private static bool EsUrlHttpValida(string valor)
+    {
+        return Uri.TryCreate(
+                valor,
+                UriKind.Absolute,
+                out var uri)
             && (
                 uri.Scheme == Uri.UriSchemeHttp
                 || uri.Scheme == Uri.UriSchemeHttps

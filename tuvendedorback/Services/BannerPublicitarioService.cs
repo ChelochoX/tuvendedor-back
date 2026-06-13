@@ -13,24 +13,44 @@ public class BannerPublicitarioService
 {
     private readonly IBannerPublicitarioRepository _repository;
 
-    private readonly IImageStorageService _imageStorage;
+    private readonly IBannerImageStorageService _bannerStorage;
 
     private readonly IServiceProvider _serviceProvider;
 
     private readonly ILogger<BannerPublicitarioService> _logger;
 
+    private readonly int _diasRetencionArchivos;
+
     public BannerPublicitarioService(
         IBannerPublicitarioRepository repository,
-        IImageStorageService imageStorage,
+        IBannerImageStorageService bannerStorage,
         IServiceProvider serviceProvider,
+        IConfiguration configuration,
         ILogger<BannerPublicitarioService> logger)
     {
         _repository = repository;
-        _imageStorage = imageStorage;
+
+        _bannerStorage = bannerStorage;
+
         _serviceProvider = serviceProvider;
+
         _logger = logger;
+
+        _diasRetencionArchivos =
+            Math.Clamp(
+                configuration.GetValue<int?>(
+                    "Cloudinary:BannerRetentionDays")
+                ?? BannerPublicitarioConstantes
+                    .DiasRetencionArchivosDefault,
+                1,
+                90);
     }
 
+    /*
+      ==========================================================
+      CREAR BANNER
+      ==========================================================
+    */
     public async Task<int> Crear(
         CrearBannerPublicitarioRequest request,
         int idUsuario)
@@ -43,57 +63,78 @@ public class BannerPublicitarioService
 
         Normalizar(request);
 
-        string? imagenDesktopUrl = null;
+        var storageKey =
+            Guid.NewGuid();
 
-        string? imagenMobileUrl = null;
+        var assetFolder =
+            _bannerStorage.ConstruirAssetFolder(
+                storageKey,
+                request.NombreCliente,
+                request.Ubicacion);
+
+        BannerArchivoUploadResultDto? desktop =
+            null;
+
+        BannerArchivoUploadResultDto? mobile =
+            null;
 
         try
         {
-            var carpetaDestino =
-                $"banners-publicitarios/{request.Ubicacion.ToLowerInvariant()}";
-
-            var desktop =
-                await _imageStorage.SubirImagenOptimizada(
+            desktop =
+                await _bannerStorage.SubirImagen(
                     request.ImagenDesktop,
-                    carpetaDestino,
-                    width: 1800,
-                    height: 1000,
-                    calidad: 92);
+                    assetFolder,
+                    storageKey,
+                    BannerPublicitarioConstantes
+                        .DispositivoDesktop,
+                    revision: 1,
+                    BannerPublicitarioConstantes
+                        .ObtenerDimensionEsperada(
+                            request.Ubicacion,
+                            BannerPublicitarioConstantes
+                                .DispositivoDesktop));
 
-            imagenDesktopUrl = desktop.MainUrl;
-
-            if (
-                request.ImagenMobile != null
-                && request.ImagenMobile.Length > 0
-            )
-            {
-                var mobile =
-                    await _imageStorage.SubirImagenOptimizada(
-                        request.ImagenMobile,
-                        carpetaDestino,
-                        width: 1080,
-                        height: 1350,
-                        calidad: 92);
-
-                imagenMobileUrl = mobile.MainUrl;
-            }
+            mobile =
+                await _bannerStorage.SubirImagen(
+                    request.ImagenMobile,
+                    assetFolder,
+                    storageKey,
+                    BannerPublicitarioConstantes
+                        .DispositivoMobile,
+                    revision: 1,
+                    BannerPublicitarioConstantes
+                        .ObtenerDimensionEsperada(
+                            request.Ubicacion,
+                            BannerPublicitarioConstantes
+                                .DispositivoMobile));
 
             return await _repository.Crear(
                 request,
                 idUsuario,
-                imagenDesktopUrl,
-                imagenMobileUrl);
+                storageKey,
+                desktop,
+                mobile);
         }
         catch
         {
-            await EliminarArchivosNuevosSilenciosamente(
-                imagenDesktopUrl,
-                imagenMobileUrl);
+            /*
+              Si Cloudinary subió una imagen, pero luego falla SQL
+              o falla la segunda imagen, limpiamos únicamente los
+              archivos nuevos. Nunca tocamos imágenes activas.
+            */
+            await EliminarNuevosSilenciosamente(
+                desktop,
+                mobile);
 
             throw;
         }
     }
 
+    /*
+      ==========================================================
+      ACTUALIZAR DATOS Y REEMPLAZAR IMÁGENES OPCIONALES
+      ==========================================================
+    */
     public async Task Actualizar(
         int id,
         ActualizarBannerPublicitarioRequest request,
@@ -116,39 +157,81 @@ public class BannerPublicitarioService
 
         Normalizar(request);
 
-        var imagenDesktopUrl =
-            actual.ImagenDesktopUrl;
+        var cambioUbicacion =
+            !actual.Ubicacion.Equals(
+                request.Ubicacion,
+                StringComparison.OrdinalIgnoreCase);
 
-        var imagenMobileUrl =
-            actual.ImagenMobileUrl;
+        /*
+          HOME_TOP y HOME_INLINE tienen medidas diferentes.
+          Si cambia la ubicación, necesitamos ambos artes nuevos.
+        */
+        if (
+            cambioUbicacion
+            && (
+                request.ImagenDesktop == null
+                || request.ImagenMobile == null
+            )
+        )
+        {
+            throw new ReglasdeNegocioException(
+                "Al cambiar la ubicación del banner debés " +
+                "adjuntar nuevamente las imágenes desktop y " +
+                "mobile con las medidas de la nueva posición.");
+        }
 
-        string? nuevaImagenDesktopUrl = null;
+        /*
+          Conservamos la carpeta estable de la campaña.
+          Si cambia de posición, generamos una carpeta ordenada
+          para la nueva ubicación.
+        */
+        var assetFolder =
+            cambioUbicacion
+                ? _bannerStorage.ConstruirAssetFolder(
+                    actual.StorageKey,
+                    request.NombreCliente,
+                    request.Ubicacion)
+                : !string.IsNullOrWhiteSpace(
+                    actual.CloudinaryAssetFolder)
+                    ? actual.CloudinaryAssetFolder
+                    : _bannerStorage.ConstruirAssetFolder(
+                        actual.StorageKey,
+                        actual.NombreCliente,
+                        actual.Ubicacion);
 
-        string? nuevaImagenMobileUrl = null;
+        BannerArchivoUploadResultDto? desktop =
+            null;
+
+        BannerArchivoUploadResultDto? mobile =
+            null;
 
         try
         {
-            var carpetaDestino =
-                $"banners-publicitarios/{request.Ubicacion.ToLowerInvariant()}";
-
             if (
                 request.ImagenDesktop != null
                 && request.ImagenDesktop.Length > 0
             )
             {
-                var desktop =
-                    await _imageStorage.SubirImagenOptimizada(
+                var revision =
+                    await _repository
+                        .ObtenerSiguienteRevision(
+                            id,
+                            BannerPublicitarioConstantes
+                                .DispositivoDesktop);
+
+                desktop =
+                    await _bannerStorage.SubirImagen(
                         request.ImagenDesktop,
-                        carpetaDestino,
-                        width: 1800,
-                        height: 1000,
-                        calidad: 92);
-
-                nuevaImagenDesktopUrl =
-                    desktop.MainUrl;
-
-                imagenDesktopUrl =
-                    desktop.MainUrl;
+                        assetFolder,
+                        actual.StorageKey,
+                        BannerPublicitarioConstantes
+                            .DispositivoDesktop,
+                        revision,
+                        BannerPublicitarioConstantes
+                            .ObtenerDimensionEsperada(
+                                request.Ubicacion,
+                                BannerPublicitarioConstantes
+                                    .DispositivoDesktop));
             }
 
             if (
@@ -156,23 +239,26 @@ public class BannerPublicitarioService
                 && request.ImagenMobile.Length > 0
             )
             {
-                var mobile =
-                    await _imageStorage.SubirImagenOptimizada(
+                var revision =
+                    await _repository
+                        .ObtenerSiguienteRevision(
+                            id,
+                            BannerPublicitarioConstantes
+                                .DispositivoMobile);
+
+                mobile =
+                    await _bannerStorage.SubirImagen(
                         request.ImagenMobile,
-                        carpetaDestino,
-                        width: 1080,
-                        height: 1350,
-                        calidad: 92);
-
-                nuevaImagenMobileUrl =
-                    mobile.MainUrl;
-
-                imagenMobileUrl =
-                    mobile.MainUrl;
-            }
-            else if (request.EliminarImagenMobile)
-            {
-                imagenMobileUrl = null;
+                        assetFolder,
+                        actual.StorageKey,
+                        BannerPublicitarioConstantes
+                            .DispositivoMobile,
+                        revision,
+                        BannerPublicitarioConstantes
+                            .ObtenerDimensionEsperada(
+                                request.Ubicacion,
+                                BannerPublicitarioConstantes
+                                    .DispositivoMobile));
             }
 
             var filas =
@@ -180,60 +266,36 @@ public class BannerPublicitarioService
                     id,
                     request,
                     idUsuario,
-                    imagenDesktopUrl,
-                    imagenMobileUrl);
+                    desktop,
+                    mobile,
+                    _diasRetencionArchivos);
 
             if (filas == 0)
             {
                 throw new NoDataFoundException(
                     "No se encontró el banner publicitario.");
             }
-
-            if (
-                !string.IsNullOrWhiteSpace(
-                    nuevaImagenDesktopUrl
-                )
-                && !string.Equals(
-                    actual.ImagenDesktopUrl,
-                    nuevaImagenDesktopUrl,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            {
-                await EliminarArchivoAnteriorSilenciosamente(
-                    actual.ImagenDesktopUrl);
-            }
-
-            var debeEliminarImagenMobileAnterior =
-                request.EliminarImagenMobile
-                ||
-                (
-                    !string.IsNullOrWhiteSpace(
-                        nuevaImagenMobileUrl
-                    )
-                    && !string.Equals(
-                        actual.ImagenMobileUrl,
-                        nuevaImagenMobileUrl,
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                );
-
-            if (debeEliminarImagenMobileAnterior)
-            {
-                await EliminarArchivoAnteriorSilenciosamente(
-                    actual.ImagenMobileUrl);
-            }
         }
         catch
         {
-            await EliminarArchivosNuevosSilenciosamente(
-                nuevaImagenDesktopUrl,
-                nuevaImagenMobileUrl);
+            /*
+              Si no logramos confirmar SQL, eliminamos solamente
+              la revisión nueva. La campaña conserva la imagen
+              anterior y no queda rota.
+            */
+            await EliminarNuevosSilenciosamente(
+                desktop,
+                mobile);
 
             throw;
         }
     }
 
+    /*
+      ==========================================================
+      CAMBIAR ESTADO
+      ==========================================================
+    */
     public async Task CambiarEstado(
         int id,
         CambiarEstadoBannerPublicitarioRequest request,
@@ -263,6 +325,11 @@ public class BannerPublicitarioService
         }
     }
 
+    /*
+      ==========================================================
+      ELIMINACIÓN LÓGICA
+      ==========================================================
+    */
     public async Task Eliminar(
         int id,
         int idUsuario)
@@ -272,7 +339,8 @@ public class BannerPublicitarioService
         var filas =
             await _repository.Eliminar(
                 id,
-                idUsuario);
+                idUsuario,
+                _diasRetencionArchivos);
 
         if (filas == 0)
         {
@@ -281,22 +349,20 @@ public class BannerPublicitarioService
         }
     }
 
+    /*
+      ==========================================================
+      CONSULTAS ADMINISTRATIVAS
+      ==========================================================
+    */
     public async Task<BannerPublicitarioDto> ObtenerPorId(
         int id,
         int idUsuario)
     {
         await ValidarAdministrador(idUsuario);
 
-        var banner =
-            await _repository.ObtenerPorId(id);
-
-        if (banner == null)
-        {
-            throw new NoDataFoundException(
+        return await _repository.ObtenerPorId(id)
+            ?? throw new NoDataFoundException(
                 "No se encontró el banner publicitario.");
-        }
-
-        return banner;
     }
 
     public async Task<Datos<List<BannerPublicitarioDto>>>
@@ -317,7 +383,8 @@ public class BannerPublicitarioService
 
         return new Datos<List<BannerPublicitarioDto>>
         {
-            Items = resultado.Items,
+            Items =
+                resultado.Items,
 
             TotalRegistros =
                 resultado.TotalRegistros
@@ -325,15 +392,124 @@ public class BannerPublicitarioService
     }
 
     public async Task<ResumenBannersPublicitariosDto>
-        ObtenerResumen(int idUsuario)
+        ObtenerResumen(
+            int idUsuario)
     {
         await ValidarAdministrador(idUsuario);
 
         return await _repository.ObtenerResumen();
     }
 
-    public async Task<BannersHomeDto>
-        ObtenerActivosHome()
+    public async Task<List<BannerPublicitarioArchivoDto>>
+        ObtenerArchivos(
+            int id,
+            int idUsuario)
+    {
+        await ValidarAdministrador(idUsuario);
+
+        if (
+            await _repository.ObtenerPorId(id)
+            == null
+        )
+        {
+            throw new NoDataFoundException(
+                "No se encontró el banner publicitario.");
+        }
+
+        return await _repository.ObtenerArchivos(id);
+    }
+
+    public async Task<BannerConfiguracionAdminDto>
+        ObtenerConfiguracionAdmin(
+            int idUsuario)
+    {
+        await ValidarAdministrador(idUsuario);
+
+        return BannerPublicitarioConstantes
+            .ObtenerConfiguracionAdmin();
+    }
+
+    /*
+      ==========================================================
+      LIMPIEZA DIFERIDA DE CLOUDINARY
+      ==========================================================
+    */
+    public async Task<LimpiezaBannerArchivosDto>
+        LimpiarArchivosCloudinary(
+            int limite,
+            int idUsuario)
+    {
+        await ValidarAdministrador(idUsuario);
+
+        if (
+            limite < 1
+            || limite > 500
+        )
+        {
+            throw new ReglasdeNegocioException(
+                "El límite debe estar entre 1 y 500.");
+        }
+
+        var pendientes =
+            await _repository
+                .ObtenerArchivosPendientesEliminacion(
+                    limite);
+
+        var resultado =
+            new LimpiezaBannerArchivosDto
+            {
+                Revisados =
+                    pendientes.Count
+            };
+
+        foreach (var archivo in pendientes)
+        {
+            try
+            {
+                /*
+                  Los archivos demo cargados manualmente antes del
+                  administrador no poseen PublicId en SQL.
+                  No los borramos automáticamente.
+                */
+                if (
+                    string.IsNullOrWhiteSpace(
+                        archivo.CloudinaryPublicId)
+                )
+                {
+                    throw new ReglasdeNegocioException(
+                        "El archivo no posee PublicId porque fue " +
+                        "cargado manualmente antes del " +
+                        "administrador. Eliminá ese archivo legacy " +
+                        "manualmente desde Cloudinary.");
+                }
+
+                await _bannerStorage.EliminarImagen(
+                    archivo.CloudinaryPublicId);
+
+                await _repository.MarcarArchivoEliminado(
+                    archivo.Id);
+
+                resultado.Eliminados++;
+            }
+            catch (Exception ex)
+            {
+                await _repository.MarcarErrorEliminacion(
+                    archivo.Id,
+                    ex.Message);
+
+                resultado.ConError++;
+            }
+        }
+
+        return resultado;
+    }
+
+    /*
+      ==========================================================
+      CONSULTA PÚBLICA DEL HOME
+      ==========================================================
+    */
+    public async Task<BannersHomeDto> ObtenerActivosHome()
     {
         var banners =
             await _repository.ObtenerActivosHome();
@@ -352,6 +528,11 @@ public class BannerPublicitarioService
         };
     }
 
+    /*
+      ==========================================================
+      REGISTRO PÚBLICO DE MÉTRICAS
+      ==========================================================
+    */
     public async Task RegistrarEvento(
         RegistrarBannerEventoRequest request,
         string? userAgent)
@@ -376,33 +557,44 @@ public class BannerPublicitarioService
                 .ToUpperInvariant();
 
         request.Pagina =
-            LimpiarNullable(request.Pagina);
+            LimpiarNullable(
+                request.Pagina);
 
         request.VisitorId =
-            LimpiarNullable(request.VisitorId);
+            LimpiarNullable(
+                request.VisitorId);
 
         var filas =
             await _repository.RegistrarEvento(
                 request,
-                Recortar(userAgent, 500));
+                Recortar(
+                    userAgent,
+                    500));
 
         if (filas == 0)
         {
             throw new ReglasdeNegocioException(
-                "El banner indicado no existe, no está vigente o no corresponde a la ubicación informada.");
+                "El banner indicado no existe, no está vigente " +
+                "o no corresponde a la ubicación informada.");
         }
     }
 
-    private async Task ValidarAdministrador(int idUsuario)
+    /*
+      ==========================================================
+      HELPERS PRIVADOS
+      ==========================================================
+    */
+    private async Task ValidarAdministrador(
+        int idUsuario)
     {
-        if (idUsuario <= 0)
+        if (
+            idUsuario <= 0
+            || !await _repository
+                .EsAdministrador(idUsuario)
+        )
+        {
             throw new UnauthorizedAccessException();
-
-        var esAdministrador =
-            await _repository.EsAdministrador(idUsuario);
-
-        if (!esAdministrador)
-            throw new UnauthorizedAccessException();
+        }
     }
 
     private static List<BannerPublicitarioPublicoDto>
@@ -416,21 +608,23 @@ public class BannerPublicitarioService
                     banner =>
                         banner.Ubicacion.Equals(
                             ubicacion,
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                )
+                            StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(
-                    banner => banner.Prioridad)
+                    banner =>
+                        banner.Prioridad)
                 .ThenBy(
-                    banner => banner.Orden)
+                    banner =>
+                        banner.Orden)
                 .ThenByDescending(
-                    banner => banner.Id)
+                    banner =>
+                        banner.Id)
                 .ToList();
 
         var exclusivos =
             bannersUbicacion
                 .Where(
-                    banner => banner.EsExclusivo)
+                    banner =>
+                        banner.EsExclusivo)
                 .ToList();
 
         return exclusivos.Any()
@@ -453,24 +647,44 @@ public class BannerPublicitarioService
             request.Titulo.Trim();
 
         request.Subtitulo =
-            LimpiarNullable(request.Subtitulo);
+            LimpiarNullable(
+                request.Subtitulo);
 
         request.Descripcion =
-            LimpiarNullable(request.Descripcion);
+            LimpiarNullable(
+                request.Descripcion);
 
         request.Etiqueta =
-            string.IsNullOrWhiteSpace(request.Etiqueta)
+            string.IsNullOrWhiteSpace(
+                request.Etiqueta)
                 ? "Publicidad"
                 : request.Etiqueta.Trim();
 
         request.TextoBoton =
-            LimpiarNullable(request.TextoBoton);
+            LimpiarNullable(
+                request.TextoBoton);
+
+        request.TipoDestino =
+            request.TipoDestino
+                .Trim()
+                .ToUpperInvariant();
 
         request.UrlDestino =
-            LimpiarNullable(request.UrlDestino);
+            NormalizarDestino(
+                request.TipoDestino,
+                request.UrlDestino);
 
         request.WhatsappUrl =
-            LimpiarNullable(request.WhatsappUrl);
+            NormalizarWhatsapp(
+                request.WhatsappUrl);
+
+        request.TextoBotonWhatsapp =
+            string.IsNullOrWhiteSpace(
+                request.TextoBotonWhatsapp)
+                ? "Escribir por WhatsApp"
+                : request
+                    .TextoBotonWhatsapp
+                    .Trim();
 
         request.Estado =
             request.Estado
@@ -482,68 +696,115 @@ public class BannerPublicitarioService
         FiltroBannersPublicitariosRequest filtro)
     {
         filtro.Busqueda =
-            LimpiarNullable(filtro.Busqueda);
+            LimpiarNullable(
+                filtro.Busqueda);
 
         filtro.Ubicacion =
-            LimpiarNullable(filtro.Ubicacion)?
+            LimpiarNullable(
+                filtro.Ubicacion)?
                 .ToUpperInvariant();
 
         filtro.Estado =
-            LimpiarNullable(filtro.Estado)?
+            LimpiarNullable(
+                filtro.Estado)?
                 .ToUpperInvariant();
     }
 
-    private async Task
-        EliminarArchivosNuevosSilenciosamente(
-            params string?[] urls)
+    private static string? NormalizarDestino(
+        string tipoDestino,
+        string? valor)
+    {
+        var destino =
+            LimpiarNullable(valor);
+
+        if (
+            tipoDestino
+            ==
+            BannerPublicitarioConstantes
+                .TipoDestinoWhatsapp
+        )
+        {
+            return NormalizarWhatsapp(
+                destino);
+        }
+
+        return destino;
+    }
+
+    private static string? NormalizarWhatsapp(
+        string? valor)
+    {
+        var texto =
+            LimpiarNullable(valor);
+
+        if (texto == null)
+        {
+            return null;
+        }
+
+        if (
+            Uri.TryCreate(
+                texto,
+                UriKind.Absolute,
+                out var uri)
+            && (
+                uri.Scheme
+                    == Uri.UriSchemeHttp
+                || uri.Scheme
+                    == Uri.UriSchemeHttps
+            )
+        )
+        {
+            return uri.AbsoluteUri;
+        }
+
+        var numero =
+            new string(
+                texto
+                    .Where(char.IsDigit)
+                    .ToArray());
+
+        return string.IsNullOrWhiteSpace(
+            numero)
+            ? null
+            : $"https://wa.me/{numero}";
+    }
+
+    private async Task EliminarNuevosSilenciosamente(
+        params BannerArchivoUploadResultDto?[] archivos)
     {
         foreach (
-            var url
-            in urls
+            var archivo
+            in archivos
                 .Where(
-                    valor =>
-                        !string.IsNullOrWhiteSpace(valor))
-                .Distinct()
+                    item =>
+                        item != null)
+                .DistinctBy(
+                    item =>
+                        item!.PublicId)
         )
         {
             try
             {
-                await _imageStorage.EliminarArchivo(url!);
+                await _bannerStorage.EliminarImagen(
+                    archivo!.PublicId);
             }
             catch (Exception ex)
             {
                 _logger.LogError(
                     ex,
-                    "No se pudo limpiar archivo recién subido. Url={Url}",
-                    url);
+                    "No se pudo limpiar imagen recién subida. " +
+                    "PublicId={PublicId}",
+                    archivo!.PublicId);
             }
-        }
-    }
-
-    private async Task
-        EliminarArchivoAnteriorSilenciosamente(
-            string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-            return;
-
-        try
-        {
-            await _imageStorage.EliminarArchivo(url);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "No se pudo eliminar archivo anterior. Url={Url}",
-                url);
         }
     }
 
     private static string? LimpiarNullable(
         string? valor)
     {
-        return string.IsNullOrWhiteSpace(valor)
+        return string.IsNullOrWhiteSpace(
+            valor)
             ? null
             : valor.Trim();
     }
@@ -552,13 +813,19 @@ public class BannerPublicitarioService
         string? valor,
         int longitudMaxima)
     {
-        if (string.IsNullOrWhiteSpace(valor))
+        if (
+            string.IsNullOrWhiteSpace(
+                valor)
+        )
+        {
             return null;
+        }
 
         var texto =
             valor.Trim();
 
-        return texto.Length <= longitudMaxima
+        return texto.Length
+            <= longitudMaxima
             ? texto
             : texto[..longitudMaxima];
     }

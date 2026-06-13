@@ -24,16 +24,16 @@ public class BannersPublicitariosAdminController
         UserContext userContext)
     {
         _service = service;
+
         _userContext = userContext;
     }
 
     [HttpGet]
     [SwaggerOperation(
-        Summary = "Lista banners para administración",
-        Description =
-            "Permite filtrar banners por texto, ubicación, estado y vigencia. Incluye métricas acumuladas.")]
+        Summary = "Lista banners para administración")]
     public async Task<IActionResult> Listar(
-        [FromQuery] FiltroBannersPublicitariosRequest filtro)
+        [FromQuery]
+        FiltroBannersPublicitariosRequest filtro)
     {
         var data =
             await _service.ListarAdmin(
@@ -41,22 +41,50 @@ public class BannersPublicitariosAdminController
                 ObtenerIdUsuario());
 
         return Ok(
-            new Response<Datos<List<BannerPublicitarioDto>>>
+            new Response<
+                Datos<List<BannerPublicitarioDto>>
+            >
             {
                 Success = true,
 
                 Data = data,
 
                 Message =
-                    "Banners publicitarios obtenidos correctamente."
+                    "Banners publicitarios obtenidos " +
+                    "correctamente."
+            });
+    }
+
+    [HttpGet("configuracion")]
+    [SwaggerOperation(
+        Summary =
+            "Obtiene posiciones, destinos, estados y " +
+            "medidas permitidas")]
+    public async Task<IActionResult> ObtenerConfiguracion()
+    {
+        var data =
+            await _service.ObtenerConfiguracionAdmin(
+                ObtenerIdUsuario());
+
+        return Ok(
+            new Response<
+                BannerConfiguracionAdminDto
+            >
+            {
+                Success = true,
+
+                Data = data,
+
+                Message =
+                    "Configuración de banners obtenida " +
+                    "correctamente."
             });
     }
 
     [HttpGet("resumen")]
     [SwaggerOperation(
-        Summary = "Obtiene resumen comercial de banners",
-        Description =
-            "Devuelve banners activos, programados, vencidos, impresiones, clics, aperturas de WhatsApp y CTR.")]
+        Summary =
+            "Obtiene resumen comercial de banners")]
     public async Task<IActionResult> ObtenerResumen()
     {
         var data =
@@ -64,7 +92,9 @@ public class BannersPublicitariosAdminController
                 ObtenerIdUsuario());
 
         return Ok(
-            new Response<ResumenBannersPublicitariosDto>
+            new Response<
+                ResumenBannersPublicitariosDto
+            >
             {
                 Success = true,
 
@@ -77,10 +107,10 @@ public class BannersPublicitariosAdminController
 
     [HttpGet("{id:int}")]
     [SwaggerOperation(
-        Summary = "Obtiene un banner por ID",
-        Description =
-            "Devuelve datos editables y métricas acumuladas.")]
-    public async Task<IActionResult> ObtenerPorId(int id)
+        Summary =
+            "Obtiene un banner por ID")]
+    public async Task<IActionResult> ObtenerPorId(
+        int id)
     {
         var data =
             await _service.ObtenerPorId(
@@ -88,25 +118,55 @@ public class BannersPublicitariosAdminController
                 ObtenerIdUsuario());
 
         return Ok(
-            new Response<BannerPublicitarioDto>
+            new Response<
+                BannerPublicitarioDto
+            >
             {
                 Success = true,
 
                 Data = data,
 
                 Message =
-                    "Banner publicitario obtenido correctamente."
+                    "Banner publicitario obtenido " +
+                    "correctamente."
+            });
+    }
+
+    [HttpGet("{id:int}/archivos")]
+    [SwaggerOperation(
+        Summary =
+            "Obtiene historial de imágenes del banner")]
+    public async Task<IActionResult> ObtenerArchivos(
+        int id)
+    {
+        var data =
+            await _service.ObtenerArchivos(
+                id,
+                ObtenerIdUsuario());
+
+        return Ok(
+            new Response<
+                List<BannerPublicitarioArchivoDto>
+            >
+            {
+                Success = true,
+
+                Data = data,
+
+                Message =
+                    "Historial de imágenes obtenido " +
+                    "correctamente."
             });
     }
 
     [HttpPost]
     [Consumes("multipart/form-data")]
     [SwaggerOperation(
-        Summary = "Crea un banner publicitario",
-        Description =
-            "Crea un banner HOME_TOP o HOME_INLINE con imagen desktop obligatoria e imagen mobile opcional.")]
+        Summary =
+            "Crea un banner publicitario")]
     public async Task<IActionResult> Crear(
-        [FromForm] CrearBannerPublicitarioRequest request)
+        [FromForm]
+        CrearBannerPublicitarioRequest request)
     {
         var id =
             await _service.Crear(
@@ -118,10 +178,11 @@ public class BannersPublicitariosAdminController
             {
                 Success = true,
 
-                Data = new
-                {
-                    Id = id
-                },
+                Data =
+                    new
+                    {
+                        Id = id
+                    },
 
                 Message =
                     "Banner publicitario creado correctamente."
@@ -131,12 +192,12 @@ public class BannersPublicitariosAdminController
     [HttpPut("{id:int}")]
     [Consumes("multipart/form-data")]
     [SwaggerOperation(
-        Summary = "Actualiza un banner publicitario",
-        Description =
-            "Actualiza los datos del banner. Las imágenes se reemplazan solamente cuando se adjunta un archivo nuevo.")]
+        Summary =
+            "Actualiza un banner publicitario")]
     public async Task<IActionResult> Actualizar(
         int id,
-        [FromForm] ActualizarBannerPublicitarioRequest request)
+        [FromForm]
+        ActualizarBannerPublicitarioRequest request)
     {
         await _service.Actualizar(
             id,
@@ -148,24 +209,26 @@ public class BannersPublicitariosAdminController
             {
                 Success = true,
 
-                Data = new
-                {
-                    Id = id
-                },
+                Data =
+                    new
+                    {
+                        Id = id
+                    },
 
                 Message =
-                    "Banner publicitario actualizado correctamente."
+                    "Banner publicitario actualizado " +
+                    "correctamente."
             });
     }
 
     [HttpPatch("{id:int}/estado")]
     [SwaggerOperation(
-        Summary = "Cambia estado del banner",
-        Description =
-            "Permite pasar un banner a BORRADOR, ACTIVO o PAUSADO.")]
+        Summary =
+            "Cambia estado del banner")]
     public async Task<IActionResult> CambiarEstado(
         int id,
-        [FromBody] CambiarEstadoBannerPublicitarioRequest request)
+        [FromBody]
+        CambiarEstadoBannerPublicitarioRequest request)
     {
         await _service.CambiarEstado(
             id,
@@ -177,23 +240,25 @@ public class BannersPublicitariosAdminController
             {
                 Success = true,
 
-                Data = new
-                {
-                    Id = id,
-                    request.Estado
-                },
+                Data =
+                    new
+                    {
+                        Id = id,
+                        request.Estado
+                    },
 
                 Message =
-                    "Estado del banner actualizado correctamente."
+                    "Estado del banner actualizado " +
+                    "correctamente."
             });
     }
 
     [HttpDelete("{id:int}")]
     [SwaggerOperation(
-        Summary = "Elimina un banner publicitario",
-        Description =
-            "Realiza una eliminación lógica para conservar el histórico de métricas.")]
-    public async Task<IActionResult> Eliminar(int id)
+        Summary =
+            "Elimina lógicamente un banner publicitario")]
+    public async Task<IActionResult> Eliminar(
+        int id)
     {
         await _service.Eliminar(
             id,
@@ -205,7 +270,37 @@ public class BannersPublicitariosAdminController
                 Success = true,
 
                 Message =
-                    "Banner publicitario eliminado correctamente."
+                    "Banner eliminado lógicamente. Los archivos " +
+                    "quedarán disponibles durante el período " +
+                    "de seguridad."
+            });
+    }
+
+    [HttpPost("limpieza-cloudinary")]
+    [SwaggerOperation(
+        Summary =
+            "Elimina de Cloudinary revisiones vencidas")]
+    public async Task<IActionResult> LimpiarCloudinary(
+        [FromQuery]
+        int limite = 100)
+    {
+        var data =
+            await _service.LimpiarArchivosCloudinary(
+                limite,
+                ObtenerIdUsuario());
+
+        return Ok(
+            new Response<
+                LimpiezaBannerArchivosDto
+            >
+            {
+                Success = true,
+
+                Data = data,
+
+                Message =
+                    "Limpieza de archivos ejecutada " +
+                    "correctamente."
             });
     }
 

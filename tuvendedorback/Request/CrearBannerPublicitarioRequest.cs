@@ -19,9 +19,17 @@ public class CrearBannerPublicitarioRequest : IBannerPublicitarioRequestBase
 
     public string? TextoBoton { get; set; }
 
+    public string TipoDestino { get; set; } =
+        BannerPublicitarioConstantes.TipoDestinoWeb;
+
     public string? UrlDestino { get; set; }
 
+    public bool MostrarBotonWhatsapp { get; set; }
+
     public string? WhatsappUrl { get; set; }
+
+    public string TextoBotonWhatsapp { get; set; } =
+        "Escribir por WhatsApp";
 
     public DateTime FechaInicio { get; set; }
 
@@ -40,7 +48,7 @@ public class CrearBannerPublicitarioRequest : IBannerPublicitarioRequestBase
 
     public IFormFile ImagenDesktop { get; set; } = default!;
 
-    public IFormFile? ImagenMobile { get; set; }
+    public IFormFile ImagenMobile { get; set; } = default!;
 }
 
 public class CrearBannerPublicitarioRequestValidator
@@ -48,21 +56,37 @@ public class CrearBannerPublicitarioRequestValidator
 {
     public CrearBannerPublicitarioRequestValidator()
     {
-        BannerPublicitarioValidatorHelper.AgregarReglasComunes(this);
+        BannerPublicitarioValidatorHelper
+            .AgregarReglasComunes(this);
 
         RuleFor(x => x.ImagenDesktop)
             .NotNull()
-            .WithMessage("Debe adjuntar la imagen desktop del banner.")
-            .Must(BannerPublicitarioValidatorHelper.EsImagenPermitida)
-            .WithMessage("La imagen desktop debe ser JPG, PNG o WEBP.")
-            .Must(x => BannerPublicitarioValidatorHelper.NoSuperaPeso(x, 10))
-            .WithMessage("La imagen desktop no puede superar 10 MB.");
+            .WithMessage(
+                "Debe adjuntar la imagen desktop del banner.")
+            .Must(
+                BannerPublicitarioValidatorHelper
+                    .EsImagenPermitida)
+            .WithMessage(
+                "La imagen desktop debe ser JPG, PNG o WEBP.")
+            .Must(
+                x => BannerPublicitarioValidatorHelper
+                    .NoSuperaPeso(x, 3))
+            .WithMessage(
+                "La imagen desktop no puede superar 3 MB.");
 
         RuleFor(x => x.ImagenMobile)
-            .Must(BannerPublicitarioValidatorHelper.EsImagenPermitida)
-            .WithMessage("La imagen mobile debe ser JPG, PNG o WEBP.")
-            .Must(x => BannerPublicitarioValidatorHelper.NoSuperaPeso(x, 6))
-            .WithMessage("La imagen mobile no puede superar 6 MB.")
-            .When(x => x.ImagenMobile != null);
+            .NotNull()
+            .WithMessage(
+                "Debe adjuntar la imagen mobile del banner.")
+            .Must(
+                BannerPublicitarioValidatorHelper
+                    .EsImagenPermitida)
+            .WithMessage(
+                "La imagen mobile debe ser JPG, PNG o WEBP.")
+            .Must(
+                x => BannerPublicitarioValidatorHelper
+                    .NoSuperaPeso(x, 3))
+            .WithMessage(
+                "La imagen mobile no puede superar 3 MB.");
     }
 }

@@ -16,9 +16,15 @@ public interface IBannerPublicitarioRequestBase
 
     string? TextoBoton { get; set; }
 
+    string TipoDestino { get; set; }
+
     string? UrlDestino { get; set; }
 
+    bool MostrarBotonWhatsapp { get; set; }
+
     string? WhatsappUrl { get; set; }
+
+    string TextoBotonWhatsapp { get; set; }
 
     DateTime FechaInicio { get; set; }
 

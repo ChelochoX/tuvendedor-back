@@ -27,8 +27,7 @@ public static class DependencyInjection
         services.AddScoped<ICompartirRepository, CompartirRepository>();
         services.AddScoped<ISolicitudVisitaRepository, SolicitudVisitaRepository>();
         services.AddScoped<IPublicacionInteraccionRepository, PublicacionInteraccionRepository>();
-        services.AddScoped<IServicioPremiumRepository,ServicioPremiumRepository>();
-        services.AddScoped<IPublicacionInteraccionRepository,PublicacionInteraccionRepository>();
+        services.AddScoped<IServicioPremiumRepository,ServicioPremiumRepository>();       
         services.AddScoped<IBannerPublicitarioRepository,BannerPublicitarioRepository>();
 
         // ERP
@@ -44,7 +43,12 @@ public static class DependencyInjection
         services.AddScoped<IPermisosService, PermisosService>();
         services.AddScoped<IPasswordHasher<string>, PasswordHasher<string>>();
         services.AddScoped<IPublicacionService, PublicacionService>();
+
+        /* Conservamos el storage genérico de publicaciones. */
         services.AddScoped<IImageStorageService, CloudinaryStorageService>();
+        /* Storage especializado solamente para banners. */
+        services.AddScoped<IBannerImageStorageService,CloudinaryBannerImageStorageService>();
+
         services.AddScoped<IClientesService, ClientesService>();
         services.AddScoped<IPrecioProductoService, PrecioProductoService>();
         services.AddScoped<IMarcaService, MarcaService>();

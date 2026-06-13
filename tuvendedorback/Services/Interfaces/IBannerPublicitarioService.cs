@@ -7,8 +7,8 @@ namespace tuvendedorback.Services.Interfaces;
 public interface IBannerPublicitarioService
 {
     Task<int> Crear(
-        CrearBannerPublicitarioRequest request,
-        int idUsuario);
+       CrearBannerPublicitarioRequest request,
+       int idUsuario);
 
     Task Actualizar(
         int id,
@@ -34,6 +34,19 @@ public interface IBannerPublicitarioService
 
     Task<ResumenBannersPublicitariosDto> ObtenerResumen(
         int idUsuario);
+
+    Task<List<BannerPublicitarioArchivoDto>> ObtenerArchivos(
+        int id,
+        int idUsuario);
+
+    Task<LimpiezaBannerArchivosDto>
+        LimpiarArchivosCloudinary(
+            int limite,
+            int idUsuario);
+
+    Task<BannerConfiguracionAdminDto>
+        ObtenerConfiguracionAdmin(
+            int idUsuario);
 
     Task<BannersHomeDto> ObtenerActivosHome();
 

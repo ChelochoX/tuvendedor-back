@@ -15,7 +15,11 @@ public class CambiarEstadoBannerPublicitarioRequestValidator
     {
         RuleFor(x => x.Estado)
             .NotEmpty()
-            .Must(BannerPublicitarioValidatorHelper.EsEstadoEditable)
-            .WithMessage("El estado debe ser BORRADOR, ACTIVO o PAUSADO.");
+            .Must(
+                BannerPublicitarioValidatorHelper
+                    .EsEstadoEditable)
+            .WithMessage(
+                "El estado debe ser BORRADOR, ACTIVO, " +
+                "PAUSADO o FINALIZADO.");
     }
 }
