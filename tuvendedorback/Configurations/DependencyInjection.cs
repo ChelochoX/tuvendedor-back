@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<IPublicacionInteraccionRepository, PublicacionInteraccionRepository>();
         services.AddScoped<IServicioPremiumRepository,ServicioPremiumRepository>();       
         services.AddScoped<IBannerPublicitarioRepository,BannerPublicitarioRepository>();
+        services.AddScoped<IComercialDashboardRepository, ComercialDashboardRepository>();
 
         // ERP
         services.AddScoped<IERPClienteRepository, ERPClienteRepository>();
@@ -60,6 +61,7 @@ public static class DependencyInjection
         services.AddScoped<IPublicacionInteraccionService, PublicacionInteraccionService>();
         services.AddScoped<IServicioPremiumService,ServicioPremiumService>();
         services.AddScoped<IBannerPublicitarioService,BannerPublicitarioService>();
+        services.AddScoped<IComercialDashboardService, ComercialDashboardService>();
 
         // ERP
         services.AddScoped<IERPClienteService, ERPClienteService>();
