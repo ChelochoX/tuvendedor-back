@@ -11,7 +11,6 @@ public class ActualizarMiPerfilVendedorRequest
     public string? InstagramUrl { get; set; }
     public string? FacebookUrl { get; set; }
 
-    // Nuevo
     public string? CorreoContacto { get; set; }
     public bool? MostrarEmail { get; set; }
 
@@ -19,6 +18,11 @@ public class ActualizarMiPerfilVendedorRequest
 
     public bool? EsPerfilPublico { get; set; }
     public bool? MostrarTelefono { get; set; }
+
+    public bool? OfreceDelivery { get; set; }
+    public string? ZonaDelivery { get; set; }
+    public string? CostoDelivery { get; set; }
+    public string? TiempoEstimadoDelivery { get; set; }
 
     public IFormFile? FotoPerfil { get; set; }
     public IFormFile? Banner { get; set; }

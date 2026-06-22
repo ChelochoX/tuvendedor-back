@@ -11,6 +11,7 @@ public class ActualizarPublicacionRequest
     public string Categoria { get; set; } = string.Empty;
     public string? Ubicacion { get; set; } = string.Empty;
     public bool MostrarBotonesCompra { get; set; }
+    public bool PermiteDelivery { get; set; }
 
     public decimal? Latitud { get; set; }
     public decimal? Longitud { get; set; }

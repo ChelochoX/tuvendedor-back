@@ -10,31 +10,28 @@ public class PublicacionesAutomapping : Profile
         CreateMap<Publicacion, ProductoDto>()
             .ForMember(dest => dest.Nombre, opt => opt.MapFrom(src => src.Titulo))
 
-            // Precio / Moneda
             .ForMember(dest => dest.Moneda, opt => opt.MapFrom(src =>
                 string.IsNullOrWhiteSpace(src.Moneda)
                     ? "PYG"
                     : src.Moneda.Trim().ToUpper()
             ))
 
-            // Imagen principal: primera imagen
+            .ForMember(dest => dest.PermiteDelivery, opt => opt.MapFrom(src => src.PermiteDelivery))
+
             .ForMember(dest => dest.Imagen,
                 opt => opt.MapFrom(src =>
                     src.Imagenes != null && src.Imagenes.Any()
                         ? src.Imagenes.First()
                         : null))
 
-            // Todas las imágenes (ya son List<string>)
             .ForMember(dest => dest.Imagenes, opt => opt.MapFrom(src => src.Imagenes))
 
-            // Miniatura (igual que imagen por ahora)
             .ForMember(dest => dest.Miniatura,
                 opt => opt.MapFrom(src =>
                     src.Imagenes != null && src.Imagenes.Any()
                         ? src.Imagenes.First()
                         : null))
 
-            // Vendedor
             .ForMember(dest => dest.Vendedor, opt => opt.MapFrom(src =>
                 new VendedorDto
                 {
@@ -45,7 +42,6 @@ public class PublicacionesAutomapping : Profile
                 }
             ))
 
-            // Planes de crédito
             .ForMember(dest => dest.PlanCredito, opt => opt.MapFrom(src =>
                 src.PlanCredito != null && src.PlanCredito.Any()
                     ? new PlanCreditoDto
@@ -59,11 +55,9 @@ public class PublicacionesAutomapping : Profile
                     : null
             ))
 
-            // Destacado
             .ForMember(dest => dest.EsDestacada, opt => opt.MapFrom(src => src.EsDestacada))
             .ForMember(dest => dest.FechaFinDestacado, opt => opt.MapFrom(src => src.FechaFinDestacado))
 
-            // Temporada
             .ForMember(dest => dest.EsTemporada, opt => opt.MapFrom(src => src.EsTemporada))
             .ForMember(dest => dest.FechaFinTemporada, opt => opt.MapFrom(src => src.FechaFinTemporada))
             .ForMember(dest => dest.BadgeTexto, opt => opt.MapFrom(src => src.BadgeTexto))

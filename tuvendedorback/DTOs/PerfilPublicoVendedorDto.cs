@@ -19,7 +19,6 @@ public class PerfilPublicoVendedorDto
 
     public string? Telefono { get; set; }
 
-    // Nuevo
     public string? Email { get; set; }
     public string? CorreoContacto { get; set; }
     public bool MostrarEmail { get; set; }
@@ -31,6 +30,11 @@ public class PerfilPublicoVendedorDto
     public bool EsPerfilPublico { get; set; }
     public bool EsPremium { get; set; }
     public bool MostrarTelefono { get; set; }
+
+    public bool OfreceDelivery { get; set; }
+    public string? ZonaDelivery { get; set; }
+    public string? CostoDelivery { get; set; }
+    public string? TiempoEstimadoDelivery { get; set; }
 
     public int CantidadPublicaciones { get; set; }
 

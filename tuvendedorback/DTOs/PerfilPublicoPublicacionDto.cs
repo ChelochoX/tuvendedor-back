@@ -6,6 +6,7 @@ public class PerfilPublicoPublicacionDto
     public string Titulo { get; set; } = string.Empty;
     public string? Descripcion { get; set; }
     public decimal? Precio { get; set; }
+    public string? Moneda { get; set; }
     public string? Categoria { get; set; }
     public string? Ubicacion { get; set; }
 
@@ -17,5 +18,8 @@ public class PerfilPublicoPublicacionDto
     public string? ImagenPrincipal { get; set; }
     public string? ThumbUrl { get; set; }
     public bool EsDestacada { get; set; }
+
+    public bool PermiteDelivery { get; set; }
+
     public List<string> Imagenes { get; set; } = new();
 }

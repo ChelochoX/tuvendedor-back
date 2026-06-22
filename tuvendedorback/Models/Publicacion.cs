@@ -11,6 +11,7 @@ public class Publicacion
     public string Ubicacion { get; set; } = "";
     public string Estado { get; set; }
     public bool MostrarBotonesCompra { get; set; }
+    public bool PermiteDelivery { get; set; }
 
     // Vendedor
     public string? VendedorNombre { get; set; }

@@ -16,29 +16,24 @@ public class ProductoDto
     public List<string> Imagenes { get; set; } = new();
     public string Descripcion { get; set; }
     public bool MostrarBotonesCompra { get; set; }
+    public bool PermiteDelivery { get; set; }
 
-    // ⭐ DESTACADO
     public bool EsDestacada { get; set; }
     public DateTime? FechaFinDestacado { get; set; }
 
-    // 👑 TEMPORADA
     public bool EsTemporada { get; set; }
     public DateTime? FechaFinTemporada { get; set; }
     public string? BadgeTexto { get; set; }
     public string? BadgeColor { get; set; }
 
-    //GPS
     public decimal? Latitud { get; set; }
     public decimal? Longitud { get; set; }
     public string? GoogleMapsUrl { get; set; }
 
-    // 👤 Vendedor
     public VendedorDto Vendedor { get; set; }
 
-    // 💳 Planes crédito
     public PlanCreditoDto? PlanCredito { get; set; }
 
-    //Me Gusta/Vistas/WA
     public int CantidadFavoritos { get; set; }
     public int CantidadVistas { get; set; }
     public int CantidadClicksWhatsapp { get; set; }
@@ -62,4 +57,3 @@ public class PlanOpcionDto
     public int Cuotas { get; set; }
     public decimal ValorCuota { get; set; }
 }
-

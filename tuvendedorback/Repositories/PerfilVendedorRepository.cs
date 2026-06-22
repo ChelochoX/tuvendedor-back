@@ -61,7 +61,12 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                     v.FacebookUrl                          AS FacebookUrl,
                     v.EsPerfilPublico                      AS EsPerfilPublico,
                     v.EsPremium                            AS EsPremium,
-                    v.MostrarTelefono                      AS MostrarTelefono
+                    v.MostrarTelefono                      AS MostrarTelefono,
+
+                    v.OfreceDelivery                       AS OfreceDelivery,
+                    v.ZonaDelivery                         AS ZonaDelivery,
+                    v.CostoDelivery                        AS CostoDelivery,
+                    v.TiempoEstimadoDelivery               AS TiempoEstimadoDelivery
                 FROM dbo.Vendedores v
                 INNER JOIN dbo.Usuarios u
                     ON u.Id = v.IdUsuario
@@ -108,8 +113,13 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                     p.Titulo                       AS Titulo,
                     p.Descripcion                  AS Descripcion,
                     p.Precio                       AS Precio,
+                    p.Moneda                       AS Moneda,
                     p.Categoria                    AS Categoria,
                     p.Ubicacion                    AS Ubicacion,
+                    p.Latitud                      AS Latitud,
+                    p.Longitud                     AS Longitud,
+                    p.GoogleMapsUrl                AS GoogleMapsUrl,
+                    p.PermiteDelivery              AS PermiteDelivery,
                     p.Estado                       AS Estado,
                     img.Url                        AS ImagenPrincipal,
                     img.ThumbUrl                   AS ThumbUrl,
@@ -210,7 +220,12 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                     v.FacebookUrl                          AS FacebookUrl,
                     v.EsPerfilPublico                      AS EsPerfilPublico,
                     v.EsPremium                            AS EsPremium,
-                    v.MostrarTelefono                      AS MostrarTelefono
+                    v.MostrarTelefono                      AS MostrarTelefono,
+
+                    v.OfreceDelivery                       AS OfreceDelivery,
+                    v.ZonaDelivery                         AS ZonaDelivery,
+                    v.CostoDelivery                        AS CostoDelivery,
+                    v.TiempoEstimadoDelivery               AS TiempoEstimadoDelivery
                 FROM dbo.Vendedores v
                 INNER JOIN dbo.Usuarios u
                     ON u.Id = v.IdUsuario
@@ -321,7 +336,23 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                     BannerTipo      = COALESCE(@BannerTipo, BannerTipo),
                     EsPerfilPublico = COALESCE(@EsPerfilPublico, EsPerfilPublico),
                     MostrarTelefono = COALESCE(@MostrarTelefono, MostrarTelefono),
-                    MostrarEmail    = COALESCE(@MostrarEmail, MostrarEmail)
+                    MostrarEmail    = COALESCE(@MostrarEmail, MostrarEmail),
+                    OfreceDelivery  = COALESCE(@OfreceDelivery, OfreceDelivery),
+                    ZonaDelivery    = CASE 
+                                          WHEN COALESCE(@OfreceDelivery, OfreceDelivery) = 1 
+                                          THEN COALESCE(@ZonaDelivery, ZonaDelivery) 
+                                          ELSE NULL 
+                                      END,
+                    CostoDelivery   = CASE 
+                                          WHEN COALESCE(@OfreceDelivery, OfreceDelivery) = 1 
+                                          THEN COALESCE(@CostoDelivery, CostoDelivery) 
+                                          ELSE NULL 
+                                      END,
+                    TiempoEstimadoDelivery = CASE 
+                                          WHEN COALESCE(@OfreceDelivery, OfreceDelivery) = 1 
+                                          THEN COALESCE(@TiempoEstimadoDelivery, TiempoEstimadoDelivery) 
+                                          ELSE NULL 
+                                      END
                 WHERE IdUsuario = @IdUsuario;";
 
             var filas = await conn.ExecuteAsync(
@@ -342,7 +373,11 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                     BannerTipo = bannerTipo,
                     request.EsPerfilPublico,
                     request.MostrarTelefono,
-                    request.MostrarEmail
+                    request.MostrarEmail,
+                    request.OfreceDelivery,
+                    request.ZonaDelivery,
+                    request.CostoDelivery,
+                    request.TiempoEstimadoDelivery
                 },
                 tran);
 
