@@ -265,9 +265,7 @@ public class ServicioPremiumService :
         await ValidarAdministrador(
             idUsuarioAdmin);
 
-        if (
-            request ==
-            null)
+        if (request == null)
         {
             throw new ReglasdeNegocioException(
                 "Los datos de activación son obligatorios.");
@@ -281,60 +279,85 @@ public class ServicioPremiumService :
                 .ObtenerServicioPorId(
                     idServicio);
 
-        if (
-            servicio ==
-            null)
+        if (servicio == null)
         {
             throw new NoDataFoundException(
                 "No se encontró el servicio Premium.");
         }
 
-        if (
-            servicio.Estado ==
-            EstadosServicioPremium.Activo)
+        if (servicio.Estado == EstadosServicioPremium.Activo)
         {
             throw new ReglasdeNegocioException(
                 "El servicio Premium ya se encuentra activo.");
         }
 
-        if (
-            servicio.Estado ==
-            EstadosServicioPremium.Cancelado)
+        if (servicio.Estado == EstadosServicioPremium.Cancelado)
         {
             throw new ReglasdeNegocioException(
                 "No se puede activar un servicio cancelado.");
         }
 
-        switch (
-            servicio.TipoServicio)
+        switch (servicio.TipoServicio)
         {
-            case TiposServicioPremium
-                .VitrinaProfesional:
+            case TiposServicioPremium.VitrinaProfesional:
 
-            case TiposServicioPremium
-                .PublicacionDestacada:
+            case TiposServicioPremium.PublicacionDestacada:
                 {
+                    ResolverFechasDesdeDuracion(
+                        request);
+
                     ValidarFechas(
                         request);
 
                     break;
                 }
 
-            case TiposServicioPremium
-                .PublicacionEspecial:
+            case TiposServicioPremium.PublicacionEspecial:
                 {
-                    if (
-                        !request
-                            .IdTemporada
-                            .HasValue
-                        ||
-                        request
-                            .IdTemporada
-                            .Value
-                        <= 0)
+                    var modo =
+                        NormalizarModoActivacionEspecial(
+                            request);
+
+                    request.ModoActivacionEspecial =
+                        modo;
+
+                    if (modo == "TEMPORADA")
                     {
-                        throw new ReglasdeNegocioException(
-                            "Debe seleccionar una temporada.");
+                        if (!request.IdTemporada.HasValue || request.IdTemporada.Value <= 0)
+                        {
+                            throw new ReglasdeNegocioException(
+                                "Debe seleccionar una temporada comercial.");
+                        }
+
+                        request.DuracionDias =
+                            null;
+
+                        request.FechaInicio =
+                            null;
+
+                        request.FechaFin =
+                            null;
+                    }
+                    else
+                    {
+                        request.IdTemporada =
+                            null;
+
+                        ResolverFechasDesdeDuracion(
+                            request);
+
+                        ValidarFechas(
+                            request);
+
+                        request.BadgeTexto =
+                            string.IsNullOrWhiteSpace(request.BadgeTexto)
+                                ? "ESPECIAL"
+                                : request.BadgeTexto.Trim();
+
+                        request.BadgeColor =
+                            string.IsNullOrWhiteSpace(request.BadgeColor)
+                                ? "#A855F7"
+                                : request.BadgeColor.Trim();
                     }
 
                     break;
@@ -499,6 +522,61 @@ public class ServicioPremiumService :
             tipoServicio ==
                 TiposServicioPremium
                     .PublicacionEspecial;
+    }
+
+    private static string NormalizarModoActivacionEspecial(
+    ActivarServicioPremiumRequest request)
+    {
+        var modo =
+            request.ModoActivacionEspecial
+                ?.Trim()
+                .ToUpperInvariant();
+
+        if (string.IsNullOrWhiteSpace(modo))
+        {
+            modo =
+                request.IdTemporada.HasValue
+                &&
+                request.IdTemporada.Value > 0
+                    ? "TEMPORADA"
+                    : "DIAS";
+        }
+
+        if (modo != "DIAS" && modo != "TEMPORADA")
+        {
+            throw new ReglasdeNegocioException(
+                "El modo de activación especial debe ser DIAS o TEMPORADA.");
+        }
+
+        return modo;
+    }
+    private static void ResolverFechasDesdeDuracion(
+        ActivarServicioPremiumRequest request)
+    {
+        if (!request.DuracionDias.HasValue)
+        {
+            return;
+        }
+
+        if (
+            request.DuracionDias.Value <= 0
+            ||
+            request.DuracionDias.Value > 365)
+        {
+            throw new ReglasdeNegocioException(
+                "La duración del servicio debe ser mayor a 0 y no puede superar 365 días.");
+        }
+
+        var fechaInicio =
+            request.FechaInicio
+            ?? DateTime.Now;
+
+        request.FechaInicio =
+            fechaInicio;
+
+        request.FechaFin =
+            fechaInicio.AddDays(
+                request.DuracionDias.Value);
     }
 
     private static void ValidarFechas(

@@ -786,16 +786,16 @@ public class ServicioPremiumRepository :
         try
         {
             const string servicioSql = @"
-                SELECT
-                    Id,
-                    IdVendedor,
-                    IdPublicacion,
-                    IdTemporada,
-                    TipoServicio,
-                    Estado
-                FROM dbo.ServiciosPremium
-                WHERE Id =
-                    @IdServicio;";
+            SELECT
+                Id,
+                IdVendedor,
+                IdPublicacion,
+                IdTemporada,
+                TipoServicio,
+                Estado
+            FROM dbo.ServiciosPremium
+            WHERE Id =
+                @IdServicio;";
 
             var servicio =
                 await conn
@@ -821,7 +821,7 @@ public class ServicioPremiumRepository :
             DateTime fechaFin;
 
             int? idTemporadaEfectiva =
-                request.IdTemporada;
+                null;
 
             switch (
                 servicio.TipoServicio)
@@ -863,9 +863,6 @@ public class ServicioPremiumRepository :
                 case TiposServicioPremium
                     .PublicacionDestacada:
                     {
-                        ValidarFechas(
-                            request);
-
                         if (
                             !servicio
                                 .IdPublicacion
@@ -874,6 +871,9 @@ public class ServicioPremiumRepository :
                             throw new RepositoryException(
                                 "El servicio no tiene una publicación asociada.");
                         }
+
+                        ValidarFechas(
+                            request);
 
                         fechaInicio =
                             request
@@ -887,13 +887,13 @@ public class ServicioPremiumRepository :
 
                         await conn.ExecuteAsync(
                             @"
-                            UPDATE dbo.PublicacionesDestacadas
-                            SET Estado =
-                                'Inactivo'
-                            WHERE IdPublicacion =
-                                @IdPublicacion
-                              AND Estado =
-                                'Activo';",
+                        UPDATE dbo.PublicacionesDestacadas
+                        SET Estado =
+                            'Inactivo'
+                        WHERE IdPublicacion =
+                            @IdPublicacion
+                          AND Estado =
+                            'Activo';",
                             new
                             {
                                 servicio
@@ -903,20 +903,20 @@ public class ServicioPremiumRepository :
 
                         await conn.ExecuteAsync(
                             @"
-                            INSERT INTO dbo.PublicacionesDestacadas
-                            (
-                                IdPublicacion,
-                                FechaInicio,
-                                FechaFin,
-                                Estado
-                            )
-                            VALUES
-                            (
-                                @IdPublicacion,
-                                @FechaInicio,
-                                @FechaFin,
-                                'Activo'
-                            );",
+                        INSERT INTO dbo.PublicacionesDestacadas
+                        (
+                            IdPublicacion,
+                            FechaInicio,
+                            FechaFin,
+                            Estado
+                        )
+                        VALUES
+                        (
+                            @IdPublicacion,
+                            @FechaInicio,
+                            @FechaFin,
+                            'Activo'
+                        );",
                             new
                             {
                                 servicio
@@ -945,69 +945,135 @@ public class ServicioPremiumRepository :
                                 "El servicio no tiene una publicación asociada.");
                         }
 
-                        if (
-                            !request
-                                .IdTemporada
-                                .HasValue)
+                        var modoEspecial =
+                            string.IsNullOrWhiteSpace(
+                                request.ModoActivacionEspecial)
+                                ? "DIAS"
+                                : request
+                                    .ModoActivacionEspecial
+                                    .Trim()
+                                    .ToUpperInvariant();
+
+                        string badgeTexto;
+
+                        string badgeColor;
+
+                        if (modoEspecial == "TEMPORADA")
+                        {
+                            if (
+                                !request
+                                    .IdTemporada
+                                    .HasValue
+                                ||
+                                request
+                                    .IdTemporada
+                                    .Value
+                                <= 0)
+                            {
+                                throw new RepositoryException(
+                                    "Debe seleccionar una temporada comercial.");
+                            }
+
+                            const string temporadaSql = @"
+                            SELECT TOP 1
+                                Id,
+                                FechaInicio,
+                                FechaFin,
+                                BadgeTexto,
+                                BadgeColor
+                            FROM dbo.Temporadas
+                            WHERE Id =
+                                @IdTemporada
+                              AND Estado =
+                                'Activo'
+                              AND GETDATE()
+                                  BETWEEN
+                                      FechaInicio
+                                      AND FechaFin;";
+
+                            var temporada =
+                                await conn
+                                    .QueryFirstOrDefaultAsync<
+                                        TemporadaActivacionDto
+                                    >(
+                                        temporadaSql,
+                                        new
+                                        {
+                                            request
+                                                .IdTemporada
+                                        },
+                                        tran);
+
+                            if (temporada == null)
+                            {
+                                throw new RepositoryException(
+                                    "La temporada seleccionada no existe o no se encuentra vigente.");
+                            }
+
+                            fechaInicio =
+                                temporada.FechaInicio;
+
+                            fechaFin =
+                                temporada.FechaFin;
+
+                            idTemporadaEfectiva =
+                                temporada.Id;
+
+                            badgeTexto =
+                                temporada.BadgeTexto;
+
+                            badgeColor =
+                                temporada.BadgeColor;
+                        }
+                        else if (modoEspecial == "DIAS")
+                        {
+                            ValidarFechas(
+                                request);
+
+                            fechaInicio =
+                                request
+                                    .FechaInicio!
+                                    .Value;
+
+                            fechaFin =
+                                request
+                                    .FechaFin!
+                                    .Value;
+
+                            idTemporadaEfectiva =
+                                null;
+
+                            badgeTexto =
+                                string.IsNullOrWhiteSpace(
+                                    request.BadgeTexto)
+                                    ? "ESPECIAL"
+                                    : request
+                                        .BadgeTexto
+                                        .Trim();
+
+                            badgeColor =
+                                string.IsNullOrWhiteSpace(
+                                    request.BadgeColor)
+                                    ? "#A855F7"
+                                    : request
+                                        .BadgeColor
+                                        .Trim();
+                        }
+                        else
                         {
                             throw new RepositoryException(
-                                "Debe seleccionar una temporada.");
+                                "El modo de activación especial no es válido.");
                         }
-
-                        const string temporadaSql = @"
-                        SELECT TOP 1
-                            Id,
-                            FechaInicio,
-                            FechaFin,
-                            BadgeTexto,
-                            BadgeColor
-                        FROM dbo.Temporadas
-                        WHERE Id =
-                            @IdTemporada
-                          AND Estado =
-                            'Activo'
-                          AND GETDATE()
-                              BETWEEN
-                                  FechaInicio
-                                  AND FechaFin;";
-
-                        var temporada =
-                            await conn
-                                .QueryFirstOrDefaultAsync<
-                                    TemporadaActivacionDto
-                                >(
-                                    temporadaSql,
-                                    new
-                                    {
-                                        request
-                                            .IdTemporada
-                                    },
-                                    tran);
-
-                        if (temporada == null)
-                        {
-                            throw new RepositoryException(
-                                "La temporada seleccionada no existe o no se encuentra vigente.");
-                        }
-
-                        fechaInicio =
-                            temporada.FechaInicio;
-
-                        fechaFin =
-                            temporada.FechaFin;
-
-                        idTemporadaEfectiva =
-                            temporada.Id;
 
                         await conn.ExecuteAsync(
                             @"
-                            UPDATE dbo.PublicacionesTemporada
-                            SET Estado =
-                                'Inactivo'
-                            WHERE IdPublicacion =
-                                @IdPublicacion
-                              AND Estado =
-                                'Activo';",
+                        UPDATE dbo.PublicacionesTemporada
+                        SET Estado =
+                            'Inactivo'
+                        WHERE IdPublicacion =
+                            @IdPublicacion
+                          AND Estado =
+                            'Activo';",
                             new
                             {
                                 servicio
@@ -1017,45 +1083,45 @@ public class ServicioPremiumRepository :
 
                         await conn.ExecuteAsync(
                             @"
-                            INSERT INTO dbo.PublicacionesTemporada
-                            (
-                                IdPublicacion,
-                                IdTemporada,
-                                FechaInicio,
-                                FechaFin,
-                                BadgeTexto,
-                                BadgeColor,
-                                Estado
-                            )
-                            VALUES
-                            (
-                                @IdPublicacion,
-                                @IdTemporada,
-                                @FechaInicio,
-                                @FechaFin,
-                                @BadgeTexto,
-                                @BadgeColor,
-                                'Activo'
-                            );",
+                        INSERT INTO dbo.PublicacionesTemporada
+                        (
+                            IdPublicacion,
+                            IdTemporada,
+                            FechaInicio,
+                            FechaFin,
+                            BadgeTexto,
+                            BadgeColor,
+                            Estado
+                        )
+                        VALUES
+                        (
+                            @IdPublicacion,
+                            @IdTemporada,
+                            @FechaInicio,
+                            @FechaFin,
+                            @BadgeTexto,
+                            @BadgeColor,
+                            'Activo'
+                        );",
                             new
                             {
                                 servicio
                                     .IdPublicacion,
 
                                 IdTemporada =
-                                    temporada.Id,
+                                    idTemporadaEfectiva,
 
-                                temporada
-                                    .FechaInicio,
+                                FechaInicio =
+                                    fechaInicio,
 
-                                temporada
-                                    .FechaFin,
+                                FechaFin =
+                                    fechaFin,
 
-                                temporada
-                                    .BadgeTexto,
+                                BadgeTexto =
+                                    badgeTexto,
 
-                                temporada
-                                    .BadgeColor
+                                BadgeColor =
+                                    badgeColor
                             },
                             tran);
 
@@ -1070,49 +1136,49 @@ public class ServicioPremiumRepository :
             }
 
             const string actualizarServicioSql = @"
-                UPDATE dbo.ServiciosPremium
-                SET
-                    Estado =
-                        'ACTIVO',
+            UPDATE dbo.ServiciosPremium
+            SET
+                Estado =
+                    'ACTIVO',
 
-                    FechaInicio =
-                        @FechaInicio,
+                FechaInicio =
+                    @FechaInicio,
 
-                    FechaFin =
-                        @FechaFin,
+                FechaFin =
+                    @FechaFin,
 
-                    FechaPago =
-                        GETDATE(),
+                FechaPago =
+                    GETDATE(),
 
-                    IdTemporada =
-                        @IdTemporada,
+                IdTemporada =
+                    @IdTemporada,
 
-                    Monto =
-                        @Monto,
+                Monto =
+                    @Monto,
 
-                    MedioPago =
-                        @MedioPago,
+                MedioPago =
+                    @MedioPago,
 
-                    ReferenciaPago =
-                        @ReferenciaPago,
+                ReferenciaPago =
+                    @ReferenciaPago,
 
-                    Observacion =
-                        COALESCE(
-                            NULLIF(
-                                @Observacion,
-                                ''
-                            ),
-                            Observacion
+                Observacion =
+                    COALESCE(
+                        NULLIF(
+                            @Observacion,
+                            ''
                         ),
+                        Observacion
+                    ),
 
-                    IdUsuarioAdmin =
-                        @IdUsuarioAdmin,
+                IdUsuarioAdmin =
+                    @IdUsuarioAdmin,
 
-                    FechaActualizacion =
-                        GETDATE()
+                FechaActualizacion =
+                    GETDATE()
 
-                WHERE Id =
-                    @IdServicio;";
+            WHERE Id =
+                @IdServicio;";
 
             await conn.ExecuteAsync(
                 actualizarServicioSql,

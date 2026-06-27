@@ -253,11 +253,11 @@ public class PublicacionRepository : IPublicacionRepository
             LEFT JOIN PublicacionesDestacadas d
                 ON d.IdPublicacion = p.Id
                 AND d.Estado = 'Activo'
-                AND d.FechaFin >= GETDATE()
+                AND GETDATE() BETWEEN d.FechaInicio AND d.FechaFin
             LEFT JOIN PublicacionesTemporada t
                 ON t.IdPublicacion = p.Id
                 AND t.Estado = 'Activo'
-                AND t.FechaFin >= GETDATE()
+                AND GETDATE() BETWEEN t.FechaInicio AND t.FechaFin
             WHERE p.Estado = 'Activo'
               AND (@Categoria IS NULL OR p.Categoria = @Categoria)
               AND (
@@ -725,7 +725,7 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             const string updateSql = @"
-            UPDATE PublicacionesDestacadas
+            UPDATE AND GETDATE() BETWEEN FechaInicio AND FechaFin
             SET FechaInicio = @FechaInicio,
                 FechaFin = @FechaFin,
                 Estado = 'Activo'
@@ -773,7 +773,7 @@ public class PublicacionRepository : IPublicacionRepository
         FROM PublicacionesDestacadas
         WHERE IdPublicacion = @IdPublicacion
           AND Estado = 'Activo'
-          AND FechaFin >= GETDATE();";
+          AND GETDATE() BETWEEN FechaInicio AND FechaFin;";
 
         var count = await conn.ExecuteScalarAsync<int>(sql, new { IdPublicacion = idPublicacion });
 
@@ -846,7 +846,7 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             const string sql = @"
-        UPDATE PublicacionesDestacadas
+        UPDATE AND GETDATE() BETWEEN FechaInicio AND FechaFin
         SET Estado = 'Inactivo'
         WHERE IdPublicacion = @IdPublicacion
           AND Estado = 'Activo'
@@ -938,7 +938,7 @@ public class PublicacionRepository : IPublicacionRepository
             FROM PublicacionesTemporada
             WHERE IdPublicacion = @IdPublicacion
               AND Estado = 'Activo'
-              AND FechaFin >= GETDATE()";
+              AND GETDATE() BETWEEN FechaInicio AND FechaFin";
 
             var cantidad = await conn.ExecuteScalarAsync<int>(sql, new { IdPublicacion = idPublicacion });
 
