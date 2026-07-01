@@ -25,10 +25,11 @@ public interface IPublicacionRepository
     Task MarcarComoVendido(int idPublicacion);
     Task<bool> EsAdministrador(int? idUsuario);
     Task<int> ActualizarPublicacion(
-    int idPublicacion,
-    int idUsuario,
-    ActualizarPublicacionRequest request,
-    List<ImagenDto> nuevasImagenes);
+        int idPublicacion,
+        int idUsuario,
+        ActualizarPublicacionRequest request,
+        List<ImagenDto> nuevasImagenes,
+        List<string>? imagenesConservar);
     Task<ProductoSharePreviewDto?> ObtenerProductoSharePreview(int idPublicacion);
     Task<bool> PuedeCrearPublicaciones(int idUsuario);
 }

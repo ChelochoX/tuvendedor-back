@@ -288,13 +288,13 @@ public class PublicacionService : IPublicacionService
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
         await ValidarPropiedadPublicacion(
-         idPublicacion,
-         idUsuario.Value
-     );
+            idPublicacion,
+            idUsuario.Value
+        );
 
         request.Moneda = string.IsNullOrWhiteSpace(request.Moneda)
-        ? "PYG"
-        : request.Moneda.Trim().ToUpper();
+            ? "PYG"
+            : request.Moneda.Trim().ToUpper();
 
         var esInmueble = EsCategoriaInmobiliaria(request.Categoria);
 
@@ -324,6 +324,35 @@ public class PublicacionService : IPublicacionService
 
         var nuevasImagenes = new List<ImagenDto>();
 
+        var imagenesEliminadas = new List<ImagenDto>();
+
+        var imagenesConservar = request.ImagenesConservar?
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Select(url => url.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+
+        /*
+          GestionarImagenes = true significa:
+          el front está editando la galería y quiere que el backend sincronice.
+        */
+        if (request.GestionarImagenes)
+        {
+            if (!imagenesConservar.Any() && (request.Imagenes == null || !request.Imagenes.Any()))
+            {
+                throw new ReglasdeNegocioException(
+                    "La publicación debe conservar o cargar al menos una imagen o video.");
+            }
+
+            var imagenesActuales = (await _repository.ObtenerImagenesPorPublicacion(
+                idPublicacion,
+                idUsuario.Value)).ToList();
+
+            imagenesEliminadas = imagenesActuales
+                .Where(img => !imagenesConservar.Contains(img.MainUrl, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+        }
+
         try
         {
             if (request.Imagenes != null && request.Imagenes.Any())
@@ -347,11 +376,38 @@ public class PublicacionService : IPublicacionService
                 idPublicacion,
                 idUsuario.Value,
                 request,
-                nuevasImagenes);
+                nuevasImagenes,
+                request.GestionarImagenes ? imagenesConservar : null);
 
             if (filasAfectadas == 0)
                 throw new ReglasdeNegocioException(
                     "No se encontró la publicación o no tienes permiso para actualizarla.");
+
+            if (imagenesEliminadas.Any())
+            {
+                foreach (var img in imagenesEliminadas)
+                {
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(img.MainUrl))
+                            await _imageStorage.EliminarArchivo(img.MainUrl);
+
+                        if (!string.IsNullOrWhiteSpace(img.ThumbUrl) &&
+                            !string.Equals(img.ThumbUrl, img.MainUrl, StringComparison.OrdinalIgnoreCase))
+                        {
+                            await _imageStorage.EliminarArchivo(img.ThumbUrl);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "No se pudo eliminar archivo físico removido de publicación {IdPublicacion}. MainUrl={MainUrl}",
+                            idPublicacion,
+                            img.MainUrl);
+                    }
+                }
+            }
         }
         catch
         {

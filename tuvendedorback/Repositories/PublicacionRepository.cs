@@ -1028,10 +1028,11 @@ public class PublicacionRepository : IPublicacionRepository
     }
 
     public async Task<int> ActualizarPublicacion(
-     int idPublicacion,
-     int idUsuario,
-     ActualizarPublicacionRequest request,
-     List<ImagenDto> nuevasImagenes)
+      int idPublicacion,
+      int idUsuario,
+      ActualizarPublicacionRequest request,
+      List<ImagenDto> nuevasImagenes,
+      List<string>? imagenesConservar)
     {
         using var conn = _conexion.CreateSqlConnection();
         conn.Open();
@@ -1068,43 +1069,43 @@ public class PublicacionRepository : IPublicacionRepository
             }
 
             const string sqlUpdate = @"
-            UPDATE Publicaciones
-            SET
-                Titulo = @Titulo,
-                Descripcion = @Descripcion,
-                Precio = @Precio,
-                Moneda = @Moneda,
-                Categoria = @Categoria,
-                Ubicacion = @Ubicacion,
-                Latitud = @Latitud,
-                Longitud = @Longitud,
-                GoogleMapsUrl = @GoogleMapsUrl,
-                MostrarBotonesCompra = @MostrarBotonesCompra,
-                PermiteDelivery = @PermiteDelivery
-            WHERE Id = @IdPublicacion
-              AND IdUsuario = @IdUsuario;";
+                UPDATE Publicaciones
+                SET
+                    Titulo = @Titulo,
+                    Descripcion = @Descripcion,
+                    Precio = @Precio,
+                    Moneda = @Moneda,
+                    Categoria = @Categoria,
+                    Ubicacion = @Ubicacion,
+                    Latitud = @Latitud,
+                    Longitud = @Longitud,
+                    GoogleMapsUrl = @GoogleMapsUrl,
+                    MostrarBotonesCompra = @MostrarBotonesCompra,
+                    PermiteDelivery = @PermiteDelivery
+                WHERE Id = @IdPublicacion
+                  AND IdUsuario = @IdUsuario;";
 
             var filas = await conn.ExecuteAsync(
-                sqlUpdate,
-                new
-                {
-                    IdPublicacion = idPublicacion,
-                    IdUsuario = idUsuario,
-                    request.Titulo,
-                    request.Descripcion,
-                    request.Precio,
-                    Moneda = string.IsNullOrWhiteSpace(request.Moneda)
-                        ? "PYG"
-                        : request.Moneda.Trim().ToUpper(),
-                    request.Categoria,
-                    Ubicacion = request.Ubicacion?.Trim(),
-                    request.Latitud,
-                    request.Longitud,
-                    GoogleMapsUrl = request.GoogleMapsUrl?.Trim(),
-                    request.MostrarBotonesCompra,
-                    request.PermiteDelivery
-                },
-                tran);
+                 sqlUpdate,
+                 new
+                 {
+                     IdPublicacion = idPublicacion,
+                     IdUsuario = idUsuario,
+                     request.Titulo,
+                     request.Descripcion,
+                     request.Precio,
+                     Moneda = string.IsNullOrWhiteSpace(request.Moneda)
+                         ? "PYG"
+                         : request.Moneda.Trim().ToUpper(),
+                     request.Categoria,
+                     Ubicacion = request.Ubicacion?.Trim(),
+                     request.Latitud,
+                     request.Longitud,
+                     GoogleMapsUrl = request.GoogleMapsUrl?.Trim(),
+                     request.MostrarBotonesCompra,
+                     request.PermiteDelivery
+                 },
+                 tran);
 
             await conn.ExecuteAsync(
                 "DELETE FROM PlanesCredito WHERE IdPublicacion = @IdPublicacion;",
@@ -1117,17 +1118,17 @@ public class PublicacionRepository : IPublicacionRepository
                 {
                     await conn.ExecuteAsync(
                         @"INSERT INTO PlanesCredito
-                    (
-                        IdPublicacion,
-                        Cuotas,
-                        ValorCuota
-                    )
-                    VALUES
-                    (
-                        @IdPublicacion,
-                        @Cuotas,
-                        @ValorCuota
-                    );",
+                      (
+                          IdPublicacion,
+                          Cuotas,
+                          ValorCuota
+                      )
+                      VALUES
+                      (
+                          @IdPublicacion,
+                          @Cuotas,
+                          @ValorCuota
+                      );",
                         new
                         {
                             IdPublicacion = idPublicacion,
@@ -1138,23 +1139,60 @@ public class PublicacionRepository : IPublicacionRepository
                 }
             }
 
+            /*
+              Si imagenesConservar viene null:
+              - No tocamos las imágenes actuales.
+              - Solo agregamos nuevas imágenes si vinieron archivos.
+
+              Si imagenesConservar viene con datos:
+              - Conservamos solo esas URLs.
+              - Borramos las demás.
+
+              Si imagenesConservar viene lista vacía:
+              - Borramos todas las imágenes actuales.
+            */
+            if (imagenesConservar != null)
+            {
+                if (imagenesConservar.Any())
+                {
+                    await conn.ExecuteAsync(
+                        @"DELETE FROM ImagenesPublicacion
+                      WHERE IdPublicacion = @IdPublicacion
+                        AND Url NOT IN @ImagenesConservar;",
+                        new
+                        {
+                            IdPublicacion = idPublicacion,
+                            ImagenesConservar = imagenesConservar
+                        },
+                        tran);
+                }
+                else
+                {
+                    await conn.ExecuteAsync(
+                        @"DELETE FROM ImagenesPublicacion
+                      WHERE IdPublicacion = @IdPublicacion;",
+                        new { IdPublicacion = idPublicacion },
+                        tran);
+                }
+            }
+
             if (nuevasImagenes != null && nuevasImagenes.Any())
             {
                 foreach (var img in nuevasImagenes)
                 {
                     await conn.ExecuteAsync(
                         @"INSERT INTO ImagenesPublicacion
-                    (
-                        IdPublicacion,
-                        Url,
-                        ThumbUrl
-                    )
-                    VALUES
-                    (
-                        @IdPublicacion,
-                        @Url,
-                        @ThumbUrl
-                    );",
+                      (
+                          IdPublicacion,
+                          Url,
+                          ThumbUrl
+                      )
+                      VALUES
+                      (
+                          @IdPublicacion,
+                          @Url,
+                          @ThumbUrl
+                      );",
                         new
                         {
                             IdPublicacion = idPublicacion,
