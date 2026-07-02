@@ -725,7 +725,7 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             const string updateSql = @"
-            UPDATE AND GETDATE() BETWEEN FechaInicio AND FechaFin
+            UPDATE dbo.PublicacionesDestacadas
             SET FechaInicio = @FechaInicio,
                 FechaFin = @FechaFin,
                 Estado = 'Activo'
@@ -743,8 +743,20 @@ public class PublicacionRepository : IPublicacionRepository
             if (filas == 0)
             {
                 const string insertSql = @"
-                INSERT INTO PublicacionesDestacadas (IdPublicacion, FechaInicio, FechaFin, Estado)
-                VALUES (@IdPublicacion, @FechaInicio, @FechaFin, 'Activo');";
+                INSERT INTO dbo.PublicacionesDestacadas
+                (
+                    IdPublicacion,
+                    FechaInicio,
+                    FechaFin,
+                    Estado
+                )
+                VALUES
+                (
+                    @IdPublicacion,
+                    @FechaInicio,
+                    @FechaFin,
+                    'Activo'
+                );";
 
                 await conn.ExecuteAsync(insertSql, new
                 {
@@ -754,12 +766,19 @@ public class PublicacionRepository : IPublicacionRepository
                 });
             }
 
-            _logger.LogInformation("✅ Publicación {IdPublicacion} destacada desde {Inicio} hasta {Fin}",
-                idPublicacion, fechaInicio, fechaFin);
+            _logger.LogInformation(
+                "Publicación {IdPublicacion} destacada desde {Inicio} hasta {Fin}",
+                idPublicacion,
+                fechaInicio,
+                fechaFin);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al crear/actualizar destacado para la publicación {IdPublicacion}", idPublicacion);
+            _logger.LogError(
+                ex,
+                "Error al crear/actualizar destacado para la publicación {IdPublicacion}",
+                idPublicacion);
+
             throw new RepositoryException("Error al destacar la publicación.", ex);
         }
     }
@@ -846,11 +865,11 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             const string sql = @"
-        UPDATE AND GETDATE() BETWEEN FechaInicio AND FechaFin
-        SET Estado = 'Inactivo'
-        WHERE IdPublicacion = @IdPublicacion
-          AND Estado = 'Activo'
-          AND FechaFin >= GETDATE();";
+            UPDATE dbo.PublicacionesDestacadas
+            SET Estado = 'Inactivo'
+            WHERE IdPublicacion = @IdPublicacion
+              AND Estado = 'Activo'
+              AND GETDATE() BETWEEN FechaInicio AND FechaFin;";
 
             var filas = await conn.ExecuteAsync(sql, new
             {
@@ -858,22 +877,22 @@ public class PublicacionRepository : IPublicacionRepository
             });
 
             if (filas == 0)
+            {
                 throw new RepositoryException(
-                    "No se encontró un destacado activo para quitar."
-                );
+                    "No se encontró un destacado activo para quitar.");
+            }
 
             _logger.LogInformation(
-                "❌ Destacado quitado para la publicación {IdPublicacion}",
-                idPublicacion
-            );
+                "Destacado quitado para la publicación {IdPublicacion}",
+                idPublicacion);
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
                 "Error al quitar destacado para la publicación {IdPublicacion}",
-                idPublicacion
-            );
+                idPublicacion);
+
             throw new RepositoryException("Error al quitar el destacado.", ex);
         }
     }
