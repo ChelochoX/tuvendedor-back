@@ -45,10 +45,9 @@ public static class DependencyInjection
         services.AddScoped<IPasswordHasher<string>, PasswordHasher<string>>();
         services.AddScoped<IPublicacionService, PublicacionService>();
 
-        /* Conservamos el storage genérico de publicaciones. */
-        services.AddScoped<IImageStorageService, CloudinaryStorageService>();
-        /* Storage especializado solamente para banners. */
-        services.AddScoped<IBannerImageStorageService,CloudinaryBannerImageStorageService>();
+        // Storage activo: Cloudflare R2
+        services.AddScoped<IImageStorageService, R2ImageStorageService>();
+        services.AddScoped<IBannerImageStorageService, R2BannerImageStorageService>();
 
         services.AddScoped<IClientesService, ClientesService>();
         services.AddScoped<IPrecioProductoService, PrecioProductoService>();

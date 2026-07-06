@@ -51,7 +51,7 @@ public class PublicacionService : IPublicacionService
             var result = await _imageStorage.SubirArchivo(
                 img,
                 carpetaDestino,
-                generarMiniatura: false
+                generarMiniatura: true
             );
 
             imagenes.Add(new ImagenDto

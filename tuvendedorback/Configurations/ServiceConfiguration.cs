@@ -11,9 +11,11 @@ namespace tuvendedorback.Configurations;
 
 public static class ServiceConfiguration
 {
-    public static void AddConfiguration(this IServiceCollection services, IConfiguration configuration)
+    public static void AddConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
-        _ = services.AddSingleton<DbConnections>();      
+        _ = services.AddSingleton<DbConnections>();
 
         _ = services.AddCors(options =>
         {
@@ -27,22 +29,30 @@ public static class ServiceConfiguration
         });
 
         // ---------------------------------------
-        // 🔹 AGREGADO: Límite para multipart/form-data
+        // Configuración de Cloudflare R2
         // ---------------------------------------
-        var maxRequestBodySize = configuration.GetValue<long>("Upload:MaxRequestBodySize", 50_000_000);
+        services.Configure<R2Options>(
+            configuration.GetSection("R2"));
+
+        // ---------------------------------------
+        // Límite para multipart/form-data
+        // ---------------------------------------
+        var maxRequestBodySize =
+            configuration.GetValue<long>(
+                "Upload:MaxRequestBodySize",
+                50_000_000);
 
         services.Configure<FormOptions>(options =>
         {
             options.MultipartBodyLengthLimit = maxRequestBodySize;
         });
-        // ---------------------------------------
 
-        // ✅ Registro del JwtService aquí
+        // JWT Service
         services.AddSingleton<JwtService>();
 
         services.AddScoped<UserContext>();
 
-        // ✅ Configuración de Autenticación JWT
+        // Autenticación JWT
         services.AddAuthentication("Bearer")
             .AddJwtBearer("Bearer", options =>
             {
@@ -50,24 +60,30 @@ public static class ServiceConfiguration
                 var issuer = configuration["Jwt:Issuer"];
                 var audience = configuration["Jwt:Audience"];
 
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
+                options.TokenValidationParameters =
+                    new TokenValidationParameters
+                    {
+                        ValidateIssuerSigningKey = true,
+                        IssuerSigningKey =
+                            new SymmetricSecurityKey(
+                                Encoding.UTF8.GetBytes(key)),
 
-                    ValidateIssuer = true,
-                    ValidateAudience = true,
-                    ValidateLifetime = true,
+                        ValidateIssuer = true,
+                        ValidateAudience = true,
+                        ValidateLifetime = true,
 
-                    ValidIssuer = issuer,
-                    ValidAudience = audience
-                };
+                        ValidIssuer = issuer,
+                        ValidAudience = audience
+                    };
             });
 
-        // Registro de AutoMapper
-        services.AddAutoMapper(cfg => { }, Assembly.GetExecutingAssembly());
+        // AutoMapper
+        services.AddAutoMapper(
+            cfg => { },
+            Assembly.GetExecutingAssembly());
 
-        // Registro de validadores con FluentValidation
-        services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+        // FluentValidation
+        services.AddValidatorsFromAssembly(
+            Assembly.GetExecutingAssembly());
     }
 }
