@@ -24,19 +24,18 @@ public class R2BannerImageStorageService : IBannerImageStorageService
     private readonly int _quality;
 
     public R2BannerImageStorageService(
-    IOptions<R2Options> options,
-    IConfiguration config,
-    IHostEnvironment environment,
-    ILogger<R2BannerImageStorageService> logger)
+        IOptions<R2Options> options,
+        IOptions<UploadOptions> uploadOptions,
+        IHostEnvironment environment,
+        ILogger<R2BannerImageStorageService> logger)
     {
         _options = options.Value ?? new R2Options();
         _options.Validar();
 
         _logger = logger;
 
-        _maxFileSize = config.GetValue<long>(
-        "Upload:MaxFileSize",
-        15L * 1024 * 1024);
+        _maxFileSize =
+         uploadOptions.Value.MaxFileSize;
 
         _rootFolder = NormalizarCarpeta(
             string.IsNullOrWhiteSpace(_options.BannerRootFolder)
