@@ -51,6 +51,19 @@ public class ErrorHandlingMiddleware
 
         switch (exception)
         {
+
+            case BadHttpRequestException badHttpRequestException
+            when badHttpRequestException.StatusCode ==
+             StatusCodes.Status413PayloadTooLarge:
+
+                response.StatusCode =
+                    StatusCodes.Status413PayloadTooLarge;
+
+                response.Errors.Add(
+                    "La carga supera el tamaño total máximo permitido. Reducí la cantidad o el tamaño de los archivos.");
+
+                break;
+
             case ValidationException validationException:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
                 response.Errors.AddRange(validationException.Errors.Select(e => e.ErrorMessage));

@@ -15,7 +15,10 @@ var builder = WebApplication.CreateBuilder(args);
 // ---------------------------------------
 // 🔹 AGREGADO: Configurar límite de request para Kestrel
 // ---------------------------------------
-var maxRequestBodySize = configuration.GetValue<long>("Upload:MaxRequestBodySize", 50_000_000);
+var maxRequestBodySize = configuration.GetValue<long>(
+    "Upload:MaxRequestBodySize",
+    50L * 1024 * 1024);
+
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = maxRequestBodySize;

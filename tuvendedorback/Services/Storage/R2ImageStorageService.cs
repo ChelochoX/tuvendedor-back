@@ -33,7 +33,9 @@ public class R2ImageStorageService : IImageStorageService
 
         _logger = logger;
 
-        _maxFileSize = config.GetValue<long>("Upload:MaxFileSize", 5_000_000);
+        _maxFileSize = config.GetValue<long>(
+            "Upload:MaxFileSize",
+            15L * 1024 * 1024);
 
         _rootFolder = NormalizarCarpeta(
             string.IsNullOrWhiteSpace(_options.RootFolder)
