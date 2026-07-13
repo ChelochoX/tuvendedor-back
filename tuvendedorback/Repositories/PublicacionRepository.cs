@@ -572,104 +572,169 @@ public class PublicacionRepository : IPublicacionRepository
 
         try
         {
-            var sql = @"
-            SELECT 
-                p.Id                    AS Id,
-                p.Titulo                AS Titulo,
-                p.Descripcion           AS Descripcion,
-                p.Precio                AS Precio,
-                p.Moneda                AS Moneda,
-                p.Categoria             AS Categoria,
-                p.Ubicacion             AS Ubicacion,
-                p.Latitud               AS Latitud,
-                p.Longitud              AS Longitud,
-                p.GoogleMapsUrl         AS GoogleMapsUrl,
-                p.Estado                AS Estado,
-                p.MostrarBotonesCompra  AS MostrarBotonesCompra,
-                p.PermiteDelivery AS PermiteDelivery,
-                v.NombreNegocio         AS VendedorNombre,
-                NULL                    AS VendedorAvatar,
-                NULL                    AS VendedorTelefono,
+            const string sql = @"
+        SELECT 
+            p.Id                    AS Id,
+            p.Titulo                AS Titulo,
+            p.Descripcion           AS Descripcion,
+            p.Precio                AS Precio,
+            p.Moneda                AS Moneda,
+            p.Categoria             AS Categoria,
+            p.Ubicacion             AS Ubicacion,
+            p.Latitud               AS Latitud,
+            p.Longitud              AS Longitud,
+            p.GoogleMapsUrl         AS GoogleMapsUrl,
+            p.Estado                AS Estado,
+            p.MostrarBotonesCompra  AS MostrarBotonesCompra,
+            p.PermiteDelivery       AS PermiteDelivery,
 
-                CASE WHEN d.Id IS NOT NULL THEN 1 ELSE 0 END AS EsDestacada,
-                d.FechaFin              AS FechaFinDestacado,
+            v.NombreNegocio         AS VendedorNombre,
+            NULL                    AS VendedorAvatar,
+            NULL                    AS VendedorTelefono,
 
-                CASE WHEN pt.Id IS NOT NULL THEN 1 ELSE 0 END AS EsTemporada,
-                pt.FechaFin             AS FechaFinTemporada,
-                pt.BadgeTexto           AS BadgeTexto,
-                pt.BadgeColor           AS BadgeColor,
+            CASE 
+                WHEN d.Id IS NOT NULL THEN 1 
+                ELSE 0 
+            END AS EsDestacada,
 
-                (
-                    SELECT COUNT(1)
-                    FROM PublicacionFavoritos pf
-                    WHERE pf.IdPublicacion = p.Id
-                      AND pf.Activo = 1
-                ) AS CantidadFavoritos,
+            d.FechaFin AS FechaFinDestacado,
 
-                (
-                    SELECT COUNT(1)
-                    FROM PublicacionEventos pe
-                    WHERE pe.IdPublicacion = p.Id
-                      AND pe.TipoEvento = 'VIEW_DETAIL'
-                ) AS CantidadVistas,
+            CASE 
+                WHEN pt.Id IS NOT NULL THEN 1 
+                ELSE 0 
+            END AS EsTemporada,
 
-                (
-                    SELECT COUNT(1)
-                    FROM PublicacionEventos pe
-                    WHERE pe.IdPublicacion = p.Id
-                      AND pe.TipoEvento = 'CLICK_WHATSAPP'
-                ) AS CantidadClicksWhatsapp,
+            pt.FechaFin   AS FechaFinTemporada,
+            pt.BadgeTexto AS BadgeTexto,
+            pt.BadgeColor AS BadgeColor,
 
-                0 AS EsFavorito
+            (
+                SELECT COUNT(1)
+                FROM PublicacionFavoritos pf
+                WHERE pf.IdPublicacion = p.Id
+                  AND pf.Activo = 1
+            ) AS CantidadFavoritos,
 
-            FROM Publicaciones p
-            LEFT JOIN Vendedores v 
-                ON v.IdUsuario = p.IdUsuario
+            (
+                SELECT COUNT(1)
+                FROM PublicacionEventos pe
+                WHERE pe.IdPublicacion = p.Id
+                  AND pe.TipoEvento = 'VIEW_DETAIL'
+            ) AS CantidadVistas,
 
-            LEFT JOIN PublicacionesDestacadas d
-                ON d.IdPublicacion = p.Id
-                AND d.Estado = 'Activo'             
+            (
+                SELECT COUNT(1)
+                FROM PublicacionEventos pe
+                WHERE pe.IdPublicacion = p.Id
+                  AND pe.TipoEvento = 'CLICK_WHATSAPP'
+            ) AS CantidadClicksWhatsapp,
 
-            LEFT JOIN (
-                SELECT *
-                FROM PublicacionesTemporada
-                WHERE Estado = 'Activo'             
-            ) pt
-                ON pt.IdPublicacion = p.Id
+            0 AS EsFavorito
 
-            WHERE p.IdUsuario = @IdUsuario
+        FROM Publicaciones p
 
-            ORDER BY 
-                CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-                p.Fecha DESC;
-            ";
+        LEFT JOIN Vendedores v
+            ON v.IdUsuario = p.IdUsuario
 
-            var publicaciones = (await conn.QueryAsync<Publicacion>(
-                sql,
-                new { IdUsuario = idUsuario }
-            )).ToList();
+        OUTER APPLY
+        (
+            SELECT TOP 1
+                pd.Id,
+                pd.FechaFin
+            FROM dbo.PublicacionesDestacadas pd
+            WHERE pd.IdPublicacion = p.Id
+              AND pd.Estado = 'Activo'
+              AND GETDATE() BETWEEN pd.FechaInicio AND pd.FechaFin
+            ORDER BY
+                pd.FechaFin DESC,
+                pd.Id DESC
+        ) d
 
-            foreach (var pub in publicaciones)
+        OUTER APPLY
+        (
+            SELECT TOP 1
+                ptemp.Id,
+                ptemp.FechaFin,
+                ptemp.BadgeTexto,
+                ptemp.BadgeColor
+            FROM dbo.PublicacionesTemporada ptemp
+            WHERE ptemp.IdPublicacion = p.Id
+              AND ptemp.Estado = 'Activo'
+              AND GETDATE() BETWEEN ptemp.FechaInicio AND ptemp.FechaFin
+            ORDER BY
+                ptemp.FechaFin DESC,
+                ptemp.Id DESC
+        ) pt
+
+        WHERE p.IdUsuario = @IdUsuario
+
+        ORDER BY
+            CASE 
+                WHEN d.Id IS NOT NULL THEN 0
+                ELSE 1
+            END,
+            p.Fecha DESC;
+        ";
+
+            var publicaciones = (
+                await conn.QueryAsync<Publicacion>(
+                    sql,
+                    new
+                    {
+                        IdUsuario = idUsuario
+                    }
+                )
+            ).ToList();
+
+            foreach (var publicacion in publicaciones)
             {
-                pub.Imagenes = (await conn.QueryAsync<string>(
-                    "SELECT Url FROM ImagenesPublicacion WHERE IdPublicacion = @Id",
-                    new { Id = pub.Id }
-                )).ToList();
+                publicacion.Imagenes = (
+                    await conn.QueryAsync<string>(
+                        @"
+                    SELECT Url
+                    FROM ImagenesPublicacion
+                    WHERE IdPublicacion = @Id
+                    ORDER BY Id ASC;",
+                        new
+                        {
+                            Id = publicacion.Id
+                        }
+                    )
+                ).ToList();
 
-                pub.PlanCredito = (await conn.QueryAsync<PlanCredito>(
-                    @"SELECT Id, IdPublicacion, Cuotas, ValorCuota
-                  FROM PlanesCredito
-                  WHERE IdPublicacion = @Id",
-                    new { Id = pub.Id }
-                )).ToList();
+                publicacion.PlanCredito = (
+                    await conn.QueryAsync<PlanCredito>(
+                        @"
+                    SELECT
+                        Id,
+                        IdPublicacion,
+                        Cuotas,
+                        ValorCuota
+                    FROM PlanesCredito
+                    WHERE IdPublicacion = @Id
+                    ORDER BY Id ASC;",
+                        new
+                        {
+                            Id = publicacion.Id
+                        }
+                    )
+                ).ToList();
             }
 
             return publicaciones;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al obtener publicaciones del usuario {IdUsuario}", idUsuario);
-            throw new RepositoryException("Error al obtener tus publicaciones", ex);
+            _logger.LogError(
+                ex,
+                "Error al obtener publicaciones del usuario {IdUsuario}",
+                idUsuario
+            );
+
+            throw new RepositoryException(
+                "Error al obtener tus publicaciones",
+                ex
+            );
         }
     }
 
@@ -865,35 +930,48 @@ public class PublicacionRepository : IPublicacionRepository
         try
         {
             const string sql = @"
-            UPDATE dbo.PublicacionesDestacadas
-            SET Estado = 'Inactivo'
-            WHERE IdPublicacion = @IdPublicacion
-              AND Estado = 'Activo'
-              AND GETDATE() BETWEEN FechaInicio AND FechaFin;";
+        UPDATE dbo.PublicacionesDestacadas
+        SET Estado = 'Inactivo'
+        WHERE IdPublicacion = @IdPublicacion
+          AND Estado = 'Activo';";
 
-            var filas = await conn.ExecuteAsync(sql, new
-            {
-                IdPublicacion = idPublicacion
-            });
+            var filasActualizadas = await conn.ExecuteAsync(
+                sql,
+                new
+                {
+                    IdPublicacion = idPublicacion
+                }
+            );
 
-            if (filas == 0)
+            if (filasActualizadas == 0)
             {
                 throw new RepositoryException(
-                    "No se encontró un destacado activo para quitar.");
+                    "No se encontró ningún destacado activo para quitar."
+                );
             }
 
             _logger.LogInformation(
-                "Destacado quitado para la publicación {IdPublicacion}",
-                idPublicacion);
+                "Se quitaron {Cantidad} registros destacados de la publicación {IdPublicacion}",
+                filasActualizadas,
+                idPublicacion
+            );
+        }
+        catch (RepositoryException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
-                "Error al quitar destacado para la publicación {IdPublicacion}",
-                idPublicacion);
+                "Error al quitar el destacado de la publicación {IdPublicacion}",
+                idPublicacion
+            );
 
-            throw new RepositoryException("Error al quitar el destacado.", ex);
+            throw new RepositoryException(
+                "Error al quitar el destacado.",
+                ex
+            );
         }
     }
 
