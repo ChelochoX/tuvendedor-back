@@ -38,7 +38,8 @@ public class PublicacionRepository : IPublicacionRepository
                     Descripcion, 
                     Precio,
                     Moneda,
-                    Categoria, 
+                    Categoria,
+                    CanalPublicacion,
                     IdUsuario, 
                     MostrarBotonesCompra, 
                     PermiteDelivery,
@@ -54,7 +55,8 @@ public class PublicacionRepository : IPublicacionRepository
                     @Descripcion, 
                     @Precio,
                     @Moneda,
-                    @Categoria, 
+                    @Categoria,
+                    @CanalPublicacion,
                     @IdUsuario, 
                     @MostrarBotonesCompra, 
                     @PermiteDelivery,
@@ -68,26 +70,39 @@ public class PublicacionRepository : IPublicacionRepository
                 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
             var publicacionId = await conn.ExecuteScalarAsync<int>(
-                   insertPub,
-                   new
-                   {
-                       request.Titulo,
-                       request.Descripcion,
-                       request.Precio,
-                       Moneda = string.IsNullOrWhiteSpace(request.Moneda)
-                           ? "PYG"
-                           : request.Moneda.Trim().ToUpper(),
-                       request.Categoria,
-                       IdUsuario = idUsuario,
-                       request.MostrarBotonesCompra,
-                       request.PermiteDelivery,
-                       Ubicacion = request.Ubicacion?.Trim(),
-                       request.Latitud,
-                       request.Longitud,
-                       GoogleMapsUrl = request.GoogleMapsUrl?.Trim()
-                   },
-                   tran
-               );
+                insertPub,
+                new
+                {
+                    request.Titulo,
+                    request.Descripcion,
+                    request.Precio,
+
+                    Moneda = string.IsNullOrWhiteSpace(request.Moneda)
+                        ? "PYG"
+                        : request.Moneda.Trim().ToUpper(),
+
+                    request.Categoria,
+
+                    CanalPublicacion =
+                        request.CanalPublicacion,
+
+                    IdUsuario =
+                        idUsuario,
+
+                    request.MostrarBotonesCompra,
+                    request.PermiteDelivery,
+
+                    Ubicacion =
+                        request.Ubicacion?.Trim(),
+
+                    request.Latitud,
+                    request.Longitud,
+
+                    GoogleMapsUrl =
+                        request.GoogleMapsUrl?.Trim()
+                },
+                tran
+            );
 
             foreach (var img in imagenes)
             {
@@ -191,6 +206,7 @@ public class PublicacionRepository : IPublicacionRepository
                 p.Precio              AS Precio,
                 p.Moneda              AS Moneda,
                 p.Categoria           AS Categoria,
+                p.CanalPublicacion    AS CanalPublicacion,
                 p.Ubicacion           AS Ubicacion,
                 p.Latitud             AS Latitud,
                 p.Longitud            AS Longitud,
@@ -259,6 +275,7 @@ public class PublicacionRepository : IPublicacionRepository
                 AND t.Estado = 'Activo'
                 AND GETDATE() BETWEEN t.FechaInicio AND t.FechaFin
             WHERE p.Estado = 'Activo'
+               AND p.CanalPublicacion = 'MARKETPLACE'
               AND (@Categoria IS NULL OR p.Categoria = @Categoria)
               AND (
                     @Nombre IS NULL
@@ -580,6 +597,7 @@ public class PublicacionRepository : IPublicacionRepository
             p.Precio                AS Precio,
             p.Moneda                AS Moneda,
             p.Categoria             AS Categoria,
+            p.CanalPublicacion      AS CanalPublicacion,
             p.Ubicacion             AS Ubicacion,
             p.Latitud               AS Latitud,
             p.Longitud              AS Longitud,
@@ -1173,6 +1191,7 @@ public class PublicacionRepository : IPublicacionRepository
                     Precio = @Precio,
                     Moneda = @Moneda,
                     Categoria = @Categoria,
+                    CanalPublicacion = COALESCE(@CanalPublicacion, CanalPublicacion),
                     Ubicacion = @Ubicacion,
                     Latitud = @Latitud,
                     Longitud = @Longitud,
@@ -1195,6 +1214,11 @@ public class PublicacionRepository : IPublicacionRepository
                          ? "PYG"
                          : request.Moneda.Trim().ToUpper(),
                      request.Categoria,
+                     CanalPublicacion =
+                        string.IsNullOrWhiteSpace(
+                            request.CanalPublicacion)
+                            ? null
+                            : request.CanalPublicacion,
                      Ubicacion = request.Ubicacion?.Trim(),
                      request.Latitud,
                      request.Longitud,
@@ -1323,9 +1347,12 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
-    public async Task<ProductoSharePreviewDto?> ObtenerProductoSharePreview(int idPublicacion)
+    public async Task<ProductoSharePreviewDto?>
+    ObtenerProductoSharePreview(
+        int idPublicacion)
     {
-        using var conn = _conexion.CreateSqlConnection();
+        using var conn =
+            _conexion.CreateSqlConnection();
 
         try
         {
@@ -1338,25 +1365,83 @@ public class PublicacionRepository : IPublicacionRepository
                 p.Moneda,
                 p.Categoria,
                 p.Ubicacion,
-                img.Url AS ImagenUrl,
-                v.Slug AS SlugVendedor,
-                v.NombreNegocio AS NombreVendedor
-            FROM Publicaciones p
-            LEFT JOIN Vendedores v
-                ON v.IdUsuario = p.IdUsuario
-            OUTER APPLY (
-                SELECT TOP 1 i.Url
-                FROM ImagenesPublicacion i
-                WHERE i.IdPublicacion = p.Id
+                p.CanalPublicacion,
+
+                img.Url
+                    AS ImagenUrl,
+
+                v.Slug
+                    AS SlugVendedor,
+
+                v.NombreNegocio
+                    AS NombreVendedor
+
+            FROM dbo.Publicaciones p
+
+            LEFT JOIN dbo.Vendedores v
+                ON v.IdUsuario =
+                    p.IdUsuario
+
+            LEFT JOIN dbo.Usuarios u
+                ON u.Id =
+                    p.IdUsuario
+
+            OUTER APPLY
+            (
+                SELECT TOP 1
+                    i.Url
+
+                FROM dbo.ImagenesPublicacion i
+
+                WHERE i.IdPublicacion =
+                    p.Id
+
                 ORDER BY i.Id ASC
             ) img
-            WHERE p.Id = @IdPublicacion
-              AND p.Estado = 'Activo';";
 
-            return await conn.QueryFirstOrDefaultAsync<ProductoSharePreviewDto>(
-                sql,
-                new { IdPublicacion = idPublicacion }
-            );
+            WHERE p.Id =
+                @IdPublicacion
+
+              AND p.Estado =
+                'Activo'
+
+              AND
+              (
+                    p.CanalPublicacion =
+                        'MARKETPLACE'
+
+                    OR
+
+                    (
+                        p.CanalPublicacion =
+                            'VITRINA'
+
+                        AND v.EsPremium = 1
+
+                        AND v.EsPerfilPublico = 1
+
+                        AND NULLIF(
+                            LTRIM(
+                                RTRIM(v.Slug)
+                            ),
+                            ''
+                        ) IS NOT NULL
+
+                        AND u.Estado =
+                            'Activo'
+                    )
+              );";
+
+            return await conn
+                .QueryFirstOrDefaultAsync<
+                    ProductoSharePreviewDto
+                >(
+                    sql,
+                    new
+                    {
+                        IdPublicacion =
+                            idPublicacion
+                    });
         }
         catch (Exception ex)
         {
@@ -1365,7 +1450,89 @@ public class PublicacionRepository : IPublicacionRepository
                 "Error al obtener preview Open Graph para publicación {IdPublicacion}",
                 idPublicacion);
 
-            throw new RepositoryException("Error al obtener preview de publicación", ex);
+            throw new RepositoryException(
+                "Error al obtener preview de publicación",
+                ex);
         }
     }
+
+    public async Task<bool> PuedePublicarEnVitrina(
+    int idUsuario)
+    {
+        using var conn =
+            _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            SELECT COUNT(1)
+            FROM dbo.Vendedores
+            WHERE IdUsuario = @IdUsuario
+              AND EsPremium = 1;";
+
+            var cantidad =
+                await conn.ExecuteScalarAsync<int>(
+                    sql,
+                    new
+                    {
+                        IdUsuario =
+                            idUsuario
+                    });
+
+            return cantidad > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al validar acceso a vitrina del usuario {IdUsuario}",
+                idUsuario);
+
+            throw new RepositoryException(
+                "Error al validar acceso a la vitrina.",
+                ex);
+        }
+    }
+
+    public async Task<string?>
+        ObtenerCanalPublicacionDeUsuario(
+            int idPublicacion,
+            int idUsuario)
+    {
+        using var conn =
+            _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            SELECT CanalPublicacion
+            FROM dbo.Publicaciones
+            WHERE Id = @IdPublicacion
+              AND IdUsuario = @IdUsuario;";
+
+            return await conn
+                .QueryFirstOrDefaultAsync<string?>(
+                    sql,
+                    new
+                    {
+                        IdPublicacion =
+                            idPublicacion,
+
+                        IdUsuario =
+                            idUsuario
+                    });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al obtener canal de publicación {IdPublicacion}",
+                idPublicacion);
+
+            throw new RepositoryException(
+                "Error al obtener el canal de la publicación.",
+                ex);
+        }
+    }
+
 }

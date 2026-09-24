@@ -20,6 +20,12 @@ public class ActualizarPublicacionRequest
     public string Categoria { get; set; } =
         string.Empty;
 
+    /*
+     * Si viene null/vacío:
+     * conservaremos el canal actual de la publicación.
+     */
+    public string? CanalPublicacion { get; set; }
+
     public string? Ubicacion { get; set; } =
         string.Empty;
 
@@ -70,7 +76,8 @@ public class ActualizarPublicacionRequestValidator
     public ActualizarPublicacionRequestValidator(
         IOptions<UploadOptions> uploadOptions)
     {
-        var upload = uploadOptions.Value;
+        var upload =
+            uploadOptions.Value;
 
         RuleFor(x => x.Titulo)
             .NotEmpty()
@@ -86,6 +93,20 @@ public class ActualizarPublicacionRequestValidator
         RuleFor(x => x.Categoria)
             .NotEmpty()
             .MaximumLength(250);
+
+        RuleFor(x => x.CanalPublicacion)
+            .Must(canal =>
+                string.IsNullOrWhiteSpace(canal)
+                ||
+                canal.Equals(
+                    "MARKETPLACE",
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                canal.Equals(
+                    "VITRINA",
+                    StringComparison.OrdinalIgnoreCase))
+            .WithMessage(
+                "CanalPublicacion debe ser MARKETPLACE o VITRINA.");
 
         RuleFor(x => x.Ubicacion)
             .MaximumLength(500)
@@ -109,9 +130,6 @@ public class ActualizarPublicacionRequestValidator
             .When(x =>
                 x.Longitud.HasValue);
 
-        /*
-         * Archivos nuevos.
-         */
         RuleFor(x => x.Imagenes)
             .Must(imagenes =>
                 imagenes == null ||
@@ -120,9 +138,6 @@ public class ActualizarPublicacionRequestValidator
             .WithMessage(
                 $"Máximo {upload.MaxFiles} imágenes permitidas.");
 
-        /*
-         * Tamaño de cada archivo nuevo.
-         */
         RuleForEach(x => x.Imagenes)
             .Must(archivo =>
                 archivo.Length <=
@@ -133,9 +148,6 @@ public class ActualizarPublicacionRequestValidator
             .When(x =>
                 x.Imagenes != null);
 
-        /*
-         * Imágenes existentes que se conservarán.
-         */
         RuleFor(x => x.ImagenesConservar)
             .Must(imagenes =>
                 imagenes == null ||
@@ -149,9 +161,6 @@ public class ActualizarPublicacionRequestValidator
             .When(x =>
                 x.ImagenesConservar != null);
 
-        /*
-         * Total de existentes más nuevas.
-         */
         RuleFor(x => x)
             .Must(x =>
                 (x.Imagenes?.Count ?? 0)

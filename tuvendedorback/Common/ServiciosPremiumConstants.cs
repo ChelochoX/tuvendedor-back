@@ -16,22 +16,26 @@ public class ServiciosPremiumConstants
         public const string BannerMarketplace =
             "BANNER_MARKETPLACE";
 
-        public static readonly HashSet<string> Permitidos =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-            VitrinaProfesional,
-            PublicacionDestacada,
-            PublicacionEspecial,
-            BannerMarketplace
-            };
+        public static readonly HashSet<string>
+            Permitidos =
+                new(
+                    StringComparer.OrdinalIgnoreCase)
+                {
+                    VitrinaProfesional,
+                    PublicacionDestacada,
+                    PublicacionEspecial,
+                    BannerMarketplace
+                };
 
-        public static readonly HashSet<string> PermitidosParaSolicitud =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-            VitrinaProfesional,
-            PublicacionDestacada,
-            PublicacionEspecial
-            };
+        public static readonly HashSet<string>
+            PermitidosParaSolicitud =
+                new(
+                    StringComparer.OrdinalIgnoreCase)
+                {
+                    VitrinaProfesional,
+                    PublicacionDestacada,
+                    PublicacionEspecial
+                };
     }
 
     public static class EstadosServicioPremium
@@ -45,20 +49,26 @@ public class ServiciosPremiumConstants
         public const string Activo =
             "ACTIVO";
 
+        public const string SuspendidoPago =
+            "SUSPENDIDO_PAGO";
+
         public const string Vencido =
             "VENCIDO";
 
         public const string Cancelado =
             "CANCELADO";
 
-        public static readonly HashSet<string> Permitidos =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-            Solicitado,
-            PendientePago,
-            Activo,
-            Vencido,
-            Cancelado
-            };
+        public static readonly HashSet<string>
+            Permitidos =
+                new(
+                    StringComparer.OrdinalIgnoreCase)
+                {
+                    Solicitado,
+                    PendientePago,
+                    Activo,
+                    SuspendidoPago,
+                    Vencido,
+                    Cancelado
+                };
     }
 }

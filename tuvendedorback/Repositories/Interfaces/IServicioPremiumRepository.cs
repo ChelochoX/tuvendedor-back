@@ -7,7 +7,7 @@ namespace tuvendedorback.Repositories.Interfaces;
 public interface IServicioPremiumRepository
 {
     Task<int?> ObtenerIdVendedorPorUsuario(
-          int idUsuario);
+        int idUsuario);
 
     Task<bool> EsAdministrador(
         int idUsuario);
@@ -25,13 +25,16 @@ public interface IServicioPremiumRepository
         int idVendedor,
         CrearSolicitudServicioPremiumRequest request);
 
-    Task<Datos<List<ServicioPremiumDto>>> ObtenerServicios(
-        FiltrosServiciosPremiumRequest filtros);
+    Task<Datos<List<ServicioPremiumDto>>>
+        ObtenerServicios(
+            FiltrosServiciosPremiumRequest filtros);
 
-    Task<ServicioPremiumDto?> ObtenerServicioPorId(
-        int idServicio);
+    Task<ServicioPremiumDto?>
+        ObtenerServicioPorId(
+            int idServicio);
 
-    Task<ResumenServiciosPremiumDto> ObtenerResumen();
+    Task<ResumenServiciosPremiumDto>
+        ObtenerResumen();
 
     Task ActivarServicio(
         int idServicio,
@@ -41,6 +44,15 @@ public interface IServicioPremiumRepository
     Task CancelarServicio(
         int idServicio,
         string? observacion,
+        int idUsuarioAdmin);
+
+    Task SuspenderServicio(
+        int idServicio,
+        string? observacion,
+        int idUsuarioAdmin);
+
+    Task ReactivarServicio(
+        int idServicio,
         int idUsuarioAdmin);
 
     Task SincronizarVencimientos();

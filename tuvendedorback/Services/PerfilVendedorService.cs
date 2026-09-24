@@ -54,7 +54,10 @@ public class PerfilVendedorService : IPerfilVendedorService
         if (perfil == null)
             throw new NoDataFoundException("No se encontró el perfil vendedor del usuario.");
 
-        var publicaciones = await _repository.ObtenerPublicacionesActivasPorSlug(perfil.Slug ?? string.Empty);
+        var publicaciones =
+        await _repository
+            .ObtenerPublicacionesVitrinaPorUsuario(
+                idUsuario);
 
         perfil.Publicaciones = publicaciones;
         perfil.CantidadPublicaciones = publicaciones.Count;

@@ -59,6 +59,7 @@ public static class DependencyInjection
         services.AddScoped<IWhatsAppNotificationService, WhatsAppNotificationService>();
         services.AddScoped<IPublicacionInteraccionService, PublicacionInteraccionService>();
         services.AddScoped<IServicioPremiumService,ServicioPremiumService>();
+        services.AddHostedService<PremiumVencimientosBackgroundService>();
         services.AddScoped<IBannerPublicitarioService,BannerPublicitarioService>();
         services.AddScoped<IComercialDashboardService, ComercialDashboardService>();
 

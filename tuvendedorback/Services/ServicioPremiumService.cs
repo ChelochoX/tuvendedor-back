@@ -297,6 +297,12 @@ public class ServicioPremiumService :
                 "No se puede activar un servicio cancelado.");
         }
 
+        if (servicio.Estado == EstadosServicioPremium.SuspendidoPago)
+        {
+            throw new ReglasdeNegocioException(
+                "La vitrina está suspendida por pago. Utilice la acción de reactivar para conservar el período vigente.");
+        }
+
         switch (servicio.TipoServicio)
         {
             case TiposServicioPremium.VitrinaProfesional:
@@ -411,6 +417,101 @@ public class ServicioPremiumService :
                 idServicio,
                 request
                     ?.Observacion,
+                idUsuarioAdmin);
+    }
+
+    public async Task SuspenderServicio(
+    int idServicio,
+    SuspenderServicioPremiumRequest request,
+    int idUsuarioAdmin)
+    {
+        await ValidarAdministrador(
+            idUsuarioAdmin);
+
+        var servicio =
+            await _repository
+                .ObtenerServicioPorId(
+                    idServicio);
+
+        if (servicio == null)
+        {
+            throw new NoDataFoundException(
+                "No se encontró el servicio Premium.");
+        }
+
+        if (
+            servicio.TipoServicio !=
+            TiposServicioPremium
+                .VitrinaProfesional)
+        {
+            throw new ReglasdeNegocioException(
+                "La suspensión por falta de pago aplica únicamente a VITRINA_PROFESIONAL.");
+        }
+
+        if (
+            servicio.Estado !=
+            EstadosServicioPremium.Activo)
+        {
+            throw new ReglasdeNegocioException(
+                "Solo una vitrina activa puede suspenderse por falta de pago.");
+        }
+
+        await _repository
+            .SuspenderServicio(
+                idServicio,
+                request?.Observacion,
+                idUsuarioAdmin);
+    }
+
+    public async Task ReactivarServicio(
+    int idServicio,
+    int idUsuarioAdmin)
+    {
+        await ValidarAdministrador(
+            idUsuarioAdmin);
+
+        var servicio =
+            await _repository
+                .ObtenerServicioPorId(
+                    idServicio);
+
+        if (servicio == null)
+        {
+            throw new NoDataFoundException(
+                "No se encontró el servicio Premium.");
+        }
+
+        if (
+            servicio.TipoServicio !=
+            TiposServicioPremium
+                .VitrinaProfesional)
+        {
+            throw new ReglasdeNegocioException(
+                "La reactivación por pago aplica únicamente a VITRINA_PROFESIONAL.");
+        }
+
+        if (
+            servicio.Estado !=
+            EstadosServicioPremium
+                .SuspendidoPago)
+        {
+            throw new ReglasdeNegocioException(
+                "Solo una vitrina suspendida por falta de pago puede reactivarse.");
+        }
+
+        if (
+            !servicio.FechaFin.HasValue
+            ||
+            servicio.FechaFin.Value <
+                DateTime.Now)
+        {
+            throw new ReglasdeNegocioException(
+                "El período de la vitrina ya venció. Debe activar o renovar el servicio con nuevas fechas.");
+        }
+
+        await _repository
+            .ReactivarServicio(
+                idServicio,
                 idUsuarioAdmin);
     }
 

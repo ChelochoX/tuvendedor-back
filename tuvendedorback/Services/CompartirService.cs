@@ -25,9 +25,10 @@ public class CompartirService : ICompartirService
     {
         var producto = await _repository.ObtenerProductoParaCompartir(idProducto);
 
-        var frontendUrl = ObtenerFrontendUrl();
-        var productoUrl = $"{frontendUrl}/producto/{idProducto}";
-        var logoUrl = $"{frontendUrl}/logoTuVendedor.png";
+        var frontendUrl =
+           ObtenerFrontendUrl();
+        var logoUrl =
+            $"{frontendUrl}/logoTuVendedor.png";
 
         if (producto == null)
         {
@@ -38,6 +39,22 @@ public class CompartirService : ICompartirService
                 destinoUrl: frontendUrl
             );
         }
+
+        var esVitrina =
+        string.Equals(
+            producto.CanalPublicacion,
+            "VITRINA",
+            StringComparison.OrdinalIgnoreCase);
+
+        var productoUrl =
+            esVitrina
+            &&
+            !string.IsNullOrWhiteSpace(
+                producto.SlugVendedor)
+
+                ? $"{frontendUrl}/vendedor/{Uri.EscapeDataString(producto.SlugVendedor)}?producto={producto.Id}"
+
+                : $"{frontendUrl}/producto/{producto.Id}";
 
         var titulo = LimpiarTexto(producto.Titulo);
         var precio = FormatearPrecio(producto.Precio);

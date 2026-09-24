@@ -40,6 +40,26 @@ public class PublicacionService : IPublicacionService
             );
         }
 
+        request.CanalPublicacion =
+            NormalizarCanalPublicacion(
+            request.CanalPublicacion);
+
+            if (
+                request.CanalPublicacion ==
+                CanalesPublicacionConstants.Vitrina)
+            {
+                var puedePublicarEnVitrina =
+                    await _repository
+                        .PuedePublicarEnVitrina(
+                            idUsuario);
+
+                if (!puedePublicarEnVitrina)
+                {
+                    throw new ReglasdeNegocioException(
+                        "La publicación en VITRINA está disponible únicamente para vendedores con servicio Premium activo.");
+                }
+            }
+
         await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
         var imagenes = new List<ImagenDto>();
@@ -87,9 +107,9 @@ public class PublicacionService : IPublicacionService
             throw new UnauthorizedAccessException();
 
         await ValidarPropiedadPublicacion(
-       idPublicacion,
-       idUsuario.Value
-   );
+               idPublicacion,
+               idUsuario.Value
+           );
 
         var imagenes = await _repository.ObtenerImagenesPorPublicacion(
             idPublicacion,
@@ -292,6 +312,48 @@ public class PublicacionService : IPublicacionService
             idUsuario.Value
         );
 
+        var canalActual =
+        await _repository
+            .ObtenerCanalPublicacionDeUsuario(
+                idPublicacion,
+                idUsuario.Value);
+
+        if (string.IsNullOrWhiteSpace(canalActual))
+        {
+            throw new ReglasdeNegocioException(
+                "No se pudo determinar el canal actual de la publicación.");
+        }
+
+        var canalObjetivo =
+            string.IsNullOrWhiteSpace(
+                request.CanalPublicacion)
+
+                ? canalActual
+                    .Trim()
+                    .ToUpperInvariant()
+
+                : NormalizarCanalPublicacion(
+                    request.CanalPublicacion);
+
+        if (
+            canalObjetivo ==
+            CanalesPublicacionConstants.Vitrina)
+        {
+            var puedePublicarEnVitrina =
+                await _repository
+                    .PuedePublicarEnVitrina(
+                        idUsuario.Value);
+
+            if (!puedePublicarEnVitrina)
+            {
+                throw new ReglasdeNegocioException(
+                    "La publicación en VITRINA está disponible únicamente para vendedores con servicio Premium activo.");
+            }
+        }
+
+        request.CanalPublicacion =
+            canalObjetivo;
+
         request.Moneda = string.IsNullOrWhiteSpace(request.Moneda)
             ? "PYG"
             : request.Moneda.Trim().ToUpper();
@@ -438,6 +500,21 @@ public class PublicacionService : IPublicacionService
             }
 
             throw;
+        }
+    }
+
+    private static string NormalizarCanalPublicacion(
+    string? canal)
+    {
+        try
+        {
+            return CanalesPublicacionConstants
+                .Normalizar(canal);
+        }
+        catch (ArgumentException)
+        {
+            throw new ReglasdeNegocioException(
+                "CanalPublicacion debe ser MARKETPLACE o VITRINA.");
         }
     }
 

@@ -240,6 +240,84 @@ public class AdminServiciosPremiumController :
             });
     }
 
+    /// <summary>
+    /// Suspende temporalmente una vitrina por falta de pago.
+    /// </summary>
+    [HttpPost("{idServicio:int}/suspender-pago")]
+    [SwaggerOperation(
+        Summary =
+            "Suspende una vitrina por falta de pago",
+
+        Description =
+            "Deshabilita temporalmente la vitrina sin borrar su configuración ni sus publicaciones."
+    )]
+    public async Task<IActionResult>
+        SuspenderPorFaltaDePago(
+            int idServicio,
+
+            [FromBody]
+        SuspenderServicioPremiumRequest request)
+    {
+        var idUsuarioAdmin =
+            ObtenerIdUsuario();
+
+        await _service
+            .SuspenderServicio(
+                idServicio,
+                request,
+                idUsuarioAdmin);
+
+        return Ok(
+            new Response<bool>
+            {
+                Success =
+                    true,
+
+                Data =
+                    true,
+
+                Message =
+                    "Vitrina suspendida temporalmente por falta de pago."
+            });
+    }
+
+    /// <summary>
+    /// Reactiva una vitrina suspendida por falta de pago.
+    /// </summary>
+    [HttpPost("{idServicio:int}/reactivar")]
+    [SwaggerOperation(
+        Summary =
+            "Reactiva una vitrina suspendida",
+
+        Description =
+            "Vuelve a habilitar la vitrina conservando el período y toda su configuración."
+    )]
+    public async Task<IActionResult>
+        ReactivarServicio(
+            int idServicio)
+    {
+        var idUsuarioAdmin =
+            ObtenerIdUsuario();
+
+        await _service
+            .ReactivarServicio(
+                idServicio,
+                idUsuarioAdmin);
+
+        return Ok(
+            new Response<bool>
+            {
+                Success =
+                    true,
+
+                Data =
+                    true,
+
+                Message =
+                    "Vitrina reactivada correctamente."
+            });
+    }
+
     private int ObtenerIdUsuario()
     {
         var idUsuario =

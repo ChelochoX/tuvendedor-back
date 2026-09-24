@@ -52,9 +52,19 @@ public class ShareController : ControllerBase
             ? ""
             : producto.SlugVendedor.Trim();
 
-        var destino = !string.IsNullOrWhiteSpace(slug)
-            ? $"{baseUrl}/vendedor/{WebUtility.UrlEncode(slug)}?producto={producto.Id}"
-            : $"{baseUrl}/producto/{producto.Id}";
+        var esVitrina =
+           string.Equals(
+               producto.CanalPublicacion,
+               "VITRINA",
+               StringComparison.OrdinalIgnoreCase);
+
+        var destino =
+            esVitrina
+            &&
+            !string.IsNullOrWhiteSpace(slug)
+
+                ? $"{baseUrl}/vendedor/{WebUtility.UrlEncode(slug)}?producto={producto.Id}"
+                : $"{baseUrl}/producto/{producto.Id}";
 
         var html = ConstruirHtmlPreview(
             titulo,

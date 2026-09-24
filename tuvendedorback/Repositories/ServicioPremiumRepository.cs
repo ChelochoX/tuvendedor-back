@@ -1359,8 +1359,7 @@ public class ServicioPremiumRepository :
                                 @"
                                 UPDATE dbo.Vendedores
                                 SET
-                                    EsPremium = 0,
-                                    EsPerfilPublico = 0
+                                    EsPremium = 0                                    
                                 WHERE Id =
                                     @IdVendedor;",
                                 new
@@ -1517,6 +1516,309 @@ public class ServicioPremiumRepository :
         }
     }
 
+    public async Task SuspenderServicio(
+    int idServicio,
+    string? observacion,
+    int idUsuarioAdmin)
+    {
+        using var conn =
+            _conexion.CreateSqlConnection();
+
+        conn.Open();
+
+        using var tran =
+            conn.BeginTransaction();
+
+        try
+        {
+            const string servicioSql = @"
+            SELECT
+                Id,
+                IdVendedor,
+                TipoServicio,
+                Estado,
+                FechaInicio,
+                FechaFin
+
+            FROM dbo.ServiciosPremium
+
+            WHERE Id =
+                @IdServicio;";
+
+            var servicio =
+                await conn
+                    .QueryFirstOrDefaultAsync<
+                        ServicioPremiumDto
+                    >(
+                        servicioSql,
+
+                        new
+                        {
+                            IdServicio =
+                                idServicio
+                        },
+
+                        tran);
+
+            if (servicio == null)
+            {
+                throw new RepositoryException(
+                    "No se encontró el servicio Premium.");
+            }
+
+            if (
+                servicio.TipoServicio !=
+                TiposServicioPremium
+                    .VitrinaProfesional)
+            {
+                throw new RepositoryException(
+                    "Solo la vitrina profesional puede suspenderse por falta de pago.");
+            }
+
+            await conn.ExecuteAsync(
+                @"
+                UPDATE dbo.ServiciosPremium
+
+                SET
+                    Estado =
+                        'SUSPENDIDO_PAGO',
+
+                    Observacion =
+                        COALESCE(
+                            NULLIF(
+                                @Observacion,
+                                ''
+                            ),
+                            Observacion
+                        ),
+
+                    IdUsuarioAdmin =
+                        @IdUsuarioAdmin,
+
+                    FechaActualizacion =
+                        GETDATE()
+
+                WHERE Id =
+                    @IdServicio;",
+
+                new
+                {
+                    IdServicio =
+                        idServicio,
+
+                    Observacion =
+                        observacion,
+
+                    IdUsuarioAdmin =
+                        idUsuarioAdmin
+                },
+
+                tran);
+
+            var otrasVitrinasActivas =
+                await conn
+                    .ExecuteScalarAsync<int>(
+                        @"
+                    SELECT COUNT(1)
+
+                    FROM dbo.ServiciosPremium
+
+                    WHERE IdVendedor =
+                        @IdVendedor
+
+                      AND TipoServicio =
+                        'VITRINA_PROFESIONAL'
+
+                      AND Estado =
+                        'ACTIVO'
+
+                      AND Id <>
+                        @IdServicio
+
+                      AND GETDATE()
+                          BETWEEN
+                              FechaInicio
+                              AND FechaFin;",
+
+                        new
+                        {
+                            servicio.IdVendedor,
+
+                            IdServicio =
+                                idServicio
+                        },
+
+                        tran);
+
+            if (
+                otrasVitrinasActivas ==
+                0)
+            {
+                await conn.ExecuteAsync(
+                    @"
+                    UPDATE dbo.Vendedores
+
+                    SET EsPremium = 0
+
+                    WHERE Id =
+                        @IdVendedor;",
+
+                    new
+                    {
+                        servicio.IdVendedor
+                    },
+
+                    tran);
+            }
+
+            tran.Commit();
+        }
+        catch (Exception ex)
+        {
+            tran.Rollback();
+
+            _logger.LogError(
+                ex,
+                "Error al suspender servicio Premium. IdServicio={IdServicio}",
+                idServicio);
+
+            if (
+                ex is RepositoryException)
+            {
+                throw;
+            }
+
+            throw new RepositoryException(
+                "Error al suspender el servicio Premium.",
+                ex);
+        }
+    }
+
+    public async Task ReactivarServicio(
+    int idServicio,
+    int idUsuarioAdmin)
+    {
+        using var conn =
+            _conexion.CreateSqlConnection();
+
+        conn.Open();
+
+        using var tran =
+            conn.BeginTransaction();
+
+        try
+        {
+            const string servicioSql = @"
+            SELECT
+                Id,
+                IdVendedor,
+                TipoServicio,
+                Estado,
+                FechaInicio,
+                FechaFin
+
+            FROM dbo.ServiciosPremium
+
+            WHERE Id =
+                @IdServicio;";
+
+            var servicio =
+                await conn
+                    .QueryFirstOrDefaultAsync<
+                        ServicioPremiumDto
+                    >(
+                        servicioSql,
+
+                        new
+                        {
+                            IdServicio =
+                                idServicio
+                        },
+
+                        tran);
+
+            if (servicio == null)
+            {
+                throw new RepositoryException(
+                    "No se encontró el servicio Premium.");
+            }
+
+            if (
+                servicio.TipoServicio !=
+                TiposServicioPremium
+                    .VitrinaProfesional)
+            {
+                throw new RepositoryException(
+                    "Solo la vitrina profesional puede reactivarse desde una suspensión de pago.");
+            }
+
+            await conn.ExecuteAsync(
+                @"
+                UPDATE dbo.ServiciosPremium
+
+                SET
+                    Estado =
+                        'ACTIVO',
+
+                    IdUsuarioAdmin =
+                        @IdUsuarioAdmin,
+
+                    FechaActualizacion =
+                        GETDATE()
+
+                WHERE Id =
+                    @IdServicio;",
+
+                new
+                {
+                    IdServicio =
+                        idServicio,
+
+                    IdUsuarioAdmin =
+                        idUsuarioAdmin
+                },
+
+                tran);
+
+            await conn.ExecuteAsync(
+                @"
+                UPDATE dbo.Vendedores
+
+                SET EsPremium = 1
+
+                WHERE Id =
+                    @IdVendedor;",
+
+                new
+                {
+                    servicio.IdVendedor
+                },
+
+                tran);
+
+            tran.Commit();
+        }
+        catch (Exception ex)
+        {
+            tran.Rollback();
+
+            _logger.LogError(
+                ex,
+                "Error al reactivar servicio Premium. IdServicio={IdServicio}",
+                idServicio);
+
+            if (
+                ex is RepositoryException)
+            {
+                throw;
+            }
+
+            throw new RepositoryException(
+                "Error al reactivar el servicio Premium.",
+                ex);
+        }
+    }
+
     public async Task SincronizarVencimientos()
     {
         using var conn =
@@ -1539,8 +1841,7 @@ public class ServicioPremiumRepository :
                         FechaActualizacion =
                             GETDATE()
 
-                    WHERE Estado =
-                        'ACTIVO'
+                   WHERE Estado IN  ('ACTIVO', 'SUSPENDIDO_PAGO')
                       AND FechaFin
                         IS NOT NULL
                       AND FechaFin <
@@ -1585,8 +1886,7 @@ public class ServicioPremiumRepository :
                 @"
                     UPDATE v
                     SET
-                        v.EsPremium = 0,
-                        v.EsPerfilPublico = 0
+                        v.EsPremium = 0                        
 
                     FROM dbo.Vendedores v
 

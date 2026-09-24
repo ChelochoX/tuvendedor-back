@@ -7,8 +7,8 @@ namespace tuvendedorback.Services.Interfaces;
 public interface IServicioPremiumService
 {
     Task<int> CrearSolicitud(
-       CrearSolicitudServicioPremiumRequest request,
-       int idUsuario);
+        CrearSolicitudServicioPremiumRequest request,
+        int idUsuario);
 
     Task<Datos<List<ServicioPremiumDto>>>
         ObtenerServiciosParaAdministrador(
@@ -32,5 +32,14 @@ public interface IServicioPremiumService
     Task CancelarServicio(
         int idServicio,
         CancelarServicioPremiumRequest request,
+        int idUsuarioAdmin);
+
+    Task SuspenderServicio(
+        int idServicio,
+        SuspenderServicioPremiumRequest request,
+        int idUsuarioAdmin);
+
+    Task ReactivarServicio(
+        int idServicio,
         int idUsuarioAdmin);
 }

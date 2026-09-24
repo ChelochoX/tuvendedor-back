@@ -4,11 +4,25 @@ namespace tuvendedorback.Repositories.Interfaces;
 
 public interface IPerfilVendedorRepository
 {
-    Task<PerfilPublicoVendedorDto?> ObtenerPerfilPublicoPorSlug(string slug);
-    Task<List<PerfilPublicoPublicacionDto>> ObtenerPublicacionesActivasPorSlug(string slug);
-    Task<PerfilPublicoVendedorDto?> ObtenerMiPerfilVendedor(int idUsuario);
+    Task<PerfilPublicoVendedorDto?>
+        ObtenerPerfilPublicoPorSlug(
+            string slug);
 
-    Task<bool> ExisteSlugEnOtroVendedor(string slug, int idUsuario);
+    Task<List<PerfilPublicoPublicacionDto>>
+        ObtenerPublicacionesActivasPorSlug(
+            string slug);
+
+    Task<List<PerfilPublicoPublicacionDto>>
+        ObtenerPublicacionesVitrinaPorUsuario(
+            int idUsuario);
+
+    Task<PerfilPublicoVendedorDto?>
+        ObtenerMiPerfilVendedor(
+            int idUsuario);
+
+    Task<bool> ExisteSlugEnOtroVendedor(
+        string slug,
+        int idUsuario);
 
     Task ActualizarMiPerfilVendedor(
         ActualizarMiPerfilVendedorRequest request,

@@ -1,4 +1,6 @@
 ﻿using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Data;
 using tuvendedorback.Data;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
@@ -97,73 +99,209 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
         }
     }
 
-    public async Task<List<PerfilPublicoPublicacionDto>> ObtenerPublicacionesActivasPorSlug(string slug)
+    public async Task<List<PerfilPublicoPublicacionDto>>
+    ObtenerPublicacionesActivasPorSlug(
+        string slug)
     {
-        using var conn = _conexion.CreateSqlConnection();
+        using var conn =
+            _conexion.CreateSqlConnection();
 
         try
         {
-            _logger.LogInformation(
-                "Iniciando obtención de publicaciones activas para perfil público. Slug: {Slug}",
-                slug);
-
             const string sql = @"
-                SELECT
-                    p.Id                           AS Id,
-                    p.Titulo                       AS Titulo,
-                    p.Descripcion                  AS Descripcion,
-                    p.Precio                       AS Precio,
-                    p.Moneda                       AS Moneda,
-                    p.Categoria                    AS Categoria,
-                    p.Ubicacion                    AS Ubicacion,
-                    p.Latitud                      AS Latitud,
-                    p.Longitud                     AS Longitud,
-                    p.GoogleMapsUrl                AS GoogleMapsUrl,
-                    p.PermiteDelivery              AS PermiteDelivery,
-                    p.Estado                       AS Estado,
-                    img.Url                        AS ImagenPrincipal,
-                    img.ThumbUrl                   AS ThumbUrl,
-                    CAST(
-                        CASE 
-                            WHEN d.Id IS NOT NULL THEN 1 
-                            ELSE 0 
-                        END AS bit
-                    )                              AS EsDestacada
-                FROM dbo.Vendedores v
-                INNER JOIN dbo.Usuarios u
-                    ON u.Id = v.IdUsuario
-                INNER JOIN dbo.Publicaciones p
-                    ON p.IdUsuario = v.IdUsuario
-                OUTER APPLY
+            SELECT
+                p.Id,
+                p.Titulo,
+                p.Descripcion,
+                p.Precio,
+                p.Moneda,
+                p.Categoria,
+                p.Ubicacion,
+                p.Latitud,
+                p.Longitud,
+                p.GoogleMapsUrl,
+                p.Estado,
+                p.CanalPublicacion,
+                p.MostrarBotonesCompra,
+                p.PermiteDelivery,
+
+                img.Url
+                    AS ImagenPrincipal,
+
+                img.ThumbUrl,
+
+                CAST(
+                    CASE
+                        WHEN d.Id IS NOT NULL
+                            THEN 1
+                        ELSE 0
+                    END
+                    AS bit
+                ) AS EsDestacada,
+
+                d.FechaFin
+                    AS FechaFinDestacado,
+
+                CAST(
+                    CASE
+                        WHEN pt.Id IS NOT NULL
+                            THEN 1
+                        ELSE 0
+                    END
+                    AS bit
+                ) AS EsTemporada,
+
+                pt.FechaFin
+                    AS FechaFinTemporada,
+
+                pt.BadgeTexto,
+                pt.BadgeColor,
+
                 (
-                    SELECT TOP 1
-                        i.Url,
-                        i.ThumbUrl
-                    FROM dbo.ImagenesPublicacion i
-                    WHERE i.IdPublicacion = p.Id
-                    ORDER BY i.Id ASC
-                ) img
-                LEFT JOIN dbo.PublicacionesDestacadas d
-                    ON d.IdPublicacion = p.Id
-                   AND d.Estado = 'Activo'
-                   AND d.FechaFin >= GETDATE()
-                WHERE v.Slug = @Slug
-                  AND v.EsPerfilPublico = 1
-                  AND v.EsPremium = 1
-                  AND u.Estado = 'Activo'
-                  AND p.Estado = 'Activo'
+                    SELECT COUNT(1)
+                    FROM dbo.PublicacionFavoritos pf
+                    WHERE pf.IdPublicacion = p.Id
+                      AND pf.Activo = 1
+                ) AS CantidadFavoritos,
+
+                (
+                    SELECT COUNT(1)
+                    FROM dbo.PublicacionEventos pe
+                    WHERE pe.IdPublicacion = p.Id
+                      AND pe.TipoEvento = 'VIEW_DETAIL'
+                ) AS CantidadVistas,
+
+                (
+                    SELECT COUNT(1)
+                    FROM dbo.PublicacionEventos pe
+                    WHERE pe.IdPublicacion = p.Id
+                      AND pe.TipoEvento = 'CLICK_WHATSAPP'
+                ) AS CantidadClicksWhatsapp
+
+            FROM dbo.Vendedores v
+
+            INNER JOIN dbo.Usuarios u
+                ON u.Id =
+                    v.IdUsuario
+
+            INNER JOIN dbo.Publicaciones p
+                ON p.IdUsuario =
+                    v.IdUsuario
+
+            OUTER APPLY
+            (
+                SELECT TOP 1
+                    i.Url,
+                    i.ThumbUrl
+
+                FROM dbo.ImagenesPublicacion i
+
+                WHERE i.IdPublicacion =
+                    p.Id
+
+                ORDER BY i.Id ASC
+            ) img
+
+            OUTER APPLY
+            (
+                SELECT TOP 1
+                    pd.Id,
+                    pd.FechaFin
+
+                FROM dbo.PublicacionesDestacadas pd
+
+                WHERE pd.IdPublicacion =
+                    p.Id
+
+                  AND pd.Estado =
+                    'Activo'
+
+                  AND GETDATE()
+                      BETWEEN
+                          pd.FechaInicio
+                          AND pd.FechaFin
+
                 ORDER BY
-                    CASE WHEN d.Id IS NOT NULL THEN 0 ELSE 1 END,
-                    p.Fecha DESC;";
+                    pd.FechaFin DESC,
+                    pd.Id DESC
+            ) d
 
-            var publicaciones = (await conn.QueryAsync<PerfilPublicoPublicacionDto>(
-                sql,
-                new { Slug = slug })).ToList();
+            OUTER APPLY
+            (
+                SELECT TOP 1
+                    t.Id,
+                    t.FechaFin,
+                    t.BadgeTexto,
+                    t.BadgeColor
 
-            _logger.LogInformation(
-                "Se obtuvieron {Cantidad} publicaciones activas para slug: {Slug}",
-                publicaciones.Count,
-                slug);
+                FROM dbo.PublicacionesTemporada t
+
+                WHERE t.IdPublicacion =
+                    p.Id
+
+                  AND t.Estado =
+                    'Activo'
+
+                  AND GETDATE()
+                      BETWEEN
+                          t.FechaInicio
+                          AND t.FechaFin
+
+                ORDER BY
+                    t.FechaFin DESC,
+                    t.Id DESC
+            ) pt
+
+            WHERE v.Slug =
+                @Slug
+
+              AND v.EsPerfilPublico = 1
+
+              AND v.EsPremium = 1
+
+              AND u.Estado =
+                'Activo'
+
+              AND p.Estado =
+                'Activo'
+
+              AND p.CanalPublicacion =
+                'VITRINA'
+
+            ORDER BY
+
+                CASE
+                    WHEN pt.Id IS NOT NULL
+                        THEN 0
+                    ELSE 1
+                END,
+
+                CASE
+                    WHEN d.Id IS NOT NULL
+                        THEN 0
+                    ELSE 1
+                END,
+
+                p.Fecha DESC;";
+
+            var publicaciones =
+                (
+                    await conn
+                        .QueryAsync<
+                            PerfilPublicoPublicacionDto
+                        >(
+                            sql,
+                            new
+                            {
+                                Slug =
+                                    slug
+                            })
+                )
+                .ToList();
+
+            await CargarDetallesPublicaciones(
+                conn,
+                publicaciones);
 
             return publicaciones;
         }
@@ -174,7 +312,214 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                 "Error al obtener publicaciones activas del perfil público. Slug: {Slug}",
                 slug);
 
-            throw new RepositoryException("Error al obtener las publicaciones del perfil público.", ex);
+            throw new RepositoryException(
+                "Error al obtener las publicaciones del perfil público.",
+                ex);
+        }
+    }
+
+
+    public async Task<List<PerfilPublicoPublicacionDto>>
+    ObtenerPublicacionesVitrinaPorUsuario(
+        int idUsuario)
+    {
+        using var conn =
+            _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+            SELECT
+                p.Id,
+                p.Titulo,
+                p.Descripcion,
+                p.Precio,
+                p.Moneda,
+                p.Categoria,
+                p.Ubicacion,
+                p.Latitud,
+                p.Longitud,
+                p.GoogleMapsUrl,
+                p.Estado,
+                p.CanalPublicacion,
+                p.MostrarBotonesCompra,
+                p.PermiteDelivery,
+
+                img.Url
+                    AS ImagenPrincipal,
+
+                img.ThumbUrl,
+
+                CAST(
+                    CASE
+                        WHEN d.Id IS NOT NULL
+                            THEN 1
+                        ELSE 0
+                    END
+                    AS bit
+                ) AS EsDestacada,
+
+                d.FechaFin
+                    AS FechaFinDestacado,
+
+                CAST(
+                    CASE
+                        WHEN pt.Id IS NOT NULL
+                            THEN 1
+                        ELSE 0
+                    END
+                    AS bit
+                ) AS EsTemporada,
+
+                pt.FechaFin
+                    AS FechaFinTemporada,
+
+                pt.BadgeTexto,
+                pt.BadgeColor,
+
+                (
+                    SELECT COUNT(1)
+                    FROM dbo.PublicacionFavoritos pf
+                    WHERE pf.IdPublicacion = p.Id
+                      AND pf.Activo = 1
+                ) AS CantidadFavoritos,
+
+                (
+                    SELECT COUNT(1)
+                    FROM dbo.PublicacionEventos pe
+                    WHERE pe.IdPublicacion = p.Id
+                      AND pe.TipoEvento = 'VIEW_DETAIL'
+                ) AS CantidadVistas,
+
+                (
+                    SELECT COUNT(1)
+                    FROM dbo.PublicacionEventos pe
+                    WHERE pe.IdPublicacion = p.Id
+                      AND pe.TipoEvento = 'CLICK_WHATSAPP'
+                ) AS CantidadClicksWhatsapp
+
+            FROM dbo.Publicaciones p
+
+            OUTER APPLY
+            (
+                SELECT TOP 1
+                    i.Url,
+                    i.ThumbUrl
+
+                FROM dbo.ImagenesPublicacion i
+
+                WHERE i.IdPublicacion =
+                    p.Id
+
+                ORDER BY i.Id ASC
+            ) img
+
+            OUTER APPLY
+            (
+                SELECT TOP 1
+                    pd.Id,
+                    pd.FechaFin
+
+                FROM dbo.PublicacionesDestacadas pd
+
+                WHERE pd.IdPublicacion =
+                    p.Id
+
+                  AND pd.Estado =
+                    'Activo'
+
+                  AND GETDATE()
+                      BETWEEN
+                          pd.FechaInicio
+                          AND pd.FechaFin
+
+                ORDER BY
+                    pd.FechaFin DESC,
+                    pd.Id DESC
+            ) d
+
+            OUTER APPLY
+            (
+                SELECT TOP 1
+                    t.Id,
+                    t.FechaFin,
+                    t.BadgeTexto,
+                    t.BadgeColor
+
+                FROM dbo.PublicacionesTemporada t
+
+                WHERE t.IdPublicacion =
+                    p.Id
+
+                  AND t.Estado =
+                    'Activo'
+
+                  AND GETDATE()
+                      BETWEEN
+                          t.FechaInicio
+                          AND t.FechaFin
+
+                ORDER BY
+                    t.FechaFin DESC,
+                    t.Id DESC
+            ) pt
+
+            WHERE p.IdUsuario =
+                @IdUsuario
+
+              AND p.CanalPublicacion =
+                'VITRINA'
+
+              AND p.Estado =
+                'Activo'
+
+            ORDER BY
+
+                CASE
+                    WHEN pt.Id IS NOT NULL
+                        THEN 0
+                    ELSE 1
+                END,
+
+                CASE
+                    WHEN d.Id IS NOT NULL
+                        THEN 0
+                    ELSE 1
+                END,
+
+                p.Fecha DESC;";
+
+            var publicaciones =
+                (
+                    await conn
+                        .QueryAsync<
+                            PerfilPublicoPublicacionDto
+                        >(
+                            sql,
+                            new
+                            {
+                                IdUsuario =
+                                    idUsuario
+                            })
+                )
+                .ToList();
+
+            await CargarDetallesPublicaciones(
+                conn,
+                publicaciones);
+
+            return publicaciones;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al obtener publicaciones de vitrina del usuario {IdUsuario}",
+                idUsuario);
+
+            throw new RepositoryException(
+                "Error al obtener las publicaciones de la vitrina.",
+                ex);
         }
     }
 
@@ -400,6 +745,139 @@ public class PerfilVendedorRepository : IPerfilVendedorRepository
                 idUsuario);
 
             throw new RepositoryException("Error al actualizar el perfil vendedor.", ex);
+        }
+    }
+
+
+    private static async Task
+        CargarDetallesPublicaciones(
+            IDbConnection conn,
+            List<PerfilPublicoPublicacionDto>
+                publicaciones)
+    {
+        if (publicaciones.Count == 0)
+            return;
+
+        var ids =
+            publicaciones
+                .Select(x => x.Id)
+                .Distinct()
+                .ToArray();
+
+        var imagenes =
+            (
+                await conn.QueryAsync<
+                    (
+                        int IdPublicacion,
+                        string Url
+                    )
+                >(
+                    @"
+                SELECT
+                    IdPublicacion,
+                    Url
+                FROM dbo.ImagenesPublicacion
+                WHERE IdPublicacion IN @Ids
+                ORDER BY Id ASC;",
+                    new
+                    {
+                        Ids = ids
+                    })
+            )
+            .ToList();
+
+        var planes =
+            (
+                await conn.QueryAsync<
+                    (
+                        int IdPublicacion,
+                        int Cuotas,
+                        decimal ValorCuota
+                    )
+                >(
+                    @"
+                SELECT
+                    IdPublicacion,
+                    Cuotas,
+                    ValorCuota
+                FROM dbo.PlanesCredito
+                WHERE IdPublicacion IN @Ids
+                ORDER BY Id ASC;",
+                    new
+                    {
+                        Ids = ids
+                    })
+            )
+            .ToList();
+
+        var imagenesPorPublicacion =
+            imagenes
+                .GroupBy(
+                    x => x.IdPublicacion)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g
+                        .Select(x => x.Url)
+                        .ToList());
+
+        var planesPorPublicacion =
+            planes
+                .GroupBy(
+                    x => x.IdPublicacion)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g
+                        .Select(
+                            x =>
+                                new PlanOpcionDto
+                                {
+                                    Cuotas =
+                                        x.Cuotas,
+
+                                    ValorCuota =
+                                        x.ValorCuota
+                                })
+                        .ToList());
+
+        foreach (
+            var publicacion
+            in publicaciones)
+        {
+            publicacion.Imagenes =
+                imagenesPorPublicacion
+                    .TryGetValue(
+                        publicacion.Id,
+                        out var imagenesPublicacion)
+
+                    ? imagenesPublicacion
+
+                    : new List<string>();
+
+            if (
+                string.IsNullOrWhiteSpace(
+                    publicacion.ImagenPrincipal)
+                &&
+                publicacion.Imagenes.Count > 0)
+            {
+                publicacion.ImagenPrincipal =
+                    publicacion.Imagenes[0];
+            }
+
+            publicacion.PlanCredito =
+                planesPorPublicacion
+                    .TryGetValue(
+                        publicacion.Id,
+                        out var opciones)
+                &&
+                opciones.Count > 0
+
+                    ? new PlanCreditoDto
+                    {
+                        Opciones =
+                            opciones
+                    }
+
+                    : null;
         }
     }
 }

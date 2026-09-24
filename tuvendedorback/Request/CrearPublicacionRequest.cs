@@ -20,6 +20,16 @@ public class CrearPublicacionRequest
     public string Categoria { get; set; } =
         string.Empty;
 
+    /*
+     * MARKETPLACE o VITRINA.
+     *
+     * Por ahora se deja nullable para mantener compatibilidad
+     * con el front actual.
+     *
+     * Si no viene informado, el backend utilizará MARKETPLACE.
+     */
+    public string? CanalPublicacion { get; set; }
+
     public string? Ubicacion { get; set; } =
         string.Empty;
 
@@ -57,7 +67,8 @@ public class CrearPublicacionRequestValidator
     public CrearPublicacionRequestValidator(
         IOptions<UploadOptions> uploadOptions)
     {
-        var upload = uploadOptions.Value;
+        var upload =
+            uploadOptions.Value;
 
         RuleFor(x => x.Titulo)
             .NotEmpty()
@@ -73,6 +84,20 @@ public class CrearPublicacionRequestValidator
         RuleFor(x => x.Categoria)
             .NotEmpty()
             .MaximumLength(250);
+
+        RuleFor(x => x.CanalPublicacion)
+            .Must(canal =>
+                string.IsNullOrWhiteSpace(canal)
+                ||
+                canal.Equals(
+                    "MARKETPLACE",
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                canal.Equals(
+                    "VITRINA",
+                    StringComparison.OrdinalIgnoreCase))
+            .WithMessage(
+                "CanalPublicacion debe ser MARKETPLACE o VITRINA.");
 
         RuleFor(x => x.Ubicacion)
             .MaximumLength(500)
@@ -90,7 +115,6 @@ public class CrearPublicacionRequestValidator
             .NotEmpty()
             .WithMessage(
                 "Debe adjuntar al menos una imagen.")
-
             .Must(imagenes =>
                 imagenes.Count <=
                 upload.MaxFiles)
