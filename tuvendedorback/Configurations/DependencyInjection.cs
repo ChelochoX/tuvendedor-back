@@ -34,6 +34,11 @@ public static class DependencyInjection
         // ERP
         services.AddScoped<IERPClienteRepository, ERPClienteRepository>();
 
+        //IA
+        services.AddScoped<IMotoOfertaRepository, MotoOfertaRepository>();
+        services.AddScoped<IIAConversacionRepository,IAConversacionRepository>();
+
+
         return services;
     }
 
@@ -65,6 +70,12 @@ public static class DependencyInjection
 
         // ERP
         services.AddScoped<IERPClienteService, ERPClienteService>();
+
+        //IA
+        services.AddScoped<IMotoOfertaService, MotoOfertaService>();
+        services.AddScoped<IMotoConversacionService,MotoConversacionService>();
+        services.AddHttpClient<IOllamaService,OllamaService>();
+
 
         return services;
     }
