@@ -20,32 +20,95 @@ public class SolicitudVisitaRepository : ISolicitudVisitaRepository
         _logger = logger;
     }
 
-    public async Task<PublicacionParaVisitaDto?> ObtenerPublicacionParaVisita(int idPublicacion)
+    public async Task<PublicacionParaVisitaDto?>
+    ObtenerPublicacionParaVisita(
+        int idPublicacion)
     {
-        using var conn = _conexion.CreateSqlConnection();
+        using var conn =
+            _conexion.CreateSqlConnection();
 
         try
         {
             const string sql = @"
-                SELECT
-                    p.Id                    AS IdPublicacion,
-                    p.Titulo                AS Titulo,
-                    p.Ubicacion             AS Ubicacion,
-                    p.IdUsuario             AS IdUsuarioVendedor,
-                    COALESCE(v.NombreNegocio, u.NombreUsuario) AS NombreVendedor,
-                    COALESCE(NULLIF(v.Whatsapp, ''), u.Telefono) AS WhatsappVendedor
-                FROM dbo.Publicaciones p
-                INNER JOIN dbo.Usuarios u
-                    ON u.Id = p.IdUsuario
-                LEFT JOIN dbo.Vendedores v
-                    ON v.IdUsuario = p.IdUsuario
-                WHERE p.Id = @IdPublicacion
-                  AND p.Estado = 'Activo'
-                  AND u.Estado = 'Activo';";
+            SELECT
+                p.Id
+                    AS IdPublicacion,
 
-            return await conn.QueryFirstOrDefaultAsync<PublicacionParaVisitaDto>(
-                sql,
-                new { IdPublicacion = idPublicacion });
+                p.Titulo
+                    AS Titulo,
+
+                p.Ubicacion
+                    AS Ubicacion,
+
+                p.IdUsuario
+                    AS IdUsuarioVendedor,
+
+                COALESCE(
+                    v.NombreNegocio,
+                    u.NombreUsuario
+                )
+                    AS NombreVendedor,
+
+                COALESCE(
+                    NULLIF(v.Whatsapp, ''),
+                    u.Telefono
+                )
+                    AS WhatsappVendedor
+
+            FROM dbo.Publicaciones p
+
+            INNER JOIN dbo.Usuarios u
+                ON u.Id = p.IdUsuario
+
+            LEFT JOIN dbo.Vendedores v
+                ON v.IdUsuario = p.IdUsuario
+
+            WHERE p.Id =
+                @IdPublicacion
+
+              AND p.Estado =
+                'Activo'
+
+              AND u.Estado =
+                'Activo'
+
+              AND
+              (
+                    p.CanalPublicacion =
+                        'MARKETPLACE'
+
+                    OR
+
+                    (
+                        p.CanalPublicacion =
+                            'VITRINA'
+
+                        AND v.Id
+                            IS NOT NULL
+
+                        AND v.EsPremium = 1
+
+                        AND v.EsPerfilPublico = 1
+
+                        AND NULLIF(
+                            LTRIM(
+                                RTRIM(v.Slug)
+                            ),
+                            ''
+                        ) IS NOT NULL
+                    )
+              );";
+
+            return await conn
+                .QueryFirstOrDefaultAsync<
+                    PublicacionParaVisitaDto
+                >(
+                    sql,
+                    new
+                    {
+                        IdPublicacion =
+                            idPublicacion
+                    });
         }
         catch (Exception ex)
         {
@@ -54,7 +117,9 @@ public class SolicitudVisitaRepository : ISolicitudVisitaRepository
                 "Error al obtener publicación para solicitud de visita. IdPublicacion={IdPublicacion}",
                 idPublicacion);
 
-            throw new RepositoryException("Error al obtener la publicación para la visita.", ex);
+            throw new RepositoryException(
+                "Error al obtener la publicación para la visita.",
+                ex);
         }
     }
 

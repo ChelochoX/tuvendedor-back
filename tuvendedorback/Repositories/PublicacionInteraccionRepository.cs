@@ -20,21 +20,63 @@ public class PublicacionInteraccionRepository : IPublicacionInteraccionRepositor
         _logger = logger;
     }
 
-    public async Task<bool> ExistePublicacionActiva(int idPublicacion)
+    public async Task<bool> ExistePublicacionActiva(
+    int idPublicacion)
     {
-        using var conn = _conexion.CreateSqlConnection();
+        using var conn =
+            _conexion.CreateSqlConnection();
 
         try
         {
             const string sql = @"
-                SELECT COUNT(1)
-                FROM Publicaciones
-                WHERE Id = @IdPublicacion
-                  AND Estado = 'Activo';";
+            SELECT COUNT(1)
 
-            var count = await conn.ExecuteScalarAsync<int>(
-                sql,
-                new { IdPublicacion = idPublicacion });
+            FROM dbo.Publicaciones p
+
+            INNER JOIN dbo.Usuarios u
+                ON u.Id = p.IdUsuario
+
+            LEFT JOIN dbo.Vendedores v
+                ON v.IdUsuario = p.IdUsuario
+
+            WHERE p.Id = @IdPublicacion
+
+              AND p.Estado = 'Activo'
+
+              AND u.Estado = 'Activo'
+
+              AND
+              (
+                    p.CanalPublicacion = 'MARKETPLACE'
+
+                    OR
+
+                    (
+                        p.CanalPublicacion = 'VITRINA'
+
+                        AND v.Id IS NOT NULL
+
+                        AND v.EsPremium = 1
+
+                        AND v.EsPerfilPublico = 1
+
+                        AND NULLIF(
+                            LTRIM(
+                                RTRIM(v.Slug)
+                            ),
+                            ''
+                        ) IS NOT NULL
+                    )
+              );";
+
+            var count =
+                await conn.ExecuteScalarAsync<int>(
+                    sql,
+                    new
+                    {
+                        IdPublicacion =
+                            idPublicacion
+                    });
 
             return count > 0;
         }
@@ -42,10 +84,12 @@ public class PublicacionInteraccionRepository : IPublicacionInteraccionRepositor
         {
             _logger.LogError(
                 ex,
-                "Error al validar existencia de publicación {IdPublicacion}",
+                "Error al validar existencia/visibilidad de publicación {IdPublicacion}",
                 idPublicacion);
 
-            throw new RepositoryException("Error al validar la publicación.", ex);
+            throw new RepositoryException(
+                "Error al validar la publicación.",
+                ex);
         }
     }
 
