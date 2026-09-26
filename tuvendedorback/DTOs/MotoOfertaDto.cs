@@ -2,7 +2,7 @@
 
 public class MotoOfertaDto
 {
-    public int PublicacionId { get; set; }
+    public int? PublicacionId { get; set; }
 
     public MotoModeloOfertaDto Modelo { get; set; } = new();
 
@@ -88,7 +88,7 @@ public class MotoPlanOfertaDto
 
 public class MotoOfertaDataDto
 {
-    public int PublicacionId { get; set; }
+    public int? PublicacionId { get; set; }
 
     public int ModeloId { get; set; }
 

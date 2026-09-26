@@ -37,6 +37,7 @@ public static class DependencyInjection
         //IA
         services.AddScoped<IMotoOfertaRepository, MotoOfertaRepository>();
         services.AddScoped<IIAConversacionRepository,IAConversacionRepository>();
+        services.AddScoped<ISolicitudMotoRepository, SolicitudMotoRepository>();
 
 
         return services;
@@ -75,6 +76,7 @@ public static class DependencyInjection
         services.AddScoped<IMotoOfertaService, MotoOfertaService>();
         services.AddScoped<IMotoConversacionService,MotoConversacionService>();
         services.AddHttpClient<IOllamaService,OllamaService>();
+        services.AddHttpClient<ISolicitudMotoService, SolicitudMotoService>();
 
 
         return services;

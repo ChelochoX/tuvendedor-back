@@ -18,6 +18,10 @@ public class MotoOfertaService : IMotoOfertaService
     }
 
 
+    // =========================================================
+    // OFERTA POR PUBLICACION
+    // =========================================================
+
     public async Task<MotoOfertaDto> ObtenerOfertaPorPublicacion(
         int idPublicacion)
     {
@@ -27,41 +31,81 @@ public class MotoOfertaService : IMotoOfertaService
                 "El identificador de la publicación no es válido.");
         }
 
-
         var fechaActual =
             DateTime.Today;
-
 
         var data =
             await _repository.ObtenerOfertaPorPublicacion(
                 idPublicacion,
                 fechaActual);
 
+        if (data == null)
+        {
+            throw new ReglasdeNegocioException(
+                "No se encontró un precio normal activo para el modelo asociado a esta publicación.");
+        }
+
+        return await ConstruirOferta(
+            data);
+    }
+
+
+    // =========================================================
+    // OFERTA POR MODELO
+    //
+    // Esta es la ruta principal para WhatsApp/IA.
+    // La cotización NO depende de que exista publicación.
+    // =========================================================
+
+    public async Task<MotoOfertaDto> ObtenerOfertaPorModelo(
+        int idModeloProducto)
+    {
+        if (idModeloProducto <= 0)
+        {
+            throw new ReglasdeNegocioException(
+                "El identificador del modelo no es válido.");
+        }
+
+        var fechaActual =
+            DateTime.Today;
+
+        var data =
+            await _repository.ObtenerOfertaPorModelo(
+                idModeloProducto,
+                fechaActual);
 
         if (data == null)
         {
             throw new ReglasdeNegocioException(
-                "No se encontró una oferta comercial activa para esta publicación.");
+                "No se encontró un precio normal activo para este modelo.");
         }
 
+        return await ConstruirOferta(
+            data);
+    }
 
+
+    // =========================================================
+    // CONSTRUIR OFERTA
+    //
+    // IMPORTANTE:
+    // - Un modelo puede tener precio normal SIN promo.
+    // - La promo es opcional.
+    // - Un modelo puede tener precio contado aunque no tenga
+    //   ningún plan de financiación cargado.
+    // =========================================================
+
+    private async Task<MotoOfertaDto> ConstruirOferta(
+        MotoOfertaDataDto data)
+    {
         var planes =
             await _repository.ObtenerPlanesPorListaPrecio(
                 data.IdListaCredito);
-
-
-        if (planes.Count == 0)
-        {
-            throw new ReglasdeNegocioException(
-                "No se encontraron planes de financiación activos para este modelo.");
-        }
-
 
         return new MotoOfertaDto
         {
             PublicacionId =
                 data.PublicacionId,
-
 
             Modelo =
                 new MotoModeloOfertaDto
@@ -82,7 +126,6 @@ public class MotoOfertaService : IMotoOfertaService
                         data.Cilindrada
                 },
 
-
             Contado =
                 new MotoContadoOfertaDto
                 {
@@ -93,7 +136,6 @@ public class MotoOfertaService : IMotoOfertaService
                         FormatearGuaranies(
                             data.PrecioPublico),
 
-
                     PorcentajeDescuento =
                         data.PorcentajeDescuento,
 
@@ -103,7 +145,6 @@ public class MotoOfertaService : IMotoOfertaService
                                 data.PorcentajeDescuento.Value)
                             : null,
 
-
                     PrecioFinal =
                         data.PrecioContadoFinal,
 
@@ -111,9 +152,9 @@ public class MotoOfertaService : IMotoOfertaService
                         data.PrecioContadoFinal.HasValue
                             ? FormatearGuaranies(
                                 data.PrecioContadoFinal.Value)
-                            : null
+                            : FormatearGuaranies(
+                                data.PrecioPublico)
                 },
-
 
             Credito =
                 new MotoCreditoOfertaDto
@@ -124,11 +165,6 @@ public class MotoOfertaService : IMotoOfertaService
                     Tipo =
                         data.TipoCredito,
 
-
-                    /*
-                     * Formato visible:
-                     * dd/MM/yyyy
-                     */
                     FechaDesde =
                         FechaHelper.Formatear(
                             data.FechaDesde),
@@ -136,7 +172,6 @@ public class MotoOfertaService : IMotoOfertaService
                     FechaHasta =
                         FechaHelper.Formatear(
                             data.FechaHasta),
-
 
                     Planes =
                         planes

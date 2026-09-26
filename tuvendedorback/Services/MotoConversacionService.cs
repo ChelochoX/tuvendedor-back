@@ -28,6 +28,9 @@ public class MotoConversacionService
     private readonly IOllamaService
         _ollamaService;
 
+    private readonly ISolicitudMotoService
+        _solicitudMotoService;
+
     private readonly ILogger<MotoConversacionService>
         _logger;
 
@@ -36,6 +39,7 @@ public class MotoConversacionService
         IIAConversacionRepository repository,
         IMotoOfertaService motoOfertaService,
         IOllamaService ollamaService,
+        ISolicitudMotoService solicitudMotoService,
         ILogger<MotoConversacionService> logger)
     {
         _repository =
@@ -46,6 +50,9 @@ public class MotoConversacionService
 
         _ollamaService =
             ollamaService;
+
+        _solicitudMotoService =
+            solicitudMotoService;
 
         _logger =
             logger;
@@ -189,7 +196,7 @@ public class MotoConversacionService
             .RegistrarMensaje(
                 idConversacion,
                 "CLIENTE",
-                request.Mensaje);
+                MensajeParaHistorial(request));
 
         // =====================================================
         // 4. HUMANO SOLO SI EL CLIENTE LO PIDE EXPLICITAMENTE
@@ -226,7 +233,45 @@ public class MotoConversacionService
         }
 
         // =====================================================
-        // 5. PUBLICACION EXPLICITA
+        // 5. SOLICITUD DE COMPRA/CREDITO ACTIVA
+        //
+        // Si ya estamos recopilando datos o documentos,
+        // esa máquina de estados tiene prioridad sobre la venta.
+        // =====================================================
+
+        var solicitudActiva =
+            await _solicitudMotoService
+                .ObtenerActiva(
+                    idConversacion);
+
+        if (solicitudActiva is not null)
+        {
+            var proceso =
+                await _solicitudMotoService
+                    .ProcesarActiva(
+                        solicitudActiva,
+                        request,
+                        cancellationToken);
+
+            await _repository
+                .RegistrarMensaje(
+                    idConversacion,
+                    "IA",
+                    proceso.Respuesta);
+
+            return new MotoConversacionResponseDto
+            {
+                IdConversacion = idConversacion,
+                IdPublicacion = solicitudActiva.IdPublicacion,
+                Marca = null,
+                Modelo = null,
+                Respuesta = proceso.Respuesta,
+                RequierePublicacion = false
+            };
+        }
+
+        // =====================================================
+        // 6. PUBLICACION EXPLICITA
         // =====================================================
 
         int? idPublicacion =
@@ -241,6 +286,54 @@ public class MotoConversacionService
 
         if (idPublicacion.HasValue)
         {
+            var tipoOperacionPublicacion =
+                DetectarInicioOperacion(
+                    request.Mensaje);
+
+            if (
+                !string.IsNullOrWhiteSpace(
+                    tipoOperacionPublicacion)
+            )
+            {
+                var ofertaPublicacion =
+                    await _motoOfertaService
+                        .ObtenerOfertaPorPublicacion(
+                            idPublicacion.Value);
+
+                await _repository
+                    .ActualizarContexto(
+                        idConversacion,
+                        idPublicacion.Value,
+                        ofertaPublicacion.Modelo.Id,
+                        null);
+
+                var procesoPublicacion =
+                    await _solicitudMotoService
+                        .Iniciar(
+                            idConversacion,
+                            ofertaPublicacion.Modelo.Id,
+                            idPublicacion.Value,
+                            identificador,
+                            tipoOperacionPublicacion,
+                            cancellationToken);
+
+                await _repository
+                    .RegistrarMensaje(
+                        idConversacion,
+                        "IA",
+                        procesoPublicacion.Respuesta);
+
+                return new MotoConversacionResponseDto
+                {
+                    IdConversacion = idConversacion,
+                    IdPublicacion = idPublicacion.Value,
+                    Marca = ofertaPublicacion.Modelo.Marca,
+                    Modelo = $"{ofertaPublicacion.Modelo.Marca} {ofertaPublicacion.Modelo.Nombre}",
+                    Respuesta = procesoPublicacion.Respuesta,
+                    RequierePublicacion = false
+                };
+            }
+
             return await ProcesarPorPublicacion(
                 idConversacion,
                 idPublicacion.Value,
@@ -268,6 +361,96 @@ public class MotoConversacionService
             ResolverModelosDesdeTexto(
                 request.Mensaje,
                 modelos);
+
+        var tipoOperacionSolicitada =
+            DetectarInicioOperacion(
+                request.Mensaje);
+
+        if (
+            !string.IsNullOrWhiteSpace(
+                tipoOperacionSolicitada)
+        )
+        {
+            MotoModeloCandidatoDto? modeloSolicitud =
+                coincidencias.Count == 1
+                    ? coincidencias[0]
+                    : null;
+
+            if (modeloSolicitud is null)
+            {
+                var idModeloContexto =
+                    await _repository
+                        .ObtenerIdModeloActual(
+                            idConversacion);
+
+                if (idModeloContexto.HasValue)
+                {
+                    modeloSolicitud =
+                        modelos.FirstOrDefault(
+                            x =>
+                                x.IdModeloProducto
+                                ==
+                                idModeloContexto.Value);
+                }
+            }
+
+            if (modeloSolicitud is null)
+            {
+                var respuestaElegirModelo =
+                    ConstruirRespuestaGuiada(
+                        modelos,
+                        $"Claro 😊 Para iniciar la compra {tipoOperacionSolicitada.ToLowerInvariant()}, primero decime qué modelo querés:");
+
+                await _repository
+                    .RegistrarMensaje(
+                        idConversacion,
+                        "IA",
+                        respuestaElegirModelo);
+
+                return new MotoConversacionResponseDto
+                {
+                    IdConversacion = idConversacion,
+                    IdPublicacion = null,
+                    Marca = null,
+                    Modelo = null,
+                    Respuesta = respuestaElegirModelo,
+                    RequierePublicacion = false
+                };
+            }
+
+            await _repository
+                .ActualizarContexto(
+                    idConversacion,
+                    modeloSolicitud.IdPublicacion,
+                    modeloSolicitud.IdModeloProducto,
+                    null);
+
+            var proceso =
+                await _solicitudMotoService
+                    .Iniciar(
+                        idConversacion,
+                        modeloSolicitud.IdModeloProducto,
+                        modeloSolicitud.IdPublicacion,
+                        identificador,
+                        tipoOperacionSolicitada,
+                        cancellationToken);
+
+            await _repository
+                .RegistrarMensaje(
+                    idConversacion,
+                    "IA",
+                    proceso.Respuesta);
+
+            return new MotoConversacionResponseDto
+            {
+                IdConversacion = idConversacion,
+                IdPublicacion = modeloSolicitud.IdPublicacion,
+                Marca = modeloSolicitud.Marca,
+                Modelo = $"{modeloSolicitud.Marca} {modeloSolicitud.Modelo}",
+                Respuesta = proceso.Respuesta,
+                RequierePublicacion = false
+            };
+        }
 
         if (
             coincidencias.Count == 1
@@ -365,30 +548,21 @@ public class MotoConversacionService
                 request.Mensaje)
         )
         {
-            var idModeloActualCatalogo =
-                await _repository
-                    .ObtenerIdModeloActual(
-                        idConversacion);
-
-            MotoModeloCandidatoDto? modeloActualCatalogo =
-                null;
-
-            if (
-                idModeloActualCatalogo.HasValue
-            )
-            {
-                modeloActualCatalogo =
-                    modelos.FirstOrDefault(
-                        x =>
-                            x.IdModeloProducto
-                            ==
-                            idModeloActualCatalogo.Value);
-            }
+            /*
+             * CONSULTA DE CATALOGO:
+             *
+             * SIEMPRE mostramos TODOS los modelos activos
+             * recuperados desde BBDD.
+             *
+             * No filtramos por el modelo que quedó en contexto.
+             * No excluimos el modelo actual.
+             * No dejamos que Qwen invente opciones.
+             */
 
             var respuestaCatalogo =
                 ConstruirRespuestaOtrosModelos(
                     modelos,
-                    modeloActualCatalogo);
+                    null);
 
             await _repository
                 .RegistrarMensaje(
@@ -399,12 +573,9 @@ public class MotoConversacionService
             return new MotoConversacionResponseDto
             {
                 IdConversacion = idConversacion,
-                IdPublicacion = modeloActualCatalogo?.IdPublicacion,
-                Marca = modeloActualCatalogo?.Marca,
-                Modelo =
-                    modeloActualCatalogo is null
-                        ? null
-                        : $"{modeloActualCatalogo.Marca} {modeloActualCatalogo.Modelo}",
+                IdPublicacion = null,
+                Marca = null,
+                Modelo = null,
                 Respuesta = respuestaCatalogo,
                 RequierePublicacion = false
             };
@@ -630,52 +801,54 @@ public class MotoConversacionService
             MotoModeloCandidatoDto modelo,
             CancellationToken cancellationToken)
     {
-        var idPublicacion =
-            modelo.IdPublicacion;
-
-
         /*
-         * Puede ocurrir que el DTO haya sido recuperado
-         * sin publicación.
+         * IMPORTANTE:
          *
-         * Hacemos una segunda búsqueda por seguridad.
+         * Para cotizar por WhatsApp NO exigimos una publicación.
+         * El precio comercial pertenece al MODELO y se obtiene
+         * directamente desde ListasPreciosProducto.
+         *
+         * La promo es opcional.
+         * Si no existe promo vigente, MotoOfertaService usa
+         * automáticamente la lista NORMAL.
          */
-        if (!idPublicacion.HasValue)
+        MotoOfertaDto oferta;
+
+        try
         {
-            idPublicacion =
-                await _repository
-                    .ObtenerPublicacionActivaPorModelo(
+            oferta =
+                await _motoOfertaService
+                    .ObtenerOfertaPorModelo(
                         modelo.IdModeloProducto);
         }
-
-
-        /*
-         * Por ahora nuestra oferta comercial completa
-         * se construye a partir de una publicación
-         * asociada al modelo.
-         *
-         * No inventamos precios si no existe.
-         */
-        if (!idPublicacion.HasValue)
+        catch (ReglasdeNegocioException)
         {
+            /*
+             * Este sí es un caso real para intervención humana:
+             * el modelo existe pero no tiene precio NORMAL activo.
+             *
+             * No inventamos un monto.
+             */
             await _repository
                 .ActualizarContexto(
                     idConversacion,
-                    null,
+                    modelo.IdPublicacion,
                     modelo.IdModeloProducto,
                     null);
 
+            await _repository
+                .CambiarModoConversacion(
+                    idConversacion,
+                    "HUMANO");
 
-            var respuesta =
-                $"Encontré la {modelo.Marca} {modelo.Modelo} 😊, pero actualmente no tengo una oferta comercial activa asociada a ese modelo. ¿Te interesa consultar otro modelo?";
-
+            var respuestaSinPrecio =
+                $"Encontré la {modelo.Marca} {modelo.Modelo} 😊, pero necesito confirmar el precio comercial antes de darte un dato incorrecto. Te paso con uno de nuestros asesores para que te ayude.";
 
             await _repository
                 .RegistrarMensaje(
                     idConversacion,
                     "IA",
-                    respuesta);
-
+                    respuestaSinPrecio);
 
             return new MotoConversacionResponseDto
             {
@@ -683,7 +856,7 @@ public class MotoConversacionService
                     idConversacion,
 
                 IdPublicacion =
-                    null,
+                    modelo.IdPublicacion,
 
                 Marca =
                     modelo.Marca,
@@ -692,23 +865,16 @@ public class MotoConversacionService
                     $"{modelo.Marca} {modelo.Modelo}",
 
                 Respuesta =
-                    respuesta,
+                    respuestaSinPrecio,
 
                 RequierePublicacion =
                     false
             };
         }
 
-
-        var oferta =
-            await _motoOfertaService
-                .ObtenerOfertaPorPublicacion(
-                    idPublicacion.Value);
-
-
         return await ProcesarOferta(
             idConversacion,
-            idPublicacion.Value,
+            oferta.PublicacionId,
             modelo.IdModeloProducto,
             oferta,
             cancellationToken);
@@ -722,7 +888,7 @@ public class MotoConversacionService
     private async Task<MotoConversacionResponseDto>
         ProcesarOferta(
             int idConversacion,
-            int idPublicacion,
+            int? idPublicacion,
             int idModeloProducto,
             MotoOfertaDto oferta,
             CancellationToken cancellationToken)
@@ -1612,6 +1778,16 @@ public class MotoConversacionService
                 }
             }
         }
+        else
+        {
+            sb.AppendLine();
+
+            sb.AppendLine(
+                "FINANCIACION:");
+
+            sb.AppendLine(
+                "No hay un plan de financiación activo cargado para este modelo.");
+        }
 
 
         // =========================================================
@@ -1658,7 +1834,11 @@ public class MotoConversacionService
 
 
         sb.AppendLine(
-            "- Si pregunta por crédito, respondé únicamente el plan disponible.");
+            "- Si pregunta por crédito y no hay un plan activo cargado, decilo claramente y no inventes cuotas.");
+
+
+        sb.AppendLine(
+            "- Si no hay financiación cargada, igualmente podés informar el precio final contado disponible.");
 
 
         sb.AppendLine(
@@ -2111,9 +2291,23 @@ public class MotoConversacionService
     // =========================================================
 
     private static string ConstruirRespuestaOtrosModelos(
-     IReadOnlyList<MotoModeloCandidatoDto> modelos,
-     MotoModeloCandidatoDto? modeloActual)
+        IReadOnlyList<MotoModeloCandidatoDto> modelos,
+        MotoModeloCandidatoDto? modeloActual)
     {
+        /*
+         * CATALOGO COMPLETO DESDE BBDD.
+         *
+         * IMPORTANTE:
+         * - Se muestran TODOS los modelos activos.
+         * - No se excluye el modelo actual.
+         * - No se depende de publicación.
+         * - No se depende de promo.
+         * - No se inventa ningún nombre.
+         *
+         * modeloActual se mantiene en la firma para no romper
+         * otras referencias, pero NO se usa para filtrar.
+         */
+
         var disponibles =
             modelos
                 .DistinctBy(
@@ -2124,7 +2318,6 @@ public class MotoConversacionService
                     x => x.Modelo)
                 .ToList();
 
-
         if (
             disponibles.Count == 0
         )
@@ -2133,148 +2326,45 @@ public class MotoConversacionService
                 "En este momento no tengo modelos cargados para mostrarte 😊.";
         }
 
+        var sb =
+            new StringBuilder();
 
-        // =====================================================
-        // SI YA ESTAMOS HABLANDO DE UNA MARCA
-        // MOSTRAR MODELOS DE ESA MARCA
-        // =====================================================
+        sb.AppendLine(
+            "Claro 😊 Estos son los modelos que tenemos:");
 
-        if (
-            modeloActual is not null
-        )
+        sb.AppendLine();
+
+        var gruposPorMarca =
+            disponibles
+                .GroupBy(
+                    x => x.Marca,
+                    StringComparer.OrdinalIgnoreCase)
+                .OrderBy(
+                    g => g.Key);
+
+        foreach (
+            var grupo
+            in gruposPorMarca)
         {
-            var mismaMarca =
-                disponibles
-                    .Where(
-                        x =>
-                            x.IdMarca
-                            ==
-                            modeloActual.IdMarca
-
-                            &&
-
-                            x.IdModeloProducto
-                            !=
-                            modeloActual.IdModeloProducto)
-                    .OrderBy(
-                        x => x.Modelo)
-                    .ToList();
-
-
-            if (
-                mismaMarca.Count > 0
-            )
-            {
-                var sb =
-                    new StringBuilder();
-
-
-                sb.AppendLine(
-                    $"Claro 😊 De {modeloActual.Marca} también tenemos:");
-
-                sb.AppendLine();
-
-
-                foreach (
-                    var moto
-                    in mismaMarca)
-                {
-                    sb.AppendLine(
-                        $"• {moto.Modelo}");
-                }
-
-
-                sb.AppendLine();
-
-                sb.Append(
-                    "¿Cuál te gustaría ver?");
-
-
-                return sb.ToString();
-            }
-        }
-
-
-        // =====================================================
-        // SI HAY POCOS MODELOS
-        // MOSTRAR DIRECTAMENTE
-        // =====================================================
-
-        if (
-            disponibles.Count <= 5
-        )
-        {
-            var sb =
-                new StringBuilder();
-
-
             sb.AppendLine(
-                "Tenemos estos modelos 😊:");
-
-            sb.AppendLine();
-
+                $"*{grupo.Key}*");
 
             foreach (
                 var moto
-                in disponibles)
+                in grupo.OrderBy(
+                    x => x.Modelo))
             {
                 sb.AppendLine(
-                    $"• {moto.Marca} {moto.Modelo}");
+                    $"• {moto.Modelo}");
             }
 
-
             sb.AppendLine();
-
-            sb.Append(
-                "¿Cuál te gustaría ver?");
-
-
-            return sb.ToString();
         }
 
+        sb.Append(
+            "¿Cuál te interesa?");
 
-        // =====================================================
-        // SI HAY MUCHOS MODELOS
-        // MOSTRAR PRIMERO LAS MARCAS
-        // =====================================================
-
-        var marcas =
-            disponibles
-                .Select(
-                    x => x.Marca)
-                .Distinct(
-                    StringComparer.OrdinalIgnoreCase)
-                .OrderBy(
-                    x => x)
-                .ToList();
-
-
-        var respuesta =
-            new StringBuilder();
-
-
-        respuesta.AppendLine(
-            "Tenemos varias opciones 😊 Trabajamos con:");
-
-        respuesta.AppendLine();
-
-
-        foreach (
-            var marca
-            in marcas)
-        {
-            respuesta.AppendLine(
-                $"• {marca}");
-        }
-
-
-        respuesta.AppendLine();
-
-        respuesta.Append(
-            "¿Qué marca te gustaría ver?");
-
-
-        return respuesta.ToString();
+        return sb.ToString();
     }
 
 
@@ -2313,6 +2403,94 @@ public class MotoConversacionService
         return
             $"{string.Join(", ", valores.Take(valores.Count - 1))} y {valores.Last()}";
     }
+
+    // =========================================================
+    // INICIO DE COMPRA / CREDITO
+    // =========================================================
+
+    private static string? DetectarInicioOperacion(
+        string mensaje)
+    {
+        var texto =
+            NormalizarTexto(
+                mensaje);
+
+        if (
+            string.IsNullOrWhiteSpace(
+                texto)
+        )
+        {
+            return null;
+        }
+
+        if (texto == "CREDITO" || texto == "A CREDITO")
+        {
+            return "CREDITO";
+        }
+
+        if (texto == "CONTADO" || texto == "AL CONTADO")
+        {
+            return "CONTADO";
+        }
+
+        var intencionCompra =
+            texto.Contains("QUIERO")
+            || texto.Contains("COMPRAR")
+            || texto.Contains("SACAR")
+            || texto.Contains("SOLICITAR")
+            || texto.Contains("INICIAR")
+            || texto.Contains("TRAMITAR")
+            || texto.Contains("ADQUIRIR");
+
+        if (
+            intencionCompra
+            &&
+            (
+                texto.Contains("CREDITO")
+                || texto.Contains("FINANCI")
+            )
+        )
+        {
+            return "CREDITO";
+        }
+
+        if (
+            intencionCompra
+            && texto.Contains("CONTADO")
+        )
+        {
+            return "CONTADO";
+        }
+
+        return null;
+    }
+
+
+    private static string MensajeParaHistorial(
+        MotoConversacionRequest request)
+    {
+        if (
+            !string.IsNullOrWhiteSpace(
+                request.Mensaje)
+        )
+        {
+            return request.Mensaje;
+        }
+
+        var tipo =
+            (request.TipoMensaje ?? "TEXTO")
+                .Trim()
+                .ToUpperInvariant();
+
+        return tipo switch
+        {
+            "IMAGEN" => "[IMAGEN RECIBIDA]",
+            "DOCUMENTO" => "[DOCUMENTO RECIBIDO]",
+            "AUDIO" => "[AUDIO RECIBIDO]",
+            _ => "[MENSAJE RECIBIDO]"
+        };
+    }
+
 
     // =========================================================
     // RETOMAR IA DESDE MODO HUMANO

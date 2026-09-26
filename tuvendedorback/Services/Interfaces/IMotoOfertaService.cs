@@ -6,4 +6,7 @@ public interface IMotoOfertaService
 {
     Task<MotoOfertaDto> ObtenerOfertaPorPublicacion(
         int idPublicacion);
+
+    Task<MotoOfertaDto> ObtenerOfertaPorModelo(
+        int idModeloProducto);
 }

@@ -8,6 +8,10 @@ public interface IMotoOfertaRepository
         int idPublicacion,
         DateTime fechaActual);
 
+    Task<MotoOfertaDataDto?> ObtenerOfertaPorModelo(
+        int idModeloProducto,
+        DateTime fechaActual);
+
     Task<List<MotoPlanOfertaDataDto>> ObtenerPlanesPorListaPrecio(
         int idListaPrecio);
 }
@@ -23,7 +27,7 @@ public class MotoOfertaData
 
 public class MotoOfertaCabeceraData
 {
-    public int PublicacionId { get; set; }
+    public int? PublicacionId { get; set; }
 
     public int ModeloId { get; set; }
 
