@@ -287,7 +287,7 @@ VALUES
     @IdPublicacion,
     @IdContacto,
     'EN_PROCESO',
-    'IDENTIDAD',
+    'NOMBRE_COMPLETO',
     GETDATE(),
     GETDATE()
 );";
@@ -333,6 +333,136 @@ VALUES
                 FechaNacimiento = fechaNacimiento.Date
             },
             "guardando fecha de nacimiento");
+
+    public Task GuardarDatosContactoParciales(
+        int idContacto,
+        string? nombreCompleto = null,
+        string? numeroCedula = null,
+        string? ciudad = null,
+        string? barrio = null,
+        string? direccion = null)
+    {
+        string? nombre = null;
+        string? apellido = null;
+
+        if (!string.IsNullOrWhiteSpace(nombreCompleto))
+        {
+            SepararNombre(nombreCompleto, out var nombreSeparado, out var apellidoSeparado);
+            nombre = nombreSeparado;
+            apellido = apellidoSeparado;
+        }
+
+        return Ejecutar(
+            @"UPDATE dbo.Contactos
+              SET Nombre = COALESCE(@Nombre, Nombre),
+                  Apellido = CASE WHEN @ActualizarNombre = 1 THEN @Apellido ELSE Apellido END,
+                  Cedula = COALESCE(@Cedula, Cedula),
+                  Ciudad = COALESCE(@Ciudad, Ciudad),
+                  Barrio = COALESCE(@Barrio, Barrio),
+                  Direccion = COALESCE(@Direccion, Direccion)
+              WHERE Id = @IdContacto;",
+            new
+            {
+                IdContacto = idContacto,
+                Nombre = nombre,
+                Apellido = apellido,
+                ActualizarNombre = !string.IsNullOrWhiteSpace(nombreCompleto),
+                Cedula = string.IsNullOrWhiteSpace(numeroCedula) ? null : numeroCedula.Trim(),
+                Ciudad = string.IsNullOrWhiteSpace(ciudad) ? null : ciudad.Trim(),
+                Barrio = string.IsNullOrWhiteSpace(barrio) ? null : barrio.Trim(),
+                Direccion = string.IsNullOrWhiteSpace(direccion) ? null : direccion.Trim()
+            },
+            "guardando datos parciales del contacto");
+    }
+
+    public async Task GuardarDatosLaboralesParciales(
+        int idSolicitudCredito,
+        string? empresa = null,
+        int? antiguedadMeses = null,
+        bool? aportaIps = null,
+        int? cantidadAportesIps = null,
+        string? direccionEmpresa = null,
+        string? telefonoEmpresa = null,
+        bool? telefonoEsMovil = null,
+        string? nombreJefeEncargado = null)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+IF EXISTS
+(
+    SELECT 1
+    FROM dbo.SolicitudDatosLaborales
+    WHERE IdSolicitud = @IdSolicitud
+)
+BEGIN
+    UPDATE dbo.SolicitudDatosLaborales
+    SET Empresa = COALESCE(@Empresa, Empresa),
+        AntiguedadMeses = COALESCE(@AntiguedadMeses, AntiguedadMeses),
+        AportaIPS = COALESCE(@AportaIPS, AportaIPS),
+        CantidadAportesIPS = COALESCE(@CantidadAportesIPS, CantidadAportesIPS),
+        DireccionEmpresa = COALESCE(@DireccionEmpresa, DireccionEmpresa),
+        TelefonoEmpresa = COALESCE(@TelefonoEmpresa, TelefonoEmpresa),
+        TelefonoEmpresaEsMovil = COALESCE(@TelefonoEmpresaEsMovil, TelefonoEmpresaEsMovil),
+        NombreJefeEncargado = COALESCE(@NombreJefeEncargado, NombreJefeEncargado)
+    WHERE IdSolicitud = @IdSolicitud;
+END
+ELSE
+BEGIN
+    INSERT INTO dbo.SolicitudDatosLaborales
+    (
+        IdSolicitud,
+        Empresa,
+        AntiguedadMeses,
+        AportaIPS,
+        CantidadAportesIPS,
+        Cargo,
+        Salario,
+        TipoPago,
+        DireccionEmpresa,
+        TelefonoEmpresa,
+        TelefonoEmpresaEsMovil,
+        NombreJefeEncargado
+    )
+    VALUES
+    (
+        @IdSolicitud,
+        COALESCE(@Empresa, N''),
+        COALESCE(@AntiguedadMeses, 0),
+        COALESCE(@AportaIPS, 0),
+        COALESCE(@CantidadAportesIPS, 0),
+        N'',
+        0,
+        N'',
+        @DireccionEmpresa,
+        @TelefonoEmpresa,
+        @TelefonoEmpresaEsMovil,
+        @NombreJefeEncargado
+    );
+END;";
+
+            await conn.ExecuteAsync(
+                sql,
+                new
+                {
+                    IdSolicitud = idSolicitudCredito,
+                    Empresa = string.IsNullOrWhiteSpace(empresa) ? null : empresa.Trim(),
+                    AntiguedadMeses = antiguedadMeses,
+                    AportaIPS = aportaIps,
+                    CantidadAportesIPS = cantidadAportesIps,
+                    DireccionEmpresa = string.IsNullOrWhiteSpace(direccionEmpresa) ? null : direccionEmpresa.Trim(),
+                    TelefonoEmpresa = string.IsNullOrWhiteSpace(telefonoEmpresa) ? null : telefonoEmpresa.Trim(),
+                    TelefonoEmpresaEsMovil = telefonoEsMovil,
+                    NombreJefeEncargado = string.IsNullOrWhiteSpace(nombreJefeEncargado) ? null : nombreJefeEncargado.Trim()
+                });
+        }
+        catch (Exception ex)
+        {
+            throw Error(ex, "Error guardando datos laborales parciales.");
+        }
+    }
 
     public Task GuardarIdentidadContacto(
         int idContacto,

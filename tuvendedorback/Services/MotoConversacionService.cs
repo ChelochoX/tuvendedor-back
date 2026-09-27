@@ -1828,6 +1828,18 @@ public class MotoConversacionService
         sb.AppendLine(
             "- Nunca inventes características o cualidades de la motocicleta.");
 
+        sb.AppendLine(
+            "- En Paraguay, para identificar al cliente, usá siempre Cédula de Identidad paraguaya o CI.");
+
+        sb.AppendLine(
+            "- Nunca uses la palabra DNI. Para este flujo el documento es únicamente Cédula de Identidad paraguaya (CI).");
+
+        sb.AppendLine(
+            "- Nunca inventes requisitos ni documentación de crédito. Si el cliente quiere iniciar un crédito, el backend controla el flujo paso a paso.");
+
+        sb.AppendLine(
+            "- Para procesos de validación, hablá solamente de verificación de datos o evaluación de crédito.");
+
 
         sb.AppendLine(
             "- Si el cliente pregunta por contado, respondé únicamente el precio final contado.");
@@ -2423,18 +2435,62 @@ public class MotoConversacionService
             return null;
         }
 
-        if (texto == "CREDITO" || texto == "A CREDITO")
+        if (
+            texto.Contains("NO QUIERO CREDITO")
+            || texto.Contains("NO QUIERO A CREDITO")
+            || texto.Contains("NO A CREDITO")
+            || texto.Contains("NO QUIERO FINANCIAR")
+        )
+        {
+            return null;
+        }
+
+        if (
+            texto == "CREDITO"
+            || texto == "A CREDITO"
+            || texto == "SI CREDITO"
+            || texto == "SI A CREDITO"
+            || texto.StartsWith("SI A CREDITO ")
+            || texto.StartsWith("SI CREDITO ")
+            || texto.Contains("CREDITO QUE NECESITO")
+            || texto.Contains("QUE NECESITO PARA CREDITO")
+            || texto.Contains("QUE NECESITO PARA EL CREDITO")
+            || texto.Contains("REQUISITOS PARA CREDITO")
+            || texto.Contains("REQUISITOS DEL CREDITO")
+            || texto.Contains("DOCUMENTOS PARA CREDITO")
+            || texto.Contains("PAPELES PARA CREDITO")
+            || (texto.Contains("DONDE PASO") && texto.Contains("CREDITO"))
+            || (texto.Contains("DONDE ENVIO") && texto.Contains("CREDITO"))
+            || texto.Contains("ME GUSTARIA A CREDITO")
+            || texto.Contains("ME GUSTARIA COMPRAR A CREDITO")
+            || texto.Contains("QUIERO A CREDITO")
+            || texto.Contains("PREFIERO A CREDITO")
+            || texto.Contains("LO QUIERO A CREDITO")
+            || texto.Contains("LA QUIERO A CREDITO")
+            || texto.Contains("QUIERO FINANCIAR")
+            || texto.Contains("QUIERO FINANCIADA")
+            || texto.Contains("QUIERO FINANCIADO")
+        )
         {
             return "CREDITO";
         }
 
-        if (texto == "CONTADO" || texto == "AL CONTADO")
+        if (
+            texto == "CONTADO"
+            || texto == "AL CONTADO"
+            || texto.Contains("ME GUSTARIA AL CONTADO")
+            || texto.Contains("PREFIERO AL CONTADO")
+            || texto.Contains("LO QUIERO AL CONTADO")
+            || texto.Contains("LA QUIERO AL CONTADO")
+        )
         {
             return "CONTADO";
         }
 
         var intencionCompra =
             texto.Contains("QUIERO")
+            || texto.Contains("ME GUSTARIA")
+            || texto.Contains("PREFIERO")
             || texto.Contains("COMPRAR")
             || texto.Contains("SACAR")
             || texto.Contains("SOLICITAR")

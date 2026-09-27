@@ -76,7 +76,7 @@ public static class DependencyInjection
         services.AddScoped<IMotoOfertaService, MotoOfertaService>();
         services.AddScoped<IMotoConversacionService,MotoConversacionService>();
         services.AddHttpClient<IOllamaService,OllamaService>();
-        services.AddHttpClient<ISolicitudMotoService, SolicitudMotoService>();
+        services.AddScoped<ISolicitudMotoService, SolicitudMotoService>();
 
 
         return services;

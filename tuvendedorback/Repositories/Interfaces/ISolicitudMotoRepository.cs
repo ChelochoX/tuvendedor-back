@@ -33,6 +33,25 @@ public interface ISolicitudMotoRepository
         int idContacto,
         DateTime fechaNacimiento);
 
+    Task GuardarDatosContactoParciales(
+        int idContacto,
+        string? nombreCompleto = null,
+        string? numeroCedula = null,
+        string? ciudad = null,
+        string? barrio = null,
+        string? direccion = null);
+
+    Task GuardarDatosLaboralesParciales(
+        int idSolicitudCredito,
+        string? empresa = null,
+        int? antiguedadMeses = null,
+        bool? aportaIps = null,
+        int? cantidadAportesIps = null,
+        string? direccionEmpresa = null,
+        string? telefonoEmpresa = null,
+        bool? telefonoEsMovil = null,
+        string? nombreJefeEncargado = null);
+
     Task GuardarIdentidadContacto(
         int idContacto,
         string nombreCompleto,
