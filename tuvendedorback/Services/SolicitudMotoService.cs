@@ -84,9 +84,9 @@ public class SolicitudMotoService : ISolicitudMotoService
                     "• Cédula de Identidad paraguaya (CI) vigente, no vencida, con foto o copia clara del frente y dorso.\n" +
                     "• Dirección particular del titular: dirección, barrio y ciudad donde vive.\n" +
                     $"• Datos laborales del titular: lugar de trabajo, al menos {regla.AntiguedadLaboralMinMeses} meses de antigüedad, teléfono laboral y dirección de la empresa.\n" +
-                    $"• Aportes de IPS: si aporta, verificamos la cantidad de aportes; si no aporta o no alcanza {regla.AportesIPSMinimos}, la evaluación continúa con referencia comercial.\n" +
+                    $"• Aportes de IPS: si aporta, verificamos la cantidad de aportes. Si no aporta o no alcanza {regla.AportesIPSMinimos}, la solicitud igualmente puede continuar a evaluación.\n" +
                     $"• 3 referencias personales de otras personas: {regla.ReferenciasFamiliaresMinimas} familiares/parientes y {regla.ReferenciasAmigosMinimas} amistad. De cada persona te pediré nombre, teléfono y parentesco cuando corresponda.\n" +
-                    "• Al menos 1 referencia comercial verificable: tenés que indicarme el nombre del negocio o casa comercial donde tenés la referencia. Con 1 ya cumplís; si tenés más, también las registramos.\n" +
+                    "• Referencias comerciales: si tenés una o más, podés indicarme el nombre del negocio o casa comercial. Si no tenés ninguna, no bloquea la solicitud y continuamos normalmente.\n" +
                     "• Al final te voy a enviar la autorización de evaluación de crédito completa para que la leas y la aceptes.\n\n" +
                     "Te voy a pedir un dato por vez para hacerlo sencillo 😊\n\n" +
                     "Empecemos: ¿cuál es tu fecha de nacimiento? Enviamela en formato DD/MM/AAAA."
@@ -132,6 +132,25 @@ public class SolicitudMotoService : ISolicitudMotoService
                 "CANCELADA");
         }
 
+        // Antes de intentar interpretar el mensaje como el dato del paso actual,
+        // atendemos preguntas naturales sobre datos que ya están registrados.
+        // Ejemplos: "¿cómo se llama el titular?", "¿qué nombre puse?",
+        // "¿cuál es la CI registrada?". Esto evita que una pregunta del cliente
+        // sea tratada como si fuera una autorización, una referencia, etc.
+        if (EsConsultaDatoRegistrado(request.Mensaje))
+        {
+            return await ResponderDatoRegistrado(solicitud, request.Mensaje);
+        }
+
+        // Si el cliente vuelve después de un tiempo y pregunta dónde quedó,
+        // no intentamos interpretar ese saludo/pregunta como el dato del paso actual.
+        // En su lugar consultamos lo que realmente está guardado y le indicamos
+        // qué ya tenemos, qué falta y cuál es el siguiente dato a enviar.
+        if (EsConsultaEstadoSolicitud(request.Mensaje))
+        {
+            return await ResponderEstadoSolicitud(solicitud);
+        }
+
         return solicitud.TipoOperacion.ToUpperInvariant() switch
         {
             "CREDITO" => await ProcesarCredito(solicitud, request),
@@ -152,6 +171,7 @@ public class SolicitudMotoService : ISolicitudMotoService
             "PRECALIFICACION_APORTES" => await ProcesarCantidadAportesIps(solicitud, request),
             "REF_COMERCIAL_PRECALIFICACION" => await ProcesarReferenciaComercialPrecalificacion(solicitud, request),
             "NOMBRE_COMPLETO" => await ProcesarNombreCompleto(solicitud, request),
+            "CORREGIR_NOMBRE_TITULAR" => await ProcesarCorreccionNombreTitular(solicitud, request),
             "CEDULA_NUMERO" => await ProcesarNumeroCedula(solicitud, request),
             "ESTADO_CEDULA" => await ProcesarEstadoCedula(solicitud, request),
             "CEDULA_FRENTE" => await ProcesarDocumento(
@@ -204,6 +224,7 @@ public class SolicitudMotoService : ISolicitudMotoService
         return solicitud.PasoActual.ToUpperInvariant() switch
         {
             "NOMBRE_COMPLETO" => await ProcesarNombreCompleto(solicitud, request),
+            "CORREGIR_NOMBRE_TITULAR" => await ProcesarCorreccionNombreTitular(solicitud, request),
             "CEDULA_NUMERO" => await ProcesarNumeroCedula(solicitud, request),
             "ESTADO_CEDULA" => await ProcesarEstadoCedula(solicitud, request),
             "CEDULA_FRENTE" => await ProcesarDocumento(
@@ -359,7 +380,7 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         return Resultado(
             solicitud,
-            "Está bien 😊 Podemos continuar con la solicitud. Más adelante te voy a pedir al menos 1 referencia comercial verificable. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
+            "Está bien 😊 Podemos continuar con la solicitud. Más adelante te voy a consultar si tenés alguna referencia comercial; si no tenés, no hay problema y seguimos normalmente. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
             "DOCUMENTACION",
             "NOMBRE_COMPLETO");
     }
@@ -407,7 +428,7 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         return Resultado(
             solicitud,
-            $"La antigüedad laboral está bien ✅. Como todavía no llegás al mínimo de {regla.AportesIPSMinimos} aportes de IPS, continuamos y más adelante te voy a pedir al menos 1 referencia comercial verificable. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
+            $"La antigüedad laboral está bien ✅. Como todavía no llegás al mínimo de {regla.AportesIPSMinimos} aportes de IPS, igualmente podemos continuar. Más adelante te voy a consultar si tenés alguna referencia comercial; si no tenés, no bloquea la solicitud. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
             "DOCUMENTACION",
             "NOMBRE_COMPLETO");
     }
@@ -482,7 +503,7 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         return Resultado(
             solicitud,
-            $"La antigüedad laboral está bien ✅. Como no contás con al menos {regla.AportesIPSMinimos} aportes IPS, continuamos y más adelante te voy a pedir al menos 1 referencia comercial verificable. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
+            $"La antigüedad laboral está bien ✅. Como no contás con al menos {regla.AportesIPSMinimos} aportes IPS, igualmente podemos continuar. Más adelante te voy a consultar si tenés alguna referencia comercial; si no tenés, no bloquea la solicitud. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
             "DOCUMENTACION",
             "NOMBRE_COMPLETO");
     }
@@ -491,13 +512,20 @@ public class SolicitudMotoService : ISolicitudMotoService
         SolicitudMotoProcesoDto solicitud,
         MotoConversacionRequest request)
     {
-        if (EsNo(request.Mensaje))
+        // La referencia comercial aporta información para la evaluación, pero NO es
+        // un requisito bloqueante. Si el cliente no tiene, continuamos normalmente.
+        if (EsSinReferenciaComercial(request.Mensaje))
         {
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                solicitud.IdSolicitud,
+                "NOMBRE_COMPLETO");
+
             return Resultado(
                 solicitud,
-                "Para continuar necesitamos por lo menos 1 referencia comercial verificable. Indicame el nombre del negocio o casa comercial donde tenés la referencia.",
-                "PRE_EVALUACION",
-                "REF_COMERCIAL_PRECALIFICACION");
+                "Está bien 😊 Si no tenés referencia comercial, no hay problema. Continuamos con tu solicitud. ¿Cuál es tu nombre y apellido?",
+                "DOCUMENTACION",
+                "NOMBRE_COMPLETO");
         }
 
         var comercio = (request.Mensaje ?? string.Empty).Trim();
@@ -505,7 +533,7 @@ public class SolicitudMotoService : ISolicitudMotoService
         {
             return Resultado(
                 solicitud,
-                "Indicame el nombre del negocio o casa comercial donde tenés la referencia comercial.");
+                "Si tenés una referencia comercial, indicame el nombre del negocio o casa comercial. Si no tenés ninguna, escribime NO TENGO y continuamos.");
         }
 
         await _repository.AgregarReferencia(
@@ -525,7 +553,7 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         return Resultado(
             solicitud,
-            "Perfecto ✅ Ya tenemos una referencia comercial. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
+            "Perfecto ✅ Guardé tu referencia comercial. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
             "DOCUMENTACION",
             "NOMBRE_COMPLETO");
     }
@@ -536,11 +564,13 @@ public class SolicitudMotoService : ISolicitudMotoService
     {
         var nombre = (request.Mensaje ?? string.Empty).Trim();
 
-        if (nombre.Length < 4 || SoloDigitos(nombre).Length > 0)
+        // Nunca guardamos saludos, preguntas o frases de conversación como si
+        // fueran el nombre del titular. Debe parecer realmente un nombre completo.
+        if (!EsNombrePersonaValido(nombre))
         {
             return Resultado(
                 solicitud,
-                "Decime tu nombre y apellido, por favor. Ejemplo: Juan Pérez González.");
+                "Necesito solamente tu nombre y apellido completo, sin preguntas ni otros datos. Ejemplo: Juan Pérez González.");
         }
 
         await _repository.GuardarDatosContactoParciales(
@@ -555,6 +585,60 @@ public class SolicitudMotoService : ISolicitudMotoService
         return Resultado(
             solicitud,
             "Gracias 😊 Ahora decime tu número de Cédula de Identidad paraguaya (CI).",
+            solicitud.Estado,
+            "CEDULA_NUMERO");
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarCorreccionNombreTitular(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request)
+    {
+        var nombre = (request.Mensaje ?? string.Empty).Trim();
+
+        if (!EsNombrePersonaValido(nombre))
+        {
+            return Resultado(
+                solicitud,
+                "Necesito solamente el nombre y apellido completo del titular. Ejemplo: Juan Pérez González.",
+                solicitud.Estado,
+                "CORREGIR_NOMBRE_TITULAR");
+        }
+
+        await _repository.GuardarDatosContactoParciales(
+            solicitud.IdContacto,
+            nombreCompleto: nombre);
+
+        if (solicitud.TipoOperacion.Equals("CREDITO", StringComparison.OrdinalIgnoreCase))
+        {
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                solicitud.IdSolicitud,
+                "AUTORIZACION");
+
+            var cedula = SoloDigitos(solicitud.Cedula ?? string.Empty);
+
+            return Resultado(
+                solicitud,
+                "Perfecto ✅ Corregí el nombre del titular. No se perdió ningún otro dato de la solicitud.\n\n" +
+                "Seguimos exactamente donde estábamos: la autorización final. Enviame:\n" +
+                "OK AUTORIZO\n" +
+                $"Nombre y Apellido: {nombre}\n" +
+                $"N.° de Cédula: {cedula}",
+                solicitud.Estado,
+                "AUTORIZACION");
+        }
+
+        // Este paso de corrección se utiliza principalmente durante el crédito.
+        // Para contado, si llegara a utilizarse, continuamos con la CI sin borrar
+        // ningún dato ya guardado.
+        await _repository.ActualizarPaso(
+            solicitud.TipoOperacion,
+            solicitud.IdSolicitud,
+            "CEDULA_NUMERO");
+
+        return Resultado(
+            solicitud,
+            "Perfecto ✅ Corregí el nombre del titular. Ahora decime tu número de Cédula de Identidad paraguaya (CI).",
             solicitud.Estado,
             "CEDULA_NUMERO");
     }
@@ -1185,106 +1269,125 @@ public class SolicitudMotoService : ISolicitudMotoService
         string siguientePaso,
         string respuestaOk)
     {
+        // Las referencias personales se aceptan en cualquier orden.
+        // Ejemplo: aunque estemos pidiendo un familiar, si el cliente manda
+        // "Carlos Gonzalez, 0981 123456, amigo", guardamos la amistad y
+        // continuamos pidiendo solamente lo que todavía falta.
         if (!TryParseReferenciaPersonal(
                 request.Mensaje,
                 tipoEsperado,
+                out var tipoDetectado,
                 out var nombre,
                 out var telefono,
                 out var relacion))
         {
             return Resultado(
                 solicitud,
-                tipoEsperado == "FAMILIAR"
-                    ? "No pude identificar todos los datos de la referencia familiar. Podés escribirlo así, por ejemplo: Cesar Leite, 0982 33 44 55, hno. También acepto: Carlos Gonzales | 0981 11 22 33 | primo."
-                    : "No pude identificar nombre y teléfono de la referencia de amistad. Podés escribirlo así, por ejemplo: Juan Perez, 0981 11 22 33.");
+                "No pude identificar bien la referencia. Enviamela en una sola línea así: Nombre y apellido, teléfono, relación. " +
+                "Ejemplos: Cesar Leite, 0982 33 44 55, hno. | Carlos Gonzalez, 0981 123456, amigo. " +
+                "Podés pasar familiares y amistad en cualquier orden; yo voy guardando cada una y te digo cuáles faltan.");
         }
 
         var referenciasExistentes =
-            await _repository.ObtenerReferencias(
-                solicitud.IdSolicitud);
+            await _repository.ObtenerReferencias(solicitud.IdSolicitud);
 
-        var telefonoNormalizado =
-            SoloDigitos(telefono);
+        var telefonoNormalizado = SoloDigitos(telefono);
 
-        if (
-            referenciasExistentes.Any(
-                x =>
-                    SoloDigitos(x.Telefono)
-                    ==
-                    telefonoNormalizado)
-        )
+        if (referenciasExistentes.Any(
+                x => SoloDigitos(x.Telefono) == telefonoNormalizado))
         {
             return Resultado(
                 solicitud,
-                "Ese teléfono ya fue utilizado en otra referencia. Necesito una persona diferente con otro número.");
+                "Ese teléfono ya fue utilizado en otra referencia. Pasame otra persona con un número diferente.");
+        }
+
+        var regla = await _repository.ObtenerReglaCreditoActiva();
+
+        var familiaresAntes = referenciasExistentes.Count(x => EsTipo(x.Tipo, "FAMILIAR"));
+        var amigosAntes = referenciasExistentes.Count(x => EsTipo(x.Tipo, "AMIGO"));
+
+        // Si ya completó una categoría, no seguimos agregando referencias de ese
+        // mismo tipo como obligatorias. Le explicamos exactamente qué falta.
+        if (EsTipo(tipoDetectado, "FAMILIAR")
+            && familiaresAntes >= regla.ReferenciasFamiliaresMinimas)
+        {
+            return Resultado(
+                solicitud,
+                $"Ya tengo las {regla.ReferenciasFamiliaresMinimas} referencias familiares requeridas ✅. " +
+                "Ahora me falta la referencia de amistad. Pasame: Nombre y apellido, teléfono, amigo/a.");
+        }
+
+        if (EsTipo(tipoDetectado, "AMIGO")
+            && amigosAntes >= regla.ReferenciasAmigosMinimas)
+        {
+            return Resultado(
+                solicitud,
+                $"Ya tengo la referencia de amistad requerida ✅. " +
+                $"Todavía me faltan {Math.Max(0, regla.ReferenciasFamiliaresMinimas - familiaresAntes)} referencia(s) familiar(es). " +
+                "Pasame: Nombre y apellido, teléfono, parentesco.");
         }
 
         await _repository.AgregarReferencia(
             solicitud.IdSolicitud,
-            tipoEsperado,
+            tipoDetectado,
             nombre,
             telefonoNormalizado,
-            tipoEsperado == "FAMILIAR"
-                ? relacion
-                : "AMIGO",
+            EsTipo(tipoDetectado, "FAMILIAR") ? relacion : "AMIGO",
             null);
 
-        if (
-            string.Equals(
-                siguientePaso,
-                "AUTORIZACION",
-                StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return await PrepararAutorizacion(
-                solicitud);
-        }
+        // Volvemos a leer la BBDD: ella es la fuente de verdad para saber qué falta.
+        var referenciasActualizadas =
+            await _repository.ObtenerReferencias(solicitud.IdSolicitud);
 
-        if (
-            string.Equals(
-                siguientePaso,
-                "REF_COMERCIAL_CONTROL",
-                StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return await PrepararReferenciasComerciales(
-                solicitud,
-                respuestaOk);
-        }
+        var familiares = referenciasActualizadas.Count(x => EsTipo(x.Tipo, "FAMILIAR"));
+        var amigos = referenciasActualizadas.Count(x => EsTipo(x.Tipo, "AMIGO"));
 
-        if (
-            siguientePaso == "REF_COMERCIAL_OPCIONAL"
-            &&
-            string.Equals(
-                solicitud.ViaEvaluacion,
-                "REFERENCIAS_COMERCIALES",
-                StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return await PrepararAutorizacion(
-                solicitud);
-        }
+        var guardadaComo = EsTipo(tipoDetectado, "FAMILIAR")
+            ? $"referencia familiar ({relacion.ToLowerInvariant()})"
+            : "referencia de amistad";
 
-        await _repository.ActualizarPaso(
-            "CREDITO",
-            solicitud.IdSolicitud,
-            siguientePaso);
+        var prefijo = $"Perfecto ✅ Guardé a {nombre} como {guardadaComo}.";
 
-        if (siguientePaso == "REF_COMERCIAL_OPCIONAL")
+        if (familiares < regla.ReferenciasFamiliaresMinimas)
         {
+            var faltanFamiliares = regla.ReferenciasFamiliaresMinimas - familiares;
+            var paso = familiares == 0 ? "REF_FAMILIAR_1" : "REF_FAMILIAR_2";
+
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                solicitud.IdSolicitud,
+                paso);
+
             return Resultado(
                 solicitud,
-                respuestaOk +
-                "\\n\\nAhora necesitamos por lo menos 1 referencia comercial verificable. Indicame el nombre del negocio o casa comercial donde tenés la referencia.",
+                prefijo + "\n\n" +
+                $"Hasta ahora tengo {familiares} familiar(es) y {amigos} amistad. " +
+                $"Me falta{(faltanFamiliares == 1 ? "" : "n")} {faltanFamiliares} referencia(s) familiar(es).\n" +
+                "Pasame la siguiente así: Nombre y apellido, teléfono, parentesco. Ejemplo: Esteban Martinez, 0971 000000, primo.",
                 "DOCUMENTACION",
-                siguientePaso);
+                paso);
         }
 
-        return Resultado(
+        if (amigos < regla.ReferenciasAmigosMinimas)
+        {
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                solicitud.IdSolicitud,
+                "REF_AMIGO");
+
+            return Resultado(
+                solicitud,
+                prefijo + "\n\n" +
+                $"Ya tengo las {familiares} referencias familiares ✅. Ahora me falta 1 referencia de amistad.\n" +
+                "Pasame: Nombre y apellido, teléfono, amigo/a. Ejemplo: Carlos Gonzalez, 0981 123456, amigo.",
+                "DOCUMENTACION",
+                "REF_AMIGO");
+        }
+
+        // Ya están las 3 referencias personales. Continuamos automáticamente.
+        return await PrepararReferenciasComerciales(
             solicitud,
-            respuestaOk,
-            "DOCUMENTACION",
-            siguientePaso);
+            prefijo + "\n\nYa están completas las 3 referencias personales requeridas: 2 familiares/parientes y 1 amistad ✅.");
     }
 
     private async Task<SolicitudMotoProcesoResultadoDto> PrepararReferenciasComerciales(
@@ -1308,7 +1411,7 @@ public class SolicitudMotoService : ISolicitudMotoService
             return Resultado(
                 solicitud,
                 prefijo +
-                "Ahora necesito por lo menos 1 referencia comercial verificable. Indicame el nombre del negocio o casa comercial donde tenés la referencia. Con una ya cumplís el requisito.",
+                "Ahora, si tenés alguna referencia comercial verificable, indicame el nombre del negocio o casa comercial. Si no tenés ninguna, escribime NO TENGO y continuamos; esto no bloquea tu solicitud.",
                 "DOCUMENTACION",
                 "REF_COMERCIAL_DATOS");
         }
@@ -1325,7 +1428,7 @@ public class SolicitudMotoService : ISolicitudMotoService
         return Resultado(
             solicitud,
             prefijoExistente +
-            $"Ya tenemos {comerciales} referencia(s) comercial(es) registrada(s) ✅. Con una ya cumplís el requisito. Si tenés otra, también la podemos registrar. ¿Querés agregar otra referencia comercial? Respondé SI o NO.",
+            $"Ya tenemos {comerciales} referencia(s) comercial(es) registrada(s) ✅. Si tenés otra, también la podemos registrar. ¿Querés agregar otra referencia comercial? Respondé SI o NO.",
             "DOCUMENTACION",
             "REF_COMERCIAL_MAS");
     }
@@ -1334,13 +1437,23 @@ public class SolicitudMotoService : ISolicitudMotoService
         SolicitudMotoProcesoDto solicitud,
         MotoConversacionRequest request)
     {
+        // IMPORTANTE: no tener referencia comercial NO bloquea el crédito.
+        // Aceptamos respuestas naturales como: "no tengo", "ninguna",
+        // "no cuento con referencias comerciales", etc. y avanzamos.
+        if (EsSinReferenciaComercial(request.Mensaje))
+        {
+            return await PrepararAutorizacion(
+                solicitud,
+                "Está bien 😊 No tener referencia comercial no bloquea tu solicitud. Continuamos con la autorización final.");
+        }
+
         var comercio = (request.Mensaje ?? string.Empty).Trim();
 
-        if (comercio.Length < 2 || EsSi(comercio) || EsNo(comercio))
+        if (comercio.Length < 2 || EsSi(comercio))
         {
             return Resultado(
                 solicitud,
-                "Indicame el nombre del negocio o casa comercial donde tenés la referencia comercial.");
+                "Si tenés una referencia comercial, indicame el nombre del negocio o casa comercial. Si no tenés ninguna, escribime NO TENGO y continuamos.");
         }
 
         var referencias = await _repository.ObtenerReferencias(solicitud.IdSolicitud);
@@ -1372,7 +1485,7 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         return Resultado(
             solicitud,
-            "Referencia comercial guardada ✅. Con una ya cumplís este requisito. Si tenés otra referencia comercial, también la podemos registrar. ¿Querés agregar otra? Respondé SI o NO.",
+            "Referencia comercial guardada ✅. Si tenés otra referencia comercial, también la podemos registrar. ¿Querés agregar otra? Respondé SI o NO.",
             "DOCUMENTACION",
             "REF_COMERCIAL_MAS");
     }
@@ -1462,7 +1575,8 @@ public class SolicitudMotoService : ISolicitudMotoService
     }
 
     private async Task<SolicitudMotoProcesoResultadoDto> PrepararAutorizacion(
-        SolicitudMotoProcesoDto solicitud)
+        SolicitudMotoProcesoDto solicitud,
+        string? mensajeAnterior = null)
     {
         var texto = await _repository.ObtenerTextoAutorizacion();
 
@@ -1477,8 +1591,13 @@ public class SolicitudMotoService : ISolicitudMotoService
             solicitud.IdSolicitud,
             "AUTORIZACION");
 
+        var prefijoAutorizacion = string.IsNullOrWhiteSpace(mensajeAnterior)
+            ? string.Empty
+            : mensajeAnterior.Trim() + "\n\n";
+
         return Resultado(
             solicitud,
+            prefijoAutorizacion +
             "Ya estamos en el último paso ✅. Leé la siguiente autorización:\n\n" +
             texto +
             "\n\nPara aceptarla, respondé exactamente con este formato:\n" +
@@ -1504,18 +1623,74 @@ public class SolicitudMotoService : ISolicitudMotoService
         var nombreRegistrado =
             $"{solicitud.Nombre} {solicitud.Apellido}".Trim();
 
+        if (!EsNombrePersonaValido(nombre))
+        {
+            return Resultado(
+                solicitud,
+                "El nombre enviado en la autorización no parece un nombre y apellido válido. Revisalo y enviame nuevamente la autorización completa.",
+                solicitud.Estado,
+                "AUTORIZACION");
+        }
+
+        var cedulaRegistrada = SoloDigitos(solicitud.Cedula ?? string.Empty);
+        var cedulaRecibida = SoloDigitos(cedula);
+
+        // AUTORREPARACIÓN: versiones anteriores podían guardar por error un saludo
+        // o una pregunta como nombre del titular. Si detectamos ese dato corrupto
+        // y la autorización trae un nombre válido junto con la misma CI ya registrada,
+        // corregimos el contacto automáticamente y continuamos.
+        if (!EsNombrePersonaValido(nombreRegistrado))
+        {
+            if (!string.IsNullOrWhiteSpace(cedulaRegistrada)
+                && cedulaRegistrada == cedulaRecibida)
+            {
+                await _repository.GuardarDatosContactoParciales(
+                    solicitud.IdContacto,
+                    nombreCompleto: nombre);
+
+                nombreRegistrado = nombre;
+            }
+            else
+            {
+                await _repository.ActualizarPaso(
+                    "CREDITO",
+                    solicitud.IdSolicitud,
+                    "CORREGIR_NOMBRE_TITULAR");
+
+                return Resultado(
+                    solicitud,
+                    "Detecté que el nombre del titular quedó mal guardado en una prueba anterior. No vamos a perder los demás datos. Enviame ahora solamente tu nombre y apellido completo para corregirlo y volver a la autorización.",
+                    solicitud.Estado,
+                    "CORREGIR_NOMBRE_TITULAR");
+            }
+        }
+
         if (!MismoNombre(nombreRegistrado, nombre))
         {
             return Resultado(
                 solicitud,
-                "El nombre de la autorización no coincide con el nombre registrado en la solicitud. Revisalo y enviame nuevamente la autorización completa.");
+                $"El nombre de la autorización no coincide con el registrado en la solicitud. " +
+                $"El titular registrado es: {nombreRegistrado}.\n\n" +
+                "Volvé a enviarme la autorización completa usando exactamente ese nombre:\n" +
+                "OK AUTORIZO\n" +
+                $"Nombre y Apellido: {nombreRegistrado}\n" +
+                $"N.° de Cédula: {cedulaRegistrada}",
+                solicitud.Estado,
+                "AUTORIZACION");
         }
 
-        if (SoloDigitos(solicitud.Cedula ?? string.Empty) != SoloDigitos(cedula))
+        if (cedulaRegistrada != cedulaRecibida)
         {
             return Resultado(
                 solicitud,
-                "El número de cédula de la autorización no coincide con el registrado en la solicitud. Revisalo y enviame nuevamente la autorización completa.");
+                "El número de cédula de la autorización no coincide con el registrado en la solicitud.\n\n" +
+                $"La CI registrada es: {cedulaRegistrada}.\n\n" +
+                "Volvé a enviarme la autorización completa con esos datos:\n" +
+                "OK AUTORIZO\n" +
+                $"Nombre y Apellido: {nombreRegistrado}\n" +
+                $"N.° de Cédula: {cedulaRegistrada}",
+                solicitud.Estado,
+                "AUTORIZACION");
         }
 
         var textoAutorizacion = await _repository.ObtenerTextoAutorizacion();
@@ -1560,12 +1735,10 @@ public class SolicitudMotoService : ISolicitudMotoService
         var edadOk = actual.FechaNacimiento.HasValue
                      && CalcularEdad(actual.FechaNacimiento.Value) >= regla.EdadMinima;
         var antiguedadOk = (actual.AntiguedadMeses ?? 0) >= regla.AntiguedadLaboralMinMeses;
-        var ipsOk = actual.AportaIPS == true
-                    && (actual.CantidadAportesIPS ?? 0) >= regla.AportesIPSMinimos;
-        var minimoComerciales = Math.Max(1, regla.ReferenciasComercialesMinimasSinIps);
-        var comercialOk = comerciales >= minimoComerciales;
-
-        var viableLaboral = antiguedadOk && (ipsOk || comercialOk);
+        // IPS y referencias comerciales aportan información para la evaluación,
+        // pero la ausencia de referencia comercial NO bloquea el envío a revisión.
+        // El requisito laboral bloqueante sigue siendo la antigüedad mínima.
+        var viableLaboral = antiguedadOk;
 
         var identidadOk = !string.IsNullOrWhiteSpace(actual.Nombre)
                           && !string.IsNullOrWhiteSpace(actual.Cedula);
@@ -1578,14 +1751,12 @@ public class SolicitudMotoService : ISolicitudMotoService
                         && (actual.TelefonoEmpresaEsMovil != true
                             || !string.IsNullOrWhiteSpace(actual.NombreJefeEncargado));
 
-        if (!edadOk || !viableLaboral || !identidadOk || !cedulaVigente || !domicilioOk || !laboralOk || familiares < regla.ReferenciasFamiliaresMinimas || amigos < regla.ReferenciasAmigosMinimas || !comercialOk || !frente || !dorso || !autorizacion)
+        if (!edadOk || !viableLaboral || !identidadOk || !cedulaVigente || !domicilioOk || !laboralOk || familiares < regla.ReferenciasFamiliaresMinimas || amigos < regla.ReferenciasAmigosMinimas || !frente || !dorso || !autorizacion)
         {
             var faltantes = new List<string>();
 
             if (!edadOk) faltantes.Add("edad mínima");
             if (!antiguedadOk) faltantes.Add("antigüedad laboral");
-            if (!ipsOk && !comercialOk) faltantes.Add("IPS o referencia comercial para la evaluación");
-            if (!comercialOk) faltantes.Add("al menos 1 referencia comercial verificable");
             if (!identidadOk) faltantes.Add("nombre y número de CI");
             if (!cedulaVigente) faltantes.Add("CI paraguaya vigente/no vencida");
             if (!domicilioOk) faltantes.Add("datos de domicilio");
@@ -1834,145 +2005,146 @@ public class SolicitudMotoService : ISolicitudMotoService
     private static bool TryParseReferenciaPersonal(
         string? texto,
         string tipoEsperado,
+        out string tipoDetectado,
         out string nombre,
         out string telefono,
         out string relacion)
     {
+        tipoDetectado = string.Empty;
         nombre = string.Empty;
         telefono = string.Empty;
         relacion = string.Empty;
 
         if (string.IsNullOrWhiteSpace(texto))
+            return false;
+
+        var contenido = texto.Trim();
+
+        // 1) Intento normal: 0981 123456 / 0981-123456 / +595 981 123456.
+        var matchTelefono = Regex.Match(
+            contenido,
+            @"(?:\+?595[\s\-.]*)?(?:0?9\d{2})(?:[\s\-.]*\d){6}",
+            RegexOptions.IgnoreCase);
+
+        var indiceTelefono = -1;
+        var numero = string.Empty;
+
+        if (matchTelefono.Success)
+        {
+            indiceTelefono = matchTelefono.Index;
+            numero = NormalizarTelefonoParaguayo(matchTelefono.Value);
+        }
+
+        // 2) Modo tolerante para errores de tipeo pequeños dentro del campo teléfono.
+        // Ej.: "0971c 000000". Si entre separadores hay exactamente un número
+        // paraguayo reconocible al quitar caracteres accidentales, lo aceptamos.
+        if (string.IsNullOrWhiteSpace(numero))
+        {
+            var candidatos = Regex.Split(contenido, @"[,;|]")
+                .Select(x => x.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToArray();
+
+            foreach (var candidato in candidatos.Skip(1))
+            {
+                var normalizado = NormalizarTelefonoParaguayo(candidato);
+                if (string.IsNullOrWhiteSpace(normalizado))
+                    continue;
+
+                var idx = contenido.IndexOf(candidato, StringComparison.OrdinalIgnoreCase);
+                if (idx < 0)
+                    continue;
+
+                indiceTelefono = idx;
+                numero = normalizado;
+                break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(numero) || indiceTelefono < 0)
+            return false;
+
+        var parteNombre = contenido
+            .Substring(0, indiceTelefono)
+            .Trim()
+            .Trim(',', ';', '|', '-', ':');
+
+        parteNombre = Regex.Replace(
+                parteNombre,
+                @"^\s*(NOMBRE(?:\s+Y\s+APELLIDO)?|REFERENCIA)\s*[:\-]?\s*",
+                string.Empty,
+                RegexOptions.IgnoreCase)
+            .Trim()
+            .Trim(',', ';', '|', '-', ':');
+
+        var palabrasNombre = parteNombre.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (parteNombre.Length < 4
+            || palabrasNombre.Length < 2
+            || parteNombre.Any(char.IsDigit))
         {
             return false;
         }
 
-        var contenido =
-            texto.Trim();
+        nombre = parteNombre;
+        telefono = numero;
 
-        /*
-         * Acepta ejemplos como:
-         *
-         * Cesar Leite, 0982 33 44 55 hno
-         * Cesar Leite, 0982 33 44 55, hno
-         * Cesar Leite | 0982 33 44 55 | hermano
-         * Carlos Gonzales, 0981 112233 es Primo
-         * Juan Perez, 0981 11 22 33
-         *
-         * También acepta +595:
-         * Juan Perez, +595 981 112233
-         */
-        var matchTelefono =
-            Regex.Match(
-                contenido,
-                @"(?:\+?595[\s\-.]*)?(?:0?9\d{2})(?:[\s\-.]*\d){6}",
-                RegexOptions.IgnoreCase);
+        var parentesco = DetectarParentescoReferencia(contenido);
+        var esAmistad = DetectarAmistadReferencia(contenido);
 
-        if (!matchTelefono.Success)
+        // Si el cliente escribió explícitamente amigo/amiga/amistad, respetamos eso
+        // aunque el bot estuviera esperando una referencia familiar.
+        if (esAmistad)
         {
-            return false;
-        }
-
-        var numero =
-            SoloDigitos(
-                matchTelefono.Value);
-
-        if (
-            numero.StartsWith("595")
-            &&
-            numero.Length == 12
-        )
-        {
-            numero =
-                "0" + numero.Substring(3);
-        }
-
-        if (
-            numero.Length != 10
-            ||
-            !numero.StartsWith("09")
-        )
-        {
-            return false;
-        }
-
-        var parteNombre =
-            contenido
-                .Substring(
-                    0,
-                    matchTelefono.Index)
-                .Trim()
-                .Trim(
-                    ',',
-                    ';',
-                    '|',
-                    '-',
-                    ':');
-
-        parteNombre =
-            Regex.Replace(
-                    parteNombre,
-                    @"^\s*(NOMBRE(?:\s+Y\s+APELLIDO)?|REFERENCIA)\s*[:\-]?\s*",
-                    string.Empty,
-                    RegexOptions.IgnoreCase)
-                .Trim()
-                .Trim(
-                    ',',
-                    ';',
-                    '|',
-                    '-',
-                    ':');
-
-        var palabrasNombre =
-            parteNombre.Split(
-                ' ',
-                StringSplitOptions.RemoveEmptyEntries
-                |
-                StringSplitOptions.TrimEntries);
-
-        if (
-            parteNombre.Length < 4
-            ||
-            palabrasNombre.Length < 2
-            ||
-            parteNombre.Any(char.IsDigit)
-        )
-        {
-            return false;
-        }
-
-        nombre =
-            parteNombre;
-
-        telefono =
-            numero;
-
-        if (
-            string.Equals(
-                tipoEsperado,
-                "AMIGO",
-                StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            relacion =
-                "AMIGO";
-
+            tipoDetectado = "AMIGO";
+            relacion = "AMIGO";
             return true;
         }
 
-        var parentesco =
-            DetectarParentescoReferencia(
-                contenido);
-
-        if (string.IsNullOrWhiteSpace(parentesco))
+        // Si escribió un parentesco, se guarda como familiar aunque el paso actual
+        // estuviera esperando la amistad.
+        if (!string.IsNullOrWhiteSpace(parentesco))
         {
-            return false;
+            tipoDetectado = "FAMILIAR";
+            relacion = parentesco;
+            return true;
         }
 
-        relacion =
-            parentesco;
+        // Cuando estamos específicamente en el paso de amistad permitimos nombre +
+        // teléfono sin obligar a escribir la palabra "amigo".
+        if (string.Equals(tipoEsperado, "AMIGO", StringComparison.OrdinalIgnoreCase))
+        {
+            tipoDetectado = "AMIGO";
+            relacion = "AMIGO";
+            return true;
+        }
 
-        return true;
+        // Para una referencia familiar sí necesitamos conocer el parentesco.
+        return false;
+    }
+
+    private static string NormalizarTelefonoParaguayo(string texto)
+    {
+        var numero = SoloDigitos(texto);
+
+        if (numero.StartsWith("595") && numero.Length == 12)
+            numero = "0" + numero.Substring(3);
+
+        return numero.Length == 10 && numero.StartsWith("09")
+            ? numero
+            : string.Empty;
+    }
+
+    private static bool DetectarAmistadReferencia(string texto)
+    {
+        var normalizado = NormalizarTexto(texto);
+
+        return Regex.IsMatch(
+            normalizado,
+            @"\b(AMIGO|AMIGA|AMISTAD|AMIGO/A|AMIGA/O)\b",
+            RegexOptions.IgnoreCase);
     }
 
     private static string? DetectarParentescoReferencia(
@@ -2116,6 +2288,541 @@ public class SolicitudMotoService : ISolicitudMotoService
     private static bool MismoNombre(string registrado, string recibido)
         => NormalizarTexto(registrado) == NormalizarTexto(recibido);
 
+    private async Task<SolicitudMotoProcesoResultadoDto> ResponderEstadoSolicitud(
+        SolicitudMotoProcesoDto solicitud)
+    {
+        var actual = await _repository.ObtenerActivaPorConversacion(solicitud.IdConversacion)
+                     ?? solicitud;
+
+        var frente = await _repository.TieneDocumento(
+            actual.TipoOperacion,
+            actual.IdSolicitud,
+            "CEDULA_FRENTE");
+
+        var dorso = await _repository.TieneDocumento(
+            actual.TipoOperacion,
+            actual.IdSolicitud,
+            "CEDULA_DORSO");
+
+        if (actual.TipoOperacion.Equals("CONTADO", StringComparison.OrdinalIgnoreCase))
+        {
+            var yaTengoContado = new List<string>();
+            var faltaContado = new List<string>();
+
+            var nombreActualContado = $"{actual.Nombre} {actual.Apellido}".Trim();
+            if (EsNombrePersonaValido(nombreActualContado))
+                yaTengoContado.Add("nombre del titular");
+            else
+                faltaContado.Add("nombre y apellido válido del titular");
+
+            if (!string.IsNullOrWhiteSpace(actual.Cedula))
+                yaTengoContado.Add("número de CI");
+            else
+                faltaContado.Add("número de CI");
+
+            if (string.Equals(actual.EstadoCedula, "VIGENTE", StringComparison.OrdinalIgnoreCase))
+                yaTengoContado.Add("confirmación de CI vigente");
+            else
+                faltaContado.Add("confirmar que la CI esté vigente/no vencida");
+
+            if (frente)
+                yaTengoContado.Add("foto del frente de la CI");
+            else
+                faltaContado.Add("foto del frente de la CI");
+
+            if (dorso)
+                yaTengoContado.Add("foto del dorso de la CI");
+            else
+                faltaContado.Add("foto del dorso de la CI");
+
+            var respuestaContado = new StringBuilder();
+            respuestaContado.AppendLine("Sí 😊 retomamos tu compra al contado desde donde quedó guardada.");
+
+            if (yaTengoContado.Count > 0)
+                respuestaContado.AppendLine($"\n✅ Ya tengo: {string.Join(", ", yaTengoContado)}.");
+
+            if (faltaContado.Count > 0)
+                respuestaContado.AppendLine($"\n⏳ Falta: {string.Join(", ", faltaContado)}.");
+
+            respuestaContado.Append("\n👉 ");
+            respuestaContado.Append(ObtenerIndicacionPasoActual(actual.PasoActual));
+
+            return Resultado(
+                actual,
+                respuestaContado.ToString(),
+                actual.Estado,
+                actual.PasoActual);
+        }
+
+        var regla = await _repository.ObtenerReglaCreditoActiva();
+        var referencias = await _repository.ObtenerReferencias(actual.IdSolicitud);
+        var autorizacion = await _repository.TieneAutorizacion(actual.IdSolicitud);
+
+        var familiares = referencias.Count(x => EsTipo(x.Tipo, "FAMILIAR"));
+        var amigos = referencias.Count(x => EsTipo(x.Tipo, "AMIGO"));
+        var comerciales = referencias.Count(x => EsTipo(x.Tipo, "COMERCIAL"));
+        var nombreActual = $"{actual.Nombre} {actual.Apellido}".Trim();
+
+        // Si una versión anterior guardó por error una frase/saludo como nombre y
+        // ya estamos después de la etapa de identificación, priorizamos reparar ese
+        // dato antes de continuar. No se borra nada de lo ya cargado.
+        string pasoCorregido;
+        if (!EsNombrePersonaValido(nombreActual)
+            && !string.IsNullOrWhiteSpace(actual.Cedula))
+        {
+            pasoCorregido = "CORREGIR_NOMBRE_TITULAR";
+        }
+        else
+        {
+            // Si por una prueba anterior el PasoActual quedó desfasado respecto a las
+            // referencias realmente guardadas, lo corregimos usando la BBDD como fuente.
+            pasoCorregido = ObtenerPasoCorrectoSegunReferencias(
+                actual.PasoActual,
+                familiares,
+                amigos,
+                comerciales,
+                autorizacion,
+                regla);
+        }
+
+        if (!string.Equals(pasoCorregido, actual.PasoActual, StringComparison.OrdinalIgnoreCase))
+        {
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                actual.IdSolicitud,
+                pasoCorregido);
+
+            actual.PasoActual = pasoCorregido;
+        }
+
+        var yaTengo = new List<string>();
+        var faltan = new List<string>();
+
+        if (actual.FechaNacimiento.HasValue)
+            yaTengo.Add("fecha de nacimiento");
+        else
+            faltan.Add("fecha de nacimiento");
+
+        if (actual.AntiguedadMeses.HasValue)
+            yaTengo.Add("antigüedad laboral");
+        else
+            faltan.Add("antigüedad laboral");
+
+        if (actual.AportaIPS.HasValue)
+        {
+            yaTengo.Add(actual.AportaIPS == true
+                ? $"datos de IPS ({actual.CantidadAportesIPS ?? 0} aporte(s))"
+                : "confirmación de que no aporta a IPS");
+        }
+        else
+        {
+            faltan.Add("confirmar si aporta a IPS");
+        }
+
+        if (EsNombrePersonaValido(nombreActual))
+            yaTengo.Add("nombre y apellido del titular");
+        else
+            faltan.Add("corregir nombre y apellido del titular");
+
+        if (!string.IsNullOrWhiteSpace(actual.Cedula))
+            yaTengo.Add("número de CI");
+        else
+            faltan.Add("número de CI");
+
+        if (string.Equals(actual.EstadoCedula, "VIGENTE", StringComparison.OrdinalIgnoreCase))
+            yaTengo.Add("confirmación de CI vigente/no vencida");
+        else
+            faltan.Add("confirmar que la CI paraguaya esté vigente/no vencida");
+
+        if (frente)
+            yaTengo.Add("foto del frente de la CI");
+        else
+            faltan.Add("foto del frente de la CI");
+
+        if (dorso)
+            yaTengo.Add("foto del dorso de la CI");
+        else
+            faltan.Add("foto del dorso de la CI");
+
+        var domicilioCompleto =
+            !string.IsNullOrWhiteSpace(actual.Ciudad)
+            && !string.IsNullOrWhiteSpace(actual.Barrio)
+            && !string.IsNullOrWhiteSpace(actual.Direccion);
+
+        if (domicilioCompleto)
+            yaTengo.Add("domicilio particular");
+        else
+            faltan.Add("domicilio particular: ciudad, barrio y dirección");
+
+        var laboralCompleto =
+            !string.IsNullOrWhiteSpace(actual.Empresa)
+            && !string.IsNullOrWhiteSpace(actual.DireccionEmpresa)
+            && !string.IsNullOrWhiteSpace(actual.TelefonoEmpresa)
+            && (actual.TelefonoEmpresaEsMovil != true
+                || !string.IsNullOrWhiteSpace(actual.NombreJefeEncargado));
+
+        if (laboralCompleto)
+            yaTengo.Add("datos laborales");
+        else
+            faltan.Add("completar los datos laborales");
+
+        if (familiares > 0 || amigos > 0)
+            yaTengo.Add($"referencias personales: {familiares} familiar(es) y {amigos} amistad");
+
+        var familiaresFaltantes = Math.Max(0, regla.ReferenciasFamiliaresMinimas - familiares);
+        var amigosFaltantes = Math.Max(0, regla.ReferenciasAmigosMinimas - amigos);
+
+        if (familiaresFaltantes > 0)
+            faltan.Add($"{familiaresFaltantes} referencia(s) familiar(es)");
+
+        if (amigosFaltantes > 0)
+            faltan.Add($"{amigosFaltantes} referencia(s) de amistad");
+
+        if (comerciales > 0)
+            yaTengo.Add($"{comerciales} referencia(s) comercial(es)");
+        // Si no tiene referencias comerciales, no se agrega como faltante:
+        // es información opcional y no bloquea la solicitud.
+
+        if (autorizacion)
+            yaTengo.Add("autorización de evaluación de crédito");
+        else
+            faltan.Add("autorización final de evaluación de crédito");
+
+        var respuesta = new StringBuilder();
+        respuesta.AppendLine("Sí 😊 retomamos tu solicitud de crédito desde donde quedó guardada.");
+
+        if (yaTengo.Count > 0)
+            respuesta.AppendLine($"\n✅ Ya tengo: {string.Join(", ", yaTengo)}.");
+
+        if (faltan.Count > 0)
+            respuesta.AppendLine($"\n⏳ Falta: {string.Join(", ", faltan)}.");
+        else
+            respuesta.AppendLine("\n✅ Ya están completos los datos requeridos.");
+
+        respuesta.Append("\n👉 Ahora estamos en este punto: ");
+        respuesta.Append(ObtenerIndicacionPasoActual(actual.PasoActual));
+
+        return Resultado(
+            actual,
+            respuesta.ToString(),
+            actual.Estado,
+            actual.PasoActual);
+    }
+
+    private static string ObtenerPasoCorrectoSegunReferencias(
+        string pasoActual,
+        int familiares,
+        int amigos,
+        int comerciales,
+        bool autorizacion,
+        ReglaCreditoMotoDto regla)
+    {
+        var paso = (pasoActual ?? string.Empty).Trim().ToUpperInvariant();
+
+        var esZonaReferencias =
+            paso == "REF_FAMILIAR_1"
+            || paso == "REF_FAMILIAR_2"
+            || paso == "REF_AMIGO"
+            || paso == "REF_COMERCIAL_CONTROL"
+            || paso == "REF_COMERCIAL_DATOS"
+            || paso == "REF_COMERCIAL_MAS"
+            || paso == "AUTORIZACION";
+
+        if (!esZonaReferencias)
+            return pasoActual;
+
+        if (familiares < regla.ReferenciasFamiliaresMinimas)
+            return familiares == 0 ? "REF_FAMILIAR_1" : "REF_FAMILIAR_2";
+
+        if (amigos < regla.ReferenciasAmigosMinimas)
+            return "REF_AMIGO";
+
+        if (!autorizacion)
+        {
+            // Si el cliente ya indicó que no tiene referencia comercial y el paso
+            // avanzó a AUTORIZACION, NO lo hacemos volver atrás.
+            if (paso == "AUTORIZACION")
+                return "AUTORIZACION";
+
+            // Si todavía estamos en la sección comercial y no hay ninguna guardada,
+            // se la consultamos una sola vez. Puede responder NO TENGO para seguir.
+            if (comerciales < 1)
+                return "REF_COMERCIAL_DATOS";
+
+            // Si ya hay una, puede agregar otra o responder NO para continuar.
+            return "REF_COMERCIAL_MAS";
+        }
+
+        return pasoActual;
+    }
+
+    private static string ObtenerIndicacionPasoActual(string? pasoActual)
+    {
+        return (pasoActual ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "PRECALIFICACION_EDAD" =>
+                "necesito tu fecha de nacimiento. Enviamela en formato DD/MM/AAAA.",
+            "PRECALIFICACION_ANTIGUEDAD" =>
+                "necesito saber cuántos meses de antigüedad tenés en tu trabajo actual.",
+            "PRECALIFICACION_IPS" =>
+                "necesito confirmar si actualmente aportás a IPS. Respondeme SI o NO.",
+            "PRECALIFICACION_APORTES" =>
+                "necesito saber cuántos aportes de IPS tenés actualmente.",
+            "NOMBRE_COMPLETO" =>
+                "necesito tu nombre y apellido.",
+            "CORREGIR_NOMBRE_TITULAR" =>
+                "detecté que el nombre del titular quedó mal registrado. Enviame solamente tu nombre y apellido completo para corregirlo.",
+            "CEDULA_NUMERO" =>
+                "necesito tu número de Cédula de Identidad paraguaya (CI).",
+            "ESTADO_CEDULA" =>
+                "necesito confirmar si tu CI paraguaya está vigente y no vencida. Respondeme SI o NO.",
+            "CEDULA_FRENTE" =>
+                "necesito la foto del FRENTE de tu Cédula de Identidad paraguaya.",
+            "CEDULA_DORSO" =>
+                "necesito la foto del DORSO de tu Cédula de Identidad paraguaya.",
+            "DOMICILIO_CIUDAD" =>
+                "necesito saber en qué ciudad vivís.",
+            "DOMICILIO_BARRIO" =>
+                "necesito saber en qué barrio vivís.",
+            "DOMICILIO_DIRECCION" =>
+                "necesito tu calle o dirección particular.",
+            "LABORAL_EMPRESA" =>
+                "necesito el nombre de la empresa donde trabajás.",
+            "LABORAL_DIRECCION" =>
+                "necesito la dirección de la empresa donde trabajás.",
+            "LABORAL_TELEFONO" =>
+                "necesito el teléfono de la empresa.",
+            "LABORAL_TELEFONO_ES_MOVIL" =>
+                "necesito confirmar si el teléfono de la empresa es celular. Respondeme SI o NO.",
+            "LABORAL_JEFE_ENCARGADO" =>
+                "necesito el nombre del jefe o encargado al que corresponde el número celular de la empresa.",
+            "REF_FAMILIAR_1" =>
+                "necesito la primera referencia familiar. Pasame Nombre y apellido, teléfono y parentesco. Ejemplo: Cesar Leite, 0982 33 44 55, hno.",
+            "REF_FAMILIAR_2" =>
+                "necesito la segunda referencia familiar. Pasame Nombre y apellido, teléfono y parentesco. Ejemplo: Carlos Gonzales, 0981 11 22 33, primo.",
+            "REF_AMIGO" =>
+                "necesito la referencia de amistad. Pasame Nombre y apellido y teléfono. Ejemplo: Juan Perez, 0971 22 33 44.",
+            "REF_COMERCIAL_CONTROL" =>
+                "vamos a revisar las referencias comerciales.",
+            "REF_COMERCIAL_DATOS" =>
+                "si tenés alguna referencia comercial, pasame el nombre del negocio o casa comercial. Si no tenés ninguna, escribime NO TENGO y continuamos; no bloquea la solicitud.",
+            "REF_COMERCIAL_MAS" =>
+                "ya tenemos al menos una referencia comercial. Si tenés otra respondé SI; si no tenés más, respondé NO y pasamos a la autorización.",
+            "AUTORIZACION" =>
+                "estamos en la autorización final de evaluación de crédito.",
+            "LISTA_REVISION" =>
+                "la solicitud ya está lista para revisión.",
+            _ =>
+                "seguimos desde el último paso guardado de tu solicitud."
+        };
+    }
+
+    private static bool EsNombrePersonaValido(string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor))
+            return false;
+
+        var original = Regex.Replace(valor.Trim(), @"\s+", " ");
+        var normalizado = NormalizarTexto(original);
+
+        if (original.Length < 5 || original.Length > 80)
+            return false;
+
+        if (SoloDigitos(original).Length > 0)
+            return false;
+
+        if (original.Contains('?') || original.Contains('¿')
+            || original.Contains('!') || original.Contains('¡')
+            || original.Contains(':') || original.Contains(';'))
+            return false;
+
+        var partes = original
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        // Pedimos por lo menos nombre + apellido y evitamos que una frase larga
+        // de conversación termine guardada como identidad del titular.
+        if (partes.Length < 2 || partes.Length > 6)
+            return false;
+
+        // Cada palabra debe parecer parte de un nombre. Permitimos tildes, ñ,
+        // apóstrofe y guion para no restringir nombres reales.
+        if (partes.Any(p => !Regex.IsMatch(
+                p,
+                @"^[\p{L}][\p{L}'’\-]*$",
+                RegexOptions.CultureInvariant)))
+            return false;
+
+        var frasesNoNombre = new[]
+        {
+            "HOLA", "BUEN DIA", "BUENAS", "BUENAS TARDES", "BUENAS NOCHES",
+            "COMO SE LLAMA", "CUAL ES", "QUIEN ES", "DONDE QUEDAMOS",
+            "EN QUE PARTE", "QUE NECESITAS", "QUE NECESITO", "QUE ME FALTA",
+            "TE PASO", "TE ENVIO", "CONTINUAMOS", "SIGAMOS", "REFERENCIAS PERSONALES",
+            "TENGO QUE", "TENEMOS QUE", "ESTA MAL", "NO ES UN NOMBRE"
+        };
+
+        return !frasesNoNombre.Any(x => normalizado.Contains(x));
+    }
+
+    private static bool EsConsultaDatoRegistrado(string? mensaje)
+    {
+        var texto = NormalizarTexto(mensaje);
+
+        if (string.IsNullOrWhiteSpace(texto))
+            return false;
+
+        var consultaNombreTitular =
+            texto.Contains("COMO SE LLAMA EL TITULAR")
+            || texto.Contains("CUAL ES EL NOMBRE DEL TITULAR")
+            || texto.Contains("CUAL ES EL TITULAR")
+            || texto.Contains("QUIEN ES EL TITULAR")
+            || texto.Contains("QUE NOMBRE PUSE")
+            || texto.Contains("QUE NOMBRE DI")
+            || texto.Contains("CUAL ES MI NOMBRE REGISTRADO")
+            || texto.Contains("NOMBRE REGISTRADO")
+            || texto == "NOMBRE DEL TITULAR";
+
+        var consultaCedula =
+            texto.Contains("CUAL ES LA CEDULA REGISTRADA")
+            || texto.Contains("CUAL ES MI CEDULA")
+            || texto.Contains("QUE CEDULA PUSE")
+            || texto.Contains("QUE CEDULA DI")
+            || texto.Contains("NUMERO DE CEDULA REGISTRADO")
+            || texto.Contains("CI REGISTRADA")
+            || texto.Contains("CUAL ES LA CI")
+            || texto.Contains("CUAL ES MI CI");
+
+        return consultaNombreTitular || consultaCedula;
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ResponderDatoRegistrado(
+        SolicitudMotoProcesoDto solicitud,
+        string? mensaje)
+    {
+        var actual = await _repository.ObtenerActivaPorConversacion(solicitud.IdConversacion)
+                     ?? solicitud;
+
+        var texto = NormalizarTexto(mensaje);
+        var nombreCompleto = $"{actual.Nombre} {actual.Apellido}".Trim();
+        var cedula = SoloDigitos(actual.Cedula ?? string.Empty);
+
+        var preguntaNombre =
+            texto.Contains("TITULAR")
+            || texto.Contains("NOMBRE PUSE")
+            || texto.Contains("NOMBRE DI")
+            || texto.Contains("NOMBRE REGISTRADO");
+
+        var preguntaCedula =
+            texto.Contains("CEDULA")
+            || texto.Contains("CI REGISTRADA")
+            || texto.Contains("CUAL ES LA CI")
+            || texto.Contains("CUAL ES MI CI");
+
+        string respuesta;
+
+        if (preguntaNombre)
+        {
+            if (!EsNombrePersonaValido(nombreCompleto))
+            {
+                await _repository.ActualizarPaso(
+                    actual.TipoOperacion,
+                    actual.IdSolicitud,
+                    "CORREGIR_NOMBRE_TITULAR");
+
+                return Resultado(
+                    actual,
+                    "Detecté que el nombre del titular quedó mal guardado en una prueba anterior. No voy a tomar ese texto como nombre. Enviame ahora solamente tu nombre y apellido completo y lo corrijo sin perder los demás datos de la solicitud.",
+                    actual.Estado,
+                    "CORREGIR_NOMBRE_TITULAR");
+            }
+
+            respuesta = $"El titular registrado en tu solicitud es: {nombreCompleto}.";
+        }
+        else if (preguntaCedula)
+        {
+            respuesta = string.IsNullOrWhiteSpace(cedula)
+                ? "Todavía no tengo registrada la Cédula de Identidad del titular."
+                : $"La Cédula de Identidad registrada en tu solicitud es: {cedula}.";
+        }
+        else
+        {
+            respuesta = "Decime qué dato de tu solicitud querés consultar y te indico lo que ya está registrado.";
+        }
+
+        if (string.Equals(actual.PasoActual, "AUTORIZACION", StringComparison.OrdinalIgnoreCase))
+        {
+            respuesta +=
+                "\n\nSeguimos en la autorización final. Para aceptarla, enviame el formato completo con los mismos datos registrados.";
+        }
+
+        return Resultado(
+            actual,
+            respuesta,
+            actual.Estado,
+            actual.PasoActual);
+    }
+
+    private static bool EsConsultaEstadoSolicitud(string? mensaje)
+    {
+        var texto = NormalizarTexto(mensaje);
+
+        if (string.IsNullOrWhiteSpace(texto))
+            return false;
+
+        // Si ya existe una solicitud activa, un saludo o una pregunta de estado
+        // NO debe procesarse como si fuera el dato esperado del paso actual.
+        // El cliente puede escribir de forma natural: "hola que tal", "qué me falta",
+        // "cuántas referencias tenés", "dónde quedamos", etc.
+        var esSaludo =
+            texto == "HOLA"
+            || texto.StartsWith("HOLA ")
+            || texto == "BUEN DIA"
+            || texto.StartsWith("BUEN DIA ")
+            || texto == "BUENAS"
+            || texto.StartsWith("BUENAS ")
+            || texto == "BUENAS TARDES"
+            || texto == "BUENAS NOCHES";
+
+        if (esSaludo)
+            return true;
+
+        var consultaRetoma =
+            texto.Contains("DONDE QUEDAMOS")
+            || texto.Contains("EN QUE PARTE QUEDAMOS")
+            || texto.Contains("POR DONDE QUEDAMOS")
+            || texto.Contains("DONDE ESTAMOS")
+            || texto.Contains("EN QUE PARTE ESTAMOS")
+            || texto.Contains("RETOMEMOS")
+            || texto.Contains("CONTINUEMOS")
+            || texto == "CONTINUAR"
+            || texto == "SIGAMOS";
+
+        var consultaFaltantes =
+            texto.Contains("QUE ME FALTA")
+            || texto.Contains("QUE TE FALTA")
+            || texto.Contains("QUE FALTA")
+            || texto.Contains("QUE FALTAN")
+            || texto.Contains("QUE DATOS FALTAN")
+            || texto.Contains("CUANTO FALTA")
+            || texto.Contains("CUANTOS FALTAN")
+            || texto.Contains("CUANTAS FALTAN");
+
+        var consultaGuardado =
+            texto.Contains("QUE YA TENES")
+            || texto.Contains("QUE YA TENEMOS")
+            || texto.Contains("QUE TENES MIO")
+            || texto.Contains("CUANTO YA TENES")
+            || texto.Contains("CUANTOS YA TENES")
+            || texto.Contains("CUANTAS YA TENES")
+            || texto.Contains("CUANTOS TENES")
+            || texto.Contains("CUANTAS TENES")
+            || texto.Contains("CUANTAS REFERENCIAS")
+            || texto.Contains("CUANTOS DATOS")
+            || texto.Contains("QUE REFERENCIAS TENES");
+
+        return consultaRetoma || consultaFaltantes || consultaGuardado;
+    }
+
     private static bool EsCancelar(string mensaje)
     {
         var t = NormalizarTexto(mensaje);
@@ -2125,10 +2832,35 @@ public class SolicitudMotoService : ISolicitudMotoService
     private static bool EsTipo(string actual, string esperado)
         => string.Equals(actual, esperado, StringComparison.OrdinalIgnoreCase);
 
+    private static bool EsSinReferenciaComercial(string? texto)
+    {
+        var t = NormalizarTexto(texto);
+
+        if (string.IsNullOrWhiteSpace(t))
+            return false;
+
+        return t == "NO"
+               || t.StartsWith("NO TENGO")
+               || t.Contains("NO TENGO REFERENCIA")
+               || t.Contains("NO TENGO REFERENCIAS")
+               || t.Contains("NO TENGO COMERCIAL")
+               || t.Contains("NO TENGO COMERCIALES")
+               || t.Contains("NO CUENTO CON REFERENCIA")
+               || t.Contains("NO CUENTO CON REFERENCIAS")
+               || t.Contains("NO POSEO REFERENCIA")
+               || t.Contains("NO POSEO REFERENCIAS")
+               || t == "NINGUNA"
+               || t == "NINGUNO"
+               || t.StartsWith("NINGUNA ")
+               || t.StartsWith("NINGUNO ")
+               || t.Contains("NO DISPONGO DE REFERENCIA")
+               || t.Contains("NO DISPONGO DE REFERENCIAS");
+    }
+
     private static bool EsSi(string texto)
     {
         var t = NormalizarTexto(texto);
-        return t == "SI" || t.StartsWith("SI ") || t.Contains("CLARO") || t.Contains("TENGO");
+        return t == "SI" || t.StartsWith("SI ") || t.Contains("CLARO") || (t.Contains("TENGO") && !t.Contains("NO TENGO"));
     }
 
     private static bool EsNo(string texto)

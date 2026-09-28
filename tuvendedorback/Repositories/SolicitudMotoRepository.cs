@@ -27,86 +27,86 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
         try
         {
             const string sql = @"
-SELECT TOP (1) *
-FROM
-(
-    SELECT
-        'CREDITO' AS TipoOperacion,
-        sc.Id AS IdSolicitud,
-        sc.IdConversacion,
-        sc.IdModeloProducto,
-        sc.IdPublicacion,
-        sc.IdContacto,
-        sc.Estado,
-        ISNULL(sc.PasoActual, 'PRECALIFICACION_EDAD') AS PasoActual,
-        sc.ResultadoPreEvaluacion,
-        sc.MotivoPreEvaluacion,
-        sc.ViaEvaluacion,
-        sc.EstadoCedula,
-        c.Nombre,
-        c.Apellido,
-        c.Cedula,
-        c.FechaNacimiento,
-        c.Telefono,
-        c.Direccion,
-        c.Barrio,
-        c.Ciudad,
-        dl.Empresa,
-        dl.AntiguedadMeses,
-        dl.AportaIPS,
-        dl.CantidadAportesIPS,
-        dl.DireccionEmpresa,
-        dl.TelefonoEmpresa,
-        dl.TelefonoEmpresaEsMovil,
-        dl.NombreJefeEncargado,
-        ISNULL(sc.FechaActualizacion, sc.FechaCreacion) AS FechaOrden
-    FROM dbo.SolicitudesCredito sc
-    INNER JOIN dbo.Contactos c
-        ON c.Id = sc.IdContacto
-    LEFT JOIN dbo.SolicitudDatosLaborales dl
-        ON dl.IdSolicitud = sc.Id
-    WHERE sc.IdConversacion = @IdConversacion
-      AND sc.Estado IN ('EN_PROCESO','PRE_EVALUACION','DOCUMENTACION')
+                SELECT TOP (1) *
+                FROM
+                (
+                    SELECT
+                        'CREDITO' AS TipoOperacion,
+                        sc.Id AS IdSolicitud,
+                        sc.IdConversacion,
+                        sc.IdModeloProducto,
+                        sc.IdPublicacion,
+                        sc.IdContacto,
+                        sc.Estado,
+                        ISNULL(sc.PasoActual, 'PRECALIFICACION_EDAD') AS PasoActual,
+                        sc.ResultadoPreEvaluacion,
+                        sc.MotivoPreEvaluacion,
+                        sc.ViaEvaluacion,
+                        sc.EstadoCedula,
+                        c.Nombre,
+                        c.Apellido,
+                        c.Cedula,
+                        c.FechaNacimiento,
+                        c.Telefono,
+                        c.Direccion,
+                        c.Barrio,
+                        c.Ciudad,
+                        dl.Empresa,
+                        dl.AntiguedadMeses,
+                        dl.AportaIPS,
+                        dl.CantidadAportesIPS,
+                        dl.DireccionEmpresa,
+                        dl.TelefonoEmpresa,
+                        dl.TelefonoEmpresaEsMovil,
+                        dl.NombreJefeEncargado,
+                        ISNULL(sc.FechaActualizacion, sc.FechaCreacion) AS FechaOrden
+                    FROM dbo.SolicitudesCredito sc
+                    INNER JOIN dbo.Contactos c
+                        ON c.Id = sc.IdContacto
+                    LEFT JOIN dbo.SolicitudDatosLaborales dl
+                        ON dl.IdSolicitud = sc.Id
+                    WHERE sc.IdConversacion = @IdConversacion
+                      AND sc.Estado IN ('EN_PROCESO','PRE_EVALUACION','DOCUMENTACION')
 
-    UNION ALL
+                    UNION ALL
 
-    SELECT
-        'CONTADO' AS TipoOperacion,
-        sc.Id AS IdSolicitud,
-        sc.IdConversacion,
-        sc.IdModeloProducto,
-        sc.IdPublicacion,
-        sc.IdContacto,
-        sc.Estado,
-        sc.PasoActual,
-        CAST(NULL AS NVARCHAR(30)) AS ResultadoPreEvaluacion,
-        CAST(NULL AS NVARCHAR(500)) AS MotivoPreEvaluacion,
-        CAST(NULL AS NVARCHAR(40)) AS ViaEvaluacion,
-        sc.EstadoCedula,
-        c.Nombre,
-        c.Apellido,
-        c.Cedula,
-        c.FechaNacimiento,
-        c.Telefono,
-        c.Direccion,
-        c.Barrio,
-        c.Ciudad,
-        CAST(NULL AS NVARCHAR(150)) AS Empresa,
-        CAST(NULL AS INT) AS AntiguedadMeses,
-        CAST(NULL AS BIT) AS AportaIPS,
-        CAST(NULL AS INT) AS CantidadAportesIPS,
-        CAST(NULL AS NVARCHAR(250)) AS DireccionEmpresa,
-        CAST(NULL AS NVARCHAR(30)) AS TelefonoEmpresa,
-        CAST(NULL AS BIT) AS TelefonoEmpresaEsMovil,
-        CAST(NULL AS NVARCHAR(150)) AS NombreJefeEncargado,
-        ISNULL(sc.FechaActualizacion, sc.FechaCreacion) AS FechaOrden
-    FROM dbo.SolicitudesContadoMoto sc
-    INNER JOIN dbo.Contactos c
-        ON c.Id = sc.IdContacto
-    WHERE sc.IdConversacion = @IdConversacion
-      AND sc.Estado = 'EN_PROCESO'
-) x
-ORDER BY x.FechaOrden DESC;";
+                    SELECT
+                        'CONTADO' AS TipoOperacion,
+                        sc.Id AS IdSolicitud,
+                        sc.IdConversacion,
+                        sc.IdModeloProducto,
+                        sc.IdPublicacion,
+                        sc.IdContacto,
+                        sc.Estado,
+                        sc.PasoActual,
+                        CAST(NULL AS NVARCHAR(30)) AS ResultadoPreEvaluacion,
+                        CAST(NULL AS NVARCHAR(500)) AS MotivoPreEvaluacion,
+                        CAST(NULL AS NVARCHAR(40)) AS ViaEvaluacion,
+                        sc.EstadoCedula,
+                        c.Nombre,
+                        c.Apellido,
+                        c.Cedula,
+                        c.FechaNacimiento,
+                        c.Telefono,
+                        c.Direccion,
+                        c.Barrio,
+                        c.Ciudad,
+                        CAST(NULL AS NVARCHAR(150)) AS Empresa,
+                        CAST(NULL AS INT) AS AntiguedadMeses,
+                        CAST(NULL AS BIT) AS AportaIPS,
+                        CAST(NULL AS INT) AS CantidadAportesIPS,
+                        CAST(NULL AS NVARCHAR(250)) AS DireccionEmpresa,
+                        CAST(NULL AS NVARCHAR(30)) AS TelefonoEmpresa,
+                        CAST(NULL AS BIT) AS TelefonoEmpresaEsMovil,
+                        CAST(NULL AS NVARCHAR(150)) AS NombreJefeEncargado,
+                        ISNULL(sc.FechaActualizacion, sc.FechaCreacion) AS FechaOrden
+                    FROM dbo.SolicitudesContadoMoto sc
+                    INNER JOIN dbo.Contactos c
+                        ON c.Id = sc.IdContacto
+                    WHERE sc.IdConversacion = @IdConversacion
+                      AND sc.Estado = 'EN_PROCESO'
+                ) x
+                ORDER BY x.FechaOrden DESC;";
 
             return await conn.QueryFirstOrDefaultAsync<SolicitudMotoProcesoDto>(
                 sql,
@@ -127,19 +127,19 @@ ORDER BY x.FechaOrden DESC;";
         try
         {
             const string sql = @"
-SELECT TOP (1)
-    Id,
-    EdadMinima,
-    AntiguedadLaboralMinMeses,
-    AportesIPSMinimos,
-    ReferenciasFamiliaresMinimas,
-    ReferenciasAmigosMinimas,
-    ReferenciasComercialesMinimasSinIps
-FROM dbo.ReglasCreditoMoto
-WHERE Estado = 'Activo'
-  AND FechaDesde <= CAST(GETDATE() AS DATE)
-  AND (FechaHasta IS NULL OR FechaHasta >= CAST(GETDATE() AS DATE))
-ORDER BY FechaDesde DESC, Id DESC;";
+                SELECT TOP (1)
+                    Id,
+                    EdadMinima,
+                    AntiguedadLaboralMinMeses,
+                    AportesIPSMinimos,
+                    ReferenciasFamiliaresMinimas,
+                    ReferenciasAmigosMinimas,
+                    ReferenciasComercialesMinimasSinIps
+                FROM dbo.ReglasCreditoMoto
+                WHERE Estado = 'Activo'
+                  AND FechaDesde <= CAST(GETDATE() AS DATE)
+                  AND (FechaHasta IS NULL OR FechaHasta >= CAST(GETDATE() AS DATE))
+                ORDER BY FechaDesde DESC, Id DESC;";
 
             var regla = await conn.QueryFirstOrDefaultAsync<ReglaCreditoMotoDto>(sql);
 
@@ -168,31 +168,31 @@ ORDER BY FechaDesde DESC, Id DESC;";
         try
         {
             const string sql = @"
-DECLARE @IdContacto INT;
+                DECLARE @IdContacto INT;
 
-SELECT TOP (1)
-    @IdContacto = Id
-FROM dbo.Contactos
-WHERE REPLACE(REPLACE(REPLACE(ISNULL(Telefono,''), ' ', ''), '-', ''), '+', '') = @Telefono
-ORDER BY Id DESC;
+                SELECT TOP (1)
+                    @IdContacto = Id
+                FROM dbo.Contactos
+                WHERE REPLACE(REPLACE(REPLACE(ISNULL(Telefono,''), ' ', ''), '-', ''), '+', '') = @Telefono
+                ORDER BY Id DESC;
 
-IF @IdContacto IS NULL
-BEGIN
-    INSERT INTO dbo.Contactos
-    (
-        Telefono,
-        FechaCreacion
-    )
-    VALUES
-    (
-        @Telefono,
-        GETDATE()
-    );
+                IF @IdContacto IS NULL
+                BEGIN
+                    INSERT INTO dbo.Contactos
+                    (
+                        Telefono,
+                        FechaCreacion
+                    )
+                    VALUES
+                    (
+                        @Telefono,
+                        GETDATE()
+                    );
 
-    SET @IdContacto = SCOPE_IDENTITY();
-END;
+                    SET @IdContacto = SCOPE_IDENTITY();
+                END;
 
-SELECT @IdContacto;";
+                SELECT @IdContacto;";
 
             return await conn.ExecuteScalarAsync<int>(
                 sql,
@@ -215,31 +215,31 @@ SELECT @IdContacto;";
         try
         {
             const string sql = @"
-INSERT INTO dbo.SolicitudesCredito
-(
-    IdConversacion,
-    IdPublicacion,
-    IdModeloProducto,
-    IdContacto,
-    Estado,
-    PasoActual,
-    ResultadoPreEvaluacion,
-    FechaCreacion,
-    FechaActualizacion
-)
-OUTPUT INSERTED.Id
-VALUES
-(
-    @IdConversacion,
-    @IdPublicacion,
-    @IdModeloProducto,
-    @IdContacto,
-    'PRE_EVALUACION',
-    'PRECALIFICACION_EDAD',
-    'PENDIENTE',
-    GETDATE(),
-    GETDATE()
-);";
+                INSERT INTO dbo.SolicitudesCredito
+                (
+                    IdConversacion,
+                    IdPublicacion,
+                    IdModeloProducto,
+                    IdContacto,
+                    Estado,
+                    PasoActual,
+                    ResultadoPreEvaluacion,
+                    FechaCreacion,
+                    FechaActualizacion
+                )
+                OUTPUT INSERTED.Id
+                VALUES
+                (
+                    @IdConversacion,
+                    @IdPublicacion,
+                    @IdModeloProducto,
+                    @IdContacto,
+                    'PRE_EVALUACION',
+                    'PRECALIFICACION_EDAD',
+                    'PENDIENTE',
+                    GETDATE(),
+                    GETDATE()
+                );";
 
             return await conn.ExecuteScalarAsync<int>(
                 sql,
@@ -268,29 +268,29 @@ VALUES
         try
         {
             const string sql = @"
-INSERT INTO dbo.SolicitudesContadoMoto
-(
-    IdConversacion,
-    IdModeloProducto,
-    IdPublicacion,
-    IdContacto,
-    Estado,
-    PasoActual,
-    FechaCreacion,
-    FechaActualizacion
-)
-OUTPUT INSERTED.Id
-VALUES
-(
-    @IdConversacion,
-    @IdModeloProducto,
-    @IdPublicacion,
-    @IdContacto,
-    'EN_PROCESO',
-    'NOMBRE_COMPLETO',
-    GETDATE(),
-    GETDATE()
-);";
+                INSERT INTO dbo.SolicitudesContadoMoto
+                (
+                    IdConversacion,
+                    IdModeloProducto,
+                    IdPublicacion,
+                    IdContacto,
+                    Estado,
+                    PasoActual,
+                    FechaCreacion,
+                    FechaActualizacion
+                )
+                OUTPUT INSERTED.Id
+                VALUES
+                (
+                    @IdConversacion,
+                    @IdModeloProducto,
+                    @IdPublicacion,
+                    @IdContacto,
+                    'EN_PROCESO',
+                    'NOMBRE_COMPLETO',
+                    GETDATE(),
+                    GETDATE()
+                );";
 
             return await conn.ExecuteScalarAsync<int>(
                 sql,
@@ -391,57 +391,57 @@ VALUES
         try
         {
             const string sql = @"
-IF EXISTS
-(
-    SELECT 1
-    FROM dbo.SolicitudDatosLaborales
-    WHERE IdSolicitud = @IdSolicitud
-)
-BEGIN
-    UPDATE dbo.SolicitudDatosLaborales
-    SET Empresa = COALESCE(@Empresa, Empresa),
-        AntiguedadMeses = COALESCE(@AntiguedadMeses, AntiguedadMeses),
-        AportaIPS = COALESCE(@AportaIPS, AportaIPS),
-        CantidadAportesIPS = COALESCE(@CantidadAportesIPS, CantidadAportesIPS),
-        DireccionEmpresa = COALESCE(@DireccionEmpresa, DireccionEmpresa),
-        TelefonoEmpresa = COALESCE(@TelefonoEmpresa, TelefonoEmpresa),
-        TelefonoEmpresaEsMovil = COALESCE(@TelefonoEmpresaEsMovil, TelefonoEmpresaEsMovil),
-        NombreJefeEncargado = COALESCE(@NombreJefeEncargado, NombreJefeEncargado)
-    WHERE IdSolicitud = @IdSolicitud;
-END
-ELSE
-BEGIN
-    INSERT INTO dbo.SolicitudDatosLaborales
-    (
-        IdSolicitud,
-        Empresa,
-        AntiguedadMeses,
-        AportaIPS,
-        CantidadAportesIPS,
-        Cargo,
-        Salario,
-        TipoPago,
-        DireccionEmpresa,
-        TelefonoEmpresa,
-        TelefonoEmpresaEsMovil,
-        NombreJefeEncargado
-    )
-    VALUES
-    (
-        @IdSolicitud,
-        COALESCE(@Empresa, N''),
-        COALESCE(@AntiguedadMeses, 0),
-        COALESCE(@AportaIPS, 0),
-        COALESCE(@CantidadAportesIPS, 0),
-        N'',
-        0,
-        N'',
-        @DireccionEmpresa,
-        @TelefonoEmpresa,
-        @TelefonoEmpresaEsMovil,
-        @NombreJefeEncargado
-    );
-END;";
+                IF EXISTS
+                (
+                    SELECT 1
+                    FROM dbo.SolicitudDatosLaborales
+                    WHERE IdSolicitud = @IdSolicitud
+                )
+                BEGIN
+                    UPDATE dbo.SolicitudDatosLaborales
+                    SET Empresa = COALESCE(@Empresa, Empresa),
+                        AntiguedadMeses = COALESCE(@AntiguedadMeses, AntiguedadMeses),
+                        AportaIPS = COALESCE(@AportaIPS, AportaIPS),
+                        CantidadAportesIPS = COALESCE(@CantidadAportesIPS, CantidadAportesIPS),
+                        DireccionEmpresa = COALESCE(@DireccionEmpresa, DireccionEmpresa),
+                        TelefonoEmpresa = COALESCE(@TelefonoEmpresa, TelefonoEmpresa),
+                        TelefonoEmpresaEsMovil = COALESCE(@TelefonoEmpresaEsMovil, TelefonoEmpresaEsMovil),
+                        NombreJefeEncargado = COALESCE(@NombreJefeEncargado, NombreJefeEncargado)
+                    WHERE IdSolicitud = @IdSolicitud;
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.SolicitudDatosLaborales
+                    (
+                        IdSolicitud,
+                        Empresa,
+                        AntiguedadMeses,
+                        AportaIPS,
+                        CantidadAportesIPS,
+                        Cargo,
+                        Salario,
+                        TipoPago,
+                        DireccionEmpresa,
+                        TelefonoEmpresa,
+                        TelefonoEmpresaEsMovil,
+                        NombreJefeEncargado
+                    )
+                    VALUES
+                    (
+                        @IdSolicitud,
+                        COALESCE(@Empresa, N''),
+                        COALESCE(@AntiguedadMeses, 0),
+                        COALESCE(@AportaIPS, 0),
+                        COALESCE(@CantidadAportesIPS, 0),
+                        N'',
+                        0,
+                        N'',
+                        @DireccionEmpresa,
+                        @TelefonoEmpresa,
+                        @TelefonoEmpresaEsMovil,
+                        @NombreJefeEncargado
+                    );
+                END;";
 
             await conn.ExecuteAsync(
                 sql,
@@ -519,45 +519,45 @@ END;";
         try
         {
             const string sql = @"
-IF EXISTS
-(
-    SELECT 1
-    FROM dbo.SolicitudDatosLaborales
-    WHERE IdSolicitud = @IdSolicitud
-)
-BEGIN
-    UPDATE dbo.SolicitudDatosLaborales
-    SET Empresa = @Empresa,
-        AntiguedadMeses = @AntiguedadMeses,
-        AportaIPS = @AportaIPS,
-        CantidadAportesIPS = @CantidadAportesIPS
-    WHERE IdSolicitud = @IdSolicitud;
-END
-ELSE
-BEGIN
-    INSERT INTO dbo.SolicitudDatosLaborales
-    (
-        IdSolicitud,
-        Empresa,
-        AntiguedadMeses,
-        AportaIPS,
-        CantidadAportesIPS,
-        Cargo,
-        Salario,
-        TipoPago
-    )
-    VALUES
-    (
-        @IdSolicitud,
-        @Empresa,
-        @AntiguedadMeses,
-        @AportaIPS,
-        @CantidadAportesIPS,
-        NULL,
-        NULL,
-        NULL
-    );
-END;";
+                IF EXISTS
+                (
+                    SELECT 1
+                    FROM dbo.SolicitudDatosLaborales
+                    WHERE IdSolicitud = @IdSolicitud
+                )
+                BEGIN
+                    UPDATE dbo.SolicitudDatosLaborales
+                    SET Empresa = @Empresa,
+                        AntiguedadMeses = @AntiguedadMeses,
+                        AportaIPS = @AportaIPS,
+                        CantidadAportesIPS = @CantidadAportesIPS
+                    WHERE IdSolicitud = @IdSolicitud;
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.SolicitudDatosLaborales
+                    (
+                        IdSolicitud,
+                        Empresa,
+                        AntiguedadMeses,
+                        AportaIPS,
+                        CantidadAportesIPS,
+                        Cargo,
+                        Salario,
+                        TipoPago
+                    )
+                    VALUES
+                    (
+                        @IdSolicitud,
+                        @Empresa,
+                        @AntiguedadMeses,
+                        @AportaIPS,
+                        @CantidadAportesIPS,
+                        NULL,
+                        NULL,
+                        NULL
+                    );
+                END;";
 
             await conn.ExecuteAsync(
                 sql,
@@ -642,24 +642,24 @@ END;";
         try
         {
             const string sql = @"
-INSERT INTO dbo.SolicitudReferencias
-(
-    IdSolicitud,
-    Tipo,
-    Nombre,
-    Telefono,
-    Parentesco,
-    Observacion
-)
-VALUES
-(
-    @IdSolicitud,
-    @Tipo,
-    @Nombre,
-    @Telefono,
-    @Parentesco,
-    @Observacion
-);";
+                INSERT INTO dbo.SolicitudReferencias
+                (
+                    IdSolicitud,
+                    Tipo,
+                    Nombre,
+                    Telefono,
+                    Parentesco,
+                    Observacion
+                )
+                VALUES
+                (
+                    @IdSolicitud,
+                    @Tipo,
+                    @Nombre,
+                    @Telefono,
+                    @Parentesco,
+                    @Observacion
+                );";
 
             await conn.ExecuteAsync(
                 sql,
@@ -687,17 +687,17 @@ VALUES
         try
         {
             const string sql = @"
-SELECT
-    Id,
-    IdSolicitud,
-    Tipo,
-    Nombre,
-    Telefono,
-    Parentesco,
-    Observacion
-FROM dbo.SolicitudReferencias
-WHERE IdSolicitud = @IdSolicitud
-ORDER BY Id;";
+                SELECT
+                    Id,
+                    IdSolicitud,
+                    Tipo,
+                    Nombre,
+                    Telefono,
+                    Parentesco,
+                    Observacion
+                FROM dbo.SolicitudReferencias
+                WHERE IdSolicitud = @IdSolicitud
+                ORDER BY Id;";
 
             var data = await conn.QueryAsync<SolicitudMotoReferenciaDto>(
                 sql,
@@ -749,45 +749,45 @@ ORDER BY Id;";
         try
         {
             const string sql = @"
-DELETE FROM dbo.SolicitudDocumentosMoto
-WHERE TipoDocumento = @TipoDocumento
-  AND
-  (
-      (@TipoOperacion = 'CREDITO' AND IdSolicitudCredito = @IdSolicitud)
-      OR
-      (@TipoOperacion = 'CONTADO' AND IdSolicitudContado = @IdSolicitud)
-  );
+                DELETE FROM dbo.SolicitudDocumentosMoto
+                WHERE TipoDocumento = @TipoDocumento
+                  AND
+                  (
+                      (@TipoOperacion = 'CREDITO' AND IdSolicitudCredito = @IdSolicitud)
+                      OR
+                      (@TipoOperacion = 'CONTADO' AND IdSolicitudContado = @IdSolicitud)
+                  );
 
-INSERT INTO dbo.SolicitudDocumentosMoto
-(
-    IdSolicitudCredito,
-    IdSolicitudContado,
-    IdConversacion,
-    IdModeloProducto,
-    TipoOperacion,
-    TipoDocumento,
-    NombreArchivo,
-    MimeType,
-    RutaPrivada,
-    HashSha256,
-    EstadoRevision,
-    FechaRecepcion
-)
-VALUES
-(
-    CASE WHEN @TipoOperacion = 'CREDITO' THEN @IdSolicitud ELSE NULL END,
-    CASE WHEN @TipoOperacion = 'CONTADO' THEN @IdSolicitud ELSE NULL END,
-    @IdConversacion,
-    @IdModeloProducto,
-    @TipoOperacion,
-    @TipoDocumento,
-    @NombreArchivo,
-    @MimeType,
-    @RutaPrivada,
-    @HashSha256,
-    'PENDIENTE',
-    GETDATE()
-);";
+                INSERT INTO dbo.SolicitudDocumentosMoto
+                (
+                    IdSolicitudCredito,
+                    IdSolicitudContado,
+                    IdConversacion,
+                    IdModeloProducto,
+                    TipoOperacion,
+                    TipoDocumento,
+                    NombreArchivo,
+                    MimeType,
+                    RutaPrivada,
+                    HashSha256,
+                    EstadoRevision,
+                    FechaRecepcion
+                )
+                VALUES
+                (
+                    CASE WHEN @TipoOperacion = 'CREDITO' THEN @IdSolicitud ELSE NULL END,
+                    CASE WHEN @TipoOperacion = 'CONTADO' THEN @IdSolicitud ELSE NULL END,
+                    @IdConversacion,
+                    @IdModeloProducto,
+                    @TipoOperacion,
+                    @TipoDocumento,
+                    @NombreArchivo,
+                    @MimeType,
+                    @RutaPrivada,
+                    @HashSha256,
+                    'PENDIENTE',
+                    GETDATE()
+                );";
 
             await conn.ExecuteAsync(
                 sql,
@@ -820,21 +820,21 @@ VALUES
         try
         {
             const string sql = @"
-SELECT CASE WHEN EXISTS
-(
-    SELECT 1
-    FROM dbo.SolicitudDocumentosMoto
-    WHERE TipoDocumento = @TipoDocumento
-      AND
-      (
-          (@TipoOperacion = 'CREDITO' AND IdSolicitudCredito = @IdSolicitud)
-          OR
-          (@TipoOperacion = 'CONTADO' AND IdSolicitudContado = @IdSolicitud)
-      )
-)
-THEN CAST(1 AS BIT)
-ELSE CAST(0 AS BIT)
-END;";
+                SELECT CASE WHEN EXISTS
+                (
+                    SELECT 1
+                    FROM dbo.SolicitudDocumentosMoto
+                    WHERE TipoDocumento = @TipoDocumento
+                      AND
+                      (
+                          (@TipoOperacion = 'CREDITO' AND IdSolicitudCredito = @IdSolicitud)
+                          OR
+                          (@TipoOperacion = 'CONTADO' AND IdSolicitudContado = @IdSolicitud)
+                      )
+                )
+                THEN CAST(1 AS BIT)
+                ELSE CAST(0 AS BIT)
+                END;";
 
             return await conn.ExecuteScalarAsync<bool>(
                 sql,
@@ -858,11 +858,11 @@ END;";
         try
         {
             const string sql = @"
-SELECT TOP (1) PromptBase
-FROM dbo.PromptsIA
-WHERE Codigo = 'MOTO_CREDITO_AUTORIZACION'
-  AND Activo = 1
-ORDER BY Id DESC;";
+                SELECT TOP (1) PromptBase
+                FROM dbo.PromptsIA
+                WHERE Codigo = 'MOTO_CREDITO_AUTORIZACION'
+                  AND Activo = 1
+                ORDER BY Id DESC;";
 
             return await conn.QueryFirstOrDefaultAsync<string?>(sql);
         }
@@ -885,31 +885,31 @@ ORDER BY Id DESC;";
         try
         {
             const string sql = @"
-DELETE FROM dbo.SolicitudAutorizacionCredito
-WHERE IdSolicitudCredito = @IdSolicitud;
+                DELETE FROM dbo.SolicitudAutorizacionCredito
+                WHERE IdSolicitudCredito = @IdSolicitud;
 
-INSERT INTO dbo.SolicitudAutorizacionCredito
-(
-    IdSolicitudCredito,
-    VersionAutorizacion,
-    TextoAutorizacion,
-    MensajeOriginal,
-    NombreCompleto,
-    NumeroCedula,
-    Canal,
-    FechaAutorizacion
-)
-VALUES
-(
-    @IdSolicitud,
-    @Version,
-    @TextoAutorizacion,
-    @MensajeOriginal,
-    @NombreCompleto,
-    @NumeroCedula,
-    'WHATSAPP',
-    GETDATE()
-);";
+                INSERT INTO dbo.SolicitudAutorizacionCredito
+                (
+                    IdSolicitudCredito,
+                    VersionAutorizacion,
+                    TextoAutorizacion,
+                    MensajeOriginal,
+                    NombreCompleto,
+                    NumeroCedula,
+                    Canal,
+                    FechaAutorizacion
+                )
+                VALUES
+                (
+                    @IdSolicitud,
+                    @Version,
+                    @TextoAutorizacion,
+                    @MensajeOriginal,
+                    @NombreCompleto,
+                    @NumeroCedula,
+                    'WHATSAPP',
+                    GETDATE()
+                );";
 
             await conn.ExecuteAsync(
                 sql,
@@ -936,15 +936,15 @@ VALUES
         try
         {
             const string sql = @"
-SELECT CASE WHEN EXISTS
-(
-    SELECT 1
-    FROM dbo.SolicitudAutorizacionCredito
-    WHERE IdSolicitudCredito = @IdSolicitud
-)
-THEN CAST(1 AS BIT)
-ELSE CAST(0 AS BIT)
-END;";
+                SELECT CASE WHEN EXISTS
+                (
+                    SELECT 1
+                    FROM dbo.SolicitudAutorizacionCredito
+                    WHERE IdSolicitudCredito = @IdSolicitud
+                )
+                THEN CAST(1 AS BIT)
+                ELSE CAST(0 AS BIT)
+                END;";
 
             return await conn.ExecuteScalarAsync<bool>(
                 sql,
@@ -956,23 +956,139 @@ END;";
         }
     }
 
-    public Task MarcarListaRevision(
-        string tipoOperacion,
-        int idSolicitud)
+    public async Task MarcarListaRevision(
+     string tipoOperacion,
+     int idSolicitud)
     {
-        var tabla = EsCredito(tipoOperacion)
-            ? "dbo.SolicitudesCredito"
-            : "dbo.SolicitudesContadoMoto";
+        using var conn = _conexion.CreateSqlConnection();
 
-        return Ejecutar(
-            $@"UPDATE {tabla}
-               SET Estado = 'LISTA_REVISION',
-                   PasoActual = 'LISTA_REVISION',
-                   FechaActualizacion = GETDATE(),
-                   FechaCierre = GETDATE()
-               WHERE Id = @IdSolicitud;",
-            new { IdSolicitud = idSolicitud },
-            "marcando solicitud lista para revisión");
+        try
+        {
+            conn.Open();
+
+            using var transaction = conn.BeginTransaction();
+
+            if (EsCredito(tipoOperacion))
+            {
+                const string sql = @"
+UPDATE dbo.SolicitudesCredito
+SET
+    Estado = 'LISTA_REVISION',
+    PasoActual = 'LISTA_REVISION',
+    FechaActualizacion = GETDATE(),
+    FechaCierre = GETDATE()
+WHERE Id = @IdSolicitud;
+
+IF @@ROWCOUNT = 0
+BEGIN
+    THROW 50001, 'No se encontró la solicitud de crédito.', 1;
+END;
+
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM dbo.SolicitudCreditoMotoGestion
+    WHERE IdSolicitudCredito = @IdSolicitud
+)
+BEGIN
+    INSERT INTO dbo.SolicitudCreditoMotoGestion
+    (
+        IdSolicitudCredito,
+        EstadoControl,
+        IdUsuarioAsignado,
+        ObservacionInterna,
+        FechaRecepcion,
+        FechaUltimaGestion,
+        FechaCierreControl
+    )
+    VALUES
+    (
+        @IdSolicitud,
+        'PENDIENTE_REVISION',
+        NULL,
+        N'Solicitud recibida automáticamente desde el flujo de crédito.',
+        GETDATE(),
+        NULL,
+        NULL
+    );
+END;
+
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM dbo.SolicitudCreditoMotoGestionHistorial
+    WHERE IdSolicitudCredito = @IdSolicitud
+      AND Accion = 'RECEPCION'
+)
+BEGIN
+    INSERT INTO dbo.SolicitudCreditoMotoGestionHistorial
+    (
+        IdSolicitudCredito,
+        Accion,
+        EstadoAnterior,
+        EstadoNuevo,
+        Observacion,
+        IdUsuario,
+        Fecha
+    )
+    VALUES
+    (
+        @IdSolicitud,
+        'RECEPCION',
+        NULL,
+        'PENDIENTE_REVISION',
+        N'Solicitud recibida automáticamente en la bandeja interna de TuVendedor.',
+        NULL,
+        GETDATE()
+    );
+END;
+";
+
+                await conn.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        IdSolicitud = idSolicitud
+                    },
+                    transaction);
+
+                transaction.Commit();
+                return;
+            }
+
+            const string sqlContado = @"
+UPDATE dbo.SolicitudesContadoMoto
+SET
+    Estado = 'LISTA_REVISION',
+    PasoActual = 'LISTA_REVISION',
+    FechaActualizacion = GETDATE(),
+    FechaCierre = GETDATE()
+WHERE Id = @IdSolicitud;
+
+IF @@ROWCOUNT = 0
+BEGIN
+    THROW 50002, 'No se encontró la solicitud al contado.', 1;
+END;
+";
+
+            await conn.ExecuteAsync(
+                sqlContado,
+                new
+                {
+                    IdSolicitud = idSolicitud
+                },
+                transaction);
+
+            transaction.Commit();
+        }
+        catch (Exception ex)
+        {
+            throw Error(
+                ex,
+                "Error marcando solicitud lista para revisión.");
+        }
     }
 
     public Task Cancelar(
