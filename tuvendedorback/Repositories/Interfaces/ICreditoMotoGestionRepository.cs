@@ -6,14 +6,11 @@ public interface ICreditoMotoGestionRepository
 {
     Task<IReadOnlyList<CreditoMotoGestionListaDto>> Listar(
         string? estado,
-        string? buscar);
+        string? buscar,
+        DateTime? fecha);
 
     Task<CreditoMotoGestionDetalleDto?> ObtenerDetalle(
         int idSolicitudCredito);
-
-    Task<bool> TomarSolicitud(
-        int idSolicitudCredito,
-        int idUsuario);
 
     Task<bool> CambiarEstado(
         int idSolicitudCredito,

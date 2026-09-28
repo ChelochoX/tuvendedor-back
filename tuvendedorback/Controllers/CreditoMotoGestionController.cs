@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
+using tuvendedorback.Common;
 using tuvendedorback.DTOs;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
@@ -14,28 +14,32 @@ namespace tuvendedorback.Controllers;
 public class CreditoMotoGestionController : ControllerBase
 {
     private readonly ICreditoMotoGestionService _service;
+    private readonly UserContext _userContext;
 
     public CreditoMotoGestionController(
-        ICreditoMotoGestionService service)
+        ICreditoMotoGestionService service,
+        UserContext userContext)
     {
         _service = service;
+        _userContext = userContext;
     }
 
 
     // =========================================================
-    // 1) BANDEJA
-    // GET /api/creditos/motos/solicitudes
+    // LISTAR SOLICITUDES
     // =========================================================
 
     [HttpGet]
     public async Task<IActionResult> Listar(
         [FromQuery] string? estado = null,
-        [FromQuery] string? buscar = null)
+        [FromQuery] string? buscar = null,
+        [FromQuery] DateTime? fecha = null)
     {
         var data =
             await _service.Listar(
                 estado,
-                buscar);
+                buscar,
+                fecha);
 
         return Ok(
             new Response<IReadOnlyList<CreditoMotoGestionListaDto>>
@@ -50,8 +54,7 @@ public class CreditoMotoGestionController : ControllerBase
 
 
     // =========================================================
-    // 2) DETALLE COMPLETO
-    // GET /api/creditos/motos/solicitudes/{id}
+    // DETALLE
     // =========================================================
 
     [HttpGet("{idSolicitudCredito:int}")]
@@ -75,45 +78,7 @@ public class CreditoMotoGestionController : ControllerBase
 
 
     // =========================================================
-    // 3) TOMAR SOLICITUD
-    // POST /api/creditos/motos/solicitudes/{id}/tomar
-    // =========================================================
-
-    [HttpPost("{idSolicitudCredito:int}/tomar")]
-    public async Task<IActionResult> TomarSolicitud(
-        int idSolicitudCredito)
-    {
-        if (!TryObtenerUsuarioId(
-                out var idUsuario))
-        {
-            return Unauthorized(
-                new
-                {
-                    message =
-                        "No se pudo identificar al usuario autenticado."
-                });
-        }
-
-        var data =
-            await _service.TomarSolicitud(
-                idSolicitudCredito,
-                idUsuario);
-
-        return Ok(
-            new Response<CreditoMotoGestionDetalleDto>
-            {
-                Success = true,
-                StatusCode = 200,
-                Message =
-                    "Solicitud tomada para revisión correctamente.",
-                Data = data
-            });
-    }
-
-
-    // =========================================================
-    // 4) CAMBIAR ESTADO
-    // PATCH /api/creditos/motos/solicitudes/{id}/estado
+    // MARCAR COMO ENVIADA A LA EMPRESA
     // =========================================================
 
     [HttpPatch("{idSolicitudCredito:int}/estado")]
@@ -121,16 +86,8 @@ public class CreditoMotoGestionController : ControllerBase
         int idSolicitudCredito,
         [FromBody] CreditoMotoCambiarEstadoRequest request)
     {
-        if (!TryObtenerUsuarioId(
-                out var idUsuario))
-        {
-            return Unauthorized(
-                new
-                {
-                    message =
-                        "No se pudo identificar al usuario autenticado."
-                });
-        }
+        var idUsuario =
+            ObtenerIdUsuario();
 
         var data =
             await _service.CambiarEstado(
@@ -144,17 +101,14 @@ public class CreditoMotoGestionController : ControllerBase
                 Success = true,
                 StatusCode = 200,
                 Message =
-                    "Estado de la solicitud actualizado correctamente.",
+                    "Solicitud marcada como enviada a la empresa correctamente.",
                 Data = data
             });
     }
 
 
     // =========================================================
-    // 5) DOCUMENTO PRIVADO
-    //
-    // GET
-    // /api/creditos/motos/solicitudes/{id}/documentos/{idDocumento}/archivo
+    // VER DOCUMENTO PRIVADO
     // =========================================================
 
     [HttpGet(
@@ -179,27 +133,20 @@ public class CreditoMotoGestionController : ControllerBase
     // USUARIO AUTENTICADO
     // =========================================================
 
-    private bool TryObtenerUsuarioId(
-        out int idUsuario)
+    private int ObtenerIdUsuario()
     {
-        idUsuario = 0;
+        var idUsuario =
+            _userContext.IdUsuario;
 
-        var valor =
-            User.FindFirstValue(
-                ClaimTypes.NameIdentifier)
-            ??
-            User.FindFirstValue("nameid")
-            ??
-            User.FindFirstValue("sub")
-            ??
-            User.FindFirstValue("id")
-            ??
-            User.FindFirstValue("IdUsuario");
+        if (
+            idUsuario == null
+            || idUsuario <= 0
+        )
+        {
+            throw new UnauthorizedAccessException(
+                "No se pudo identificar al usuario autenticado.");
+        }
 
-        return int.TryParse(
-                   valor,
-                   out idUsuario)
-               &&
-               idUsuario > 0;
+        return idUsuario.Value;
     }
 }

@@ -957,8 +957,8 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
     }
 
     public async Task MarcarListaRevision(
-     string tipoOperacion,
-     int idSolicitud)
+        string tipoOperacion,
+        int idSolicitud)
     {
         using var conn = _conexion.CreateSqlConnection();
 
@@ -1005,7 +1005,7 @@ BEGIN
     VALUES
     (
         @IdSolicitud,
-        'PENDIENTE_REVISION',
+        'PENDIENTE_ENVIO',
         NULL,
         N'Solicitud recibida automáticamente desde el flujo de crédito.',
         GETDATE(),
@@ -1038,7 +1038,7 @@ BEGIN
         @IdSolicitud,
         'RECEPCION',
         NULL,
-        'PENDIENTE_REVISION',
+        'PENDIENTE_ENVIO',
         N'Solicitud recibida automáticamente en la bandeja interna de TuVendedor.',
         NULL,
         GETDATE()

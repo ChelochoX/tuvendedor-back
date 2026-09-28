@@ -27,7 +27,8 @@ public class CreditoMotoGestionRepository
 
     public async Task<IReadOnlyList<CreditoMotoGestionListaDto>> Listar(
         string? estado,
-        string? buscar)
+        string? buscar,
+        DateTime? fecha)
     {
         using var conn = _conexion.CreateSqlConnection();
 
@@ -104,14 +105,20 @@ WHERE
         OR mp.CodigoReferencia LIKE @Buscar
         OR ma.Nombre LIKE @Buscar
     )
+    AND
+    (
+        @Fecha IS NULL
+        OR
+        (
+            g.FechaRecepcion >= @Fecha
+            AND g.FechaRecepcion < DATEADD(DAY, 1, @Fecha)
+        )
+    )
 
 ORDER BY
     CASE g.EstadoControl
-        WHEN 'PENDIENTE_REVISION' THEN 1
-        WHEN 'EN_REVISION' THEN 2
-        WHEN 'OBSERVADA' THEN 3
-        WHEN 'APROBADA' THEN 4
-        WHEN 'RECHAZADA' THEN 5
+        WHEN 'PENDIENTE_ENVIO' THEN 1
+        WHEN 'ENVIADA_EMPRESA' THEN 2
         ELSE 9
     END,
     g.FechaRecepcion DESC,
@@ -133,7 +140,8 @@ ORDER BY
                                 ? null
                                 : estado.Trim().ToUpperInvariant(),
 
-                        Buscar = patronBuscar
+                        Buscar = patronBuscar,
+                        Fecha = fecha?.Date
                     });
 
             return data.ToList();
@@ -399,102 +407,6 @@ ORDER BY
 
 
     // =========================================================
-    // TOMAR SOLICITUD
-    // =========================================================
-
-    public async Task<bool> TomarSolicitud(
-        int idSolicitudCredito,
-        int idUsuario)
-    {
-        using var conn = _conexion.CreateSqlConnection();
-
-        try
-        {
-            // En este proyecto usamos Open() porque
-            // CreateSqlConnection() no expone OpenAsync().
-            conn.Open();
-
-            using var transaction =
-                conn.BeginTransaction();
-
-            const string sqlActualizar = @"
-UPDATE dbo.SolicitudCreditoMotoGestion
-SET
-    EstadoControl = 'EN_REVISION',
-    IdUsuarioAsignado = @IdUsuario,
-    FechaUltimaGestion = GETDATE()
-WHERE IdSolicitudCredito = @IdSolicitud
-  AND EstadoControl = 'PENDIENTE_REVISION'
-  AND
-  (
-      IdUsuarioAsignado IS NULL
-      OR IdUsuarioAsignado = @IdUsuario
-  );
-";
-
-            var filas =
-                await conn.ExecuteAsync(
-                    sqlActualizar,
-                    new
-                    {
-                        IdSolicitud = idSolicitudCredito,
-                        IdUsuario = idUsuario
-                    },
-                    transaction);
-
-            if (filas == 0)
-            {
-                transaction.Rollback();
-                return false;
-            }
-
-
-            const string sqlHistorial = @"
-INSERT INTO dbo.SolicitudCreditoMotoGestionHistorial
-(
-    IdSolicitudCredito,
-    Accion,
-    EstadoAnterior,
-    EstadoNuevo,
-    Observacion,
-    IdUsuario,
-    Fecha
-)
-VALUES
-(
-    @IdSolicitud,
-    'ASIGNACION',
-    'PENDIENTE_REVISION',
-    'EN_REVISION',
-    N'Solicitud tomada para revisión.',
-    @IdUsuario,
-    GETDATE()
-);
-";
-
-            await conn.ExecuteAsync(
-                sqlHistorial,
-                new
-                {
-                    IdSolicitud = idSolicitudCredito,
-                    IdUsuario = idUsuario
-                },
-                transaction);
-
-            transaction.Commit();
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            throw Error(
-                ex,
-                "Error tomando solicitud de crédito de moto.");
-        }
-    }
-
-
-    // =========================================================
     // CAMBIAR ESTADO DE CONTROL
     // =========================================================
 
@@ -517,10 +429,8 @@ VALUES
 
             const string sqlActualizar = @"
 UPDATE dbo.SolicitudCreditoMotoGestion
-
 SET
     EstadoControl = @EstadoNuevo,
-
     FechaUltimaGestion = GETDATE(),
 
     ObservacionInterna =
@@ -532,14 +442,13 @@ SET
 
     FechaCierreControl =
         CASE
-            WHEN @EstadoNuevo IN ('APROBADA', 'RECHAZADA')
+            WHEN @EstadoNuevo = 'ENVIADA_EMPRESA'
                 THEN GETDATE()
-            ELSE NULL
+            ELSE FechaCierreControl
         END
 
 WHERE IdSolicitudCredito = @IdSolicitud
-  AND EstadoControl = @EstadoAnterior
-  AND IdUsuarioAsignado = @IdUsuario;
+  AND EstadoControl = @EstadoAnterior;
 ";
 
             var filas =
@@ -548,7 +457,6 @@ WHERE IdSolicitudCredito = @IdSolicitud
                     new
                     {
                         IdSolicitud = idSolicitudCredito,
-                        IdUsuario = idUsuario,
                         EstadoAnterior = estadoAnterior,
                         EstadoNuevo = estadoNuevo,
                         Observacion = observacion
@@ -560,7 +468,6 @@ WHERE IdSolicitudCredito = @IdSolicitud
                 transaction.Rollback();
                 return false;
             }
-
 
             const string sqlHistorial = @"
 INSERT INTO dbo.SolicitudCreditoMotoGestionHistorial
