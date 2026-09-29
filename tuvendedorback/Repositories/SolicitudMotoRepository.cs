@@ -971,113 +971,241 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
             if (EsCredito(tipoOperacion))
             {
                 const string sql = @"
-UPDATE dbo.SolicitudesCredito
-SET
-    Estado = 'LISTA_REVISION',
-    PasoActual = 'LISTA_REVISION',
-    FechaActualizacion = GETDATE(),
-    FechaCierre = GETDATE()
-WHERE Id = @IdSolicitud;
+                    UPDATE dbo.SolicitudesCredito
+                    SET
+                        Estado = 'LISTA_REVISION',
+                        PasoActual = 'LISTA_REVISION',
+                        FechaActualizacion = GETDATE(),
+                        FechaCierre = GETDATE()
+                    WHERE Id = @IdSolicitud;
 
-IF @@ROWCOUNT = 0
-BEGIN
-    THROW 50001, 'No se encontró la solicitud de crédito.', 1;
-END;
-
-
-IF NOT EXISTS
-(
-    SELECT 1
-    FROM dbo.SolicitudCreditoMotoGestion
-    WHERE IdSolicitudCredito = @IdSolicitud
-)
-BEGIN
-    INSERT INTO dbo.SolicitudCreditoMotoGestion
-    (
-        IdSolicitudCredito,
-        EstadoControl,
-        IdUsuarioAsignado,
-        ObservacionInterna,
-        FechaRecepcion,
-        FechaUltimaGestion,
-        FechaCierreControl
-    )
-    VALUES
-    (
-        @IdSolicitud,
-        'PENDIENTE_ENVIO',
-        NULL,
-        N'Solicitud recibida automáticamente desde el flujo de crédito.',
-        GETDATE(),
-        NULL,
-        NULL
-    );
-END;
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        THROW 50001, 'No se encontró la solicitud de crédito.', 1;
+                    END;
 
 
-IF NOT EXISTS
-(
-    SELECT 1
-    FROM dbo.SolicitudCreditoMotoGestionHistorial
-    WHERE IdSolicitudCredito = @IdSolicitud
-      AND Accion = 'RECEPCION'
-)
-BEGIN
-    INSERT INTO dbo.SolicitudCreditoMotoGestionHistorial
-    (
-        IdSolicitudCredito,
-        Accion,
-        EstadoAnterior,
-        EstadoNuevo,
-        Observacion,
-        IdUsuario,
-        Fecha
-    )
-    VALUES
-    (
-        @IdSolicitud,
-        'RECEPCION',
-        NULL,
-        'PENDIENTE_ENVIO',
-        N'Solicitud recibida automáticamente en la bandeja interna de TuVendedor.',
-        NULL,
-        GETDATE()
-    );
-END;
-";
+                    IF NOT EXISTS
+                    (
+                        SELECT 1
+                        FROM dbo.SolicitudCreditoMotoGestion
+                        WHERE IdSolicitudCredito = @IdSolicitud
+                    )
+                    BEGIN
+                        INSERT INTO dbo.SolicitudCreditoMotoGestion
+                        (
+                            IdSolicitudCredito,
+                            EstadoControl,
+                            IdUsuarioAsignado,
+                            ObservacionInterna,
+                            FechaRecepcion,
+                            FechaUltimaGestion,
+                            FechaCierreControl
+                        )
+                        VALUES
+                        (
+                            @IdSolicitud,
+                            'PENDIENTE_ENVIO',
+                            NULL,
+                            N'Solicitud recibida automáticamente desde el flujo de crédito.',
+                            GETDATE(),
+                            NULL,
+                            NULL
+                        );
+                    END;
 
-                await conn.ExecuteAsync(
-                    sql,
-                    new
-                    {
-                        IdSolicitud = idSolicitud
-                    },
-                    transaction);
 
-                transaction.Commit();
-                return;
+                    IF NOT EXISTS
+                    (
+                        SELECT 1
+                        FROM dbo.SolicitudCreditoMotoGestionHistorial
+                        WHERE IdSolicitudCredito = @IdSolicitud
+                          AND Accion = 'RECEPCION'
+                    )
+                    BEGIN
+                        INSERT INTO dbo.SolicitudCreditoMotoGestionHistorial
+                        (
+                            IdSolicitudCredito,
+                            Accion,
+                            EstadoAnterior,
+                            EstadoNuevo,
+                            Observacion,
+                            IdUsuario,
+                            Fecha
+                        )
+                        VALUES
+                        (
+                            @IdSolicitud,
+                            'RECEPCION',
+                            NULL,
+                            'PENDIENTE_ENVIO',
+                            N'Solicitud recibida automáticamente en la bandeja interna de TuVendedor.',
+                            NULL,
+                            GETDATE()
+                        );
+                    END;
+                    ";
+
+                    await conn.ExecuteAsync(
+                        sql,
+                        new
+                        {
+                            IdSolicitud = idSolicitud
+                        },
+                        transaction);
+
+                    transaction.Commit();
+                    return;
             }
 
             const string sqlContado = @"
-UPDATE dbo.SolicitudesContadoMoto
-SET
-    Estado = 'LISTA_REVISION',
-    PasoActual = 'LISTA_REVISION',
-    FechaActualizacion = GETDATE(),
-    FechaCierre = GETDATE()
-WHERE Id = @IdSolicitud;
+                UPDATE dbo.SolicitudesContadoMoto
 
-IF @@ROWCOUNT = 0
-BEGIN
-    THROW 50002, 'No se encontró la solicitud al contado.', 1;
-END;
-";
+                SET
+                    Estado = 'LISTA_REVISION',
+
+                    PasoActual = 'LISTA_REVISION',
+
+                    FechaActualizacion = GETDATE(),
+
+                    FechaCierre = GETDATE()
+
+                WHERE Id = @IdSolicitud;
+
+
+                IF @@ROWCOUNT = 0
+                BEGIN
+
+                    THROW 50002,
+                    'No se encontró la solicitud al contado.',
+                    1;
+
+                END;
+
+
+                -- ============================================================
+                -- BANDEJA COMERCIAL
+                -- ============================================================
+
+                IF NOT EXISTS
+                (
+                    SELECT 1
+
+                    FROM dbo.SolicitudContadoMotoGestion
+
+                    WHERE IdSolicitudContado =
+                          @IdSolicitud
+                )
+                BEGIN
+
+                    INSERT INTO dbo.SolicitudContadoMotoGestion
+                    (
+                        IdSolicitudContado,
+                        EstadoControl,
+                        Prioridad,
+                        IdUsuarioAsignado,
+                        ObservacionInterna,
+                        FechaRecepcion,
+                        FechaUltimaGestion,
+                        FechaCierreControl
+                    )
+                    VALUES
+                    (
+                        @IdSolicitud,
+
+                        'PENDIENTE_CONTACTO',
+
+                        'URGENTE',
+
+                        NULL,
+
+                        N'Compra al contado lista. Contactar al cliente con prioridad.',
+
+                        SYSDATETIME(),
+
+                        NULL,
+
+                        NULL
+                    );
+
+                END;
+
+
+                -- ============================================================
+                -- HISTORIAL
+                -- ============================================================
+
+                IF NOT EXISTS
+                (
+                    SELECT 1
+
+                    FROM dbo.SolicitudContadoMotoGestionHistorial
+
+                    WHERE IdSolicitudContado =
+                          @IdSolicitud
+
+                      AND Accion =
+                          'RECEPCION'
+                )
+                BEGIN
+
+                    INSERT INTO dbo.SolicitudContadoMotoGestionHistorial
+                    (
+                        IdSolicitudContado,
+                        Accion,
+                        EstadoAnterior,
+                        EstadoNuevo,
+                        Observacion,
+                        IdUsuario,
+                        Fecha
+                    )
+                    VALUES
+                    (
+                        @IdSolicitud,
+
+                        'RECEPCION',
+
+                        NULL,
+
+                        'PENDIENTE_CONTACTO',
+
+                        N'Compra al contado recibida. Requiere contacto comercial inmediato.',
+
+                        NULL,
+
+                        SYSDATETIME()
+                    );
+
+                END;
+
+
+                -- ============================================================
+                -- PANAMBI ENTREGA LA CONVERSACION AL HUMANO
+                -- ============================================================
+
+                UPDATE conv
+
+                SET
+                    conv.Modo =
+                        'HUMANO'
+
+                FROM dbo.Conversaciones conv
+
+                INNER JOIN dbo.SolicitudesContadoMoto sc
+                    ON sc.IdConversacion =
+                       conv.Id
+
+                WHERE sc.Id =
+                      @IdSolicitud;
+                ";
+
 
             await conn.ExecuteAsync(
                 sqlContado,
                 new
                 {
-                    IdSolicitud = idSolicitud
+                    IdSolicitud =
+                        idSolicitud
                 },
                 transaction);
 
