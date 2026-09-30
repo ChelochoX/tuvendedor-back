@@ -9,22 +9,18 @@ public interface IContadoMotoGestionRepository
         string? buscar,
         DateTime? fecha);
 
-
     Task<ContadoMotoGestionDetalleDto?> ObtenerDetalle(
         int idSolicitudContado);
 
-
     Task Contactar(
         int idSolicitudContado,
-        int idUsuario);
-
+        int? idUsuario);
 
     Task CambiarEstado(
         int idSolicitudContado,
-        int idUsuario,
+        int? idUsuario,
         string nuevoEstado,
         string? observacion);
-
 
     Task<ContadoMotoDocumentoArchivoDto?> ObtenerDocumento(
         int idSolicitudContado,

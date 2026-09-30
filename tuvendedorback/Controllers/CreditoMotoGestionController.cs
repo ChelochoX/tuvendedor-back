@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using tuvendedorback.Common;
+using System.Security.Claims;
 using tuvendedorback.DTOs;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
@@ -11,22 +11,28 @@ namespace tuvendedorback.Controllers;
 [Authorize]
 [ApiController]
 [Route("api/creditos/motos/solicitudes")]
-public class CreditoMotoGestionController : ControllerBase
+public class CreditoMotoGestionController
+    : ControllerBase
 {
     private readonly ICreditoMotoGestionService _service;
-    private readonly UserContext _userContext;
+
+    private readonly ICreditoMotoPdfService _pdfService;
+
 
     public CreditoMotoGestionController(
         ICreditoMotoGestionService service,
-        UserContext userContext)
+        ICreditoMotoPdfService pdfService)
     {
-        _service = service;
-        _userContext = userContext;
+        _service =
+            service;
+
+        _pdfService =
+            pdfService;
     }
 
 
     // =========================================================
-    // LISTAR SOLICITUDES
+    // LISTAR
     // =========================================================
 
     [HttpGet]
@@ -42,13 +48,21 @@ public class CreditoMotoGestionController : ControllerBase
                 fecha);
 
         return Ok(
-            new Response<IReadOnlyList<CreditoMotoGestionListaDto>>
+            new Response<
+                IReadOnlyList<CreditoMotoGestionListaDto>
+            >
             {
-                Success = true,
-                StatusCode = 200,
+                Success =
+                    true,
+
+                StatusCode =
+                    200,
+
                 Message =
                     "Solicitudes de crédito obtenidas correctamente.",
-                Data = data
+
+                Data =
+                    data
             });
     }
 
@@ -57,7 +71,8 @@ public class CreditoMotoGestionController : ControllerBase
     // DETALLE
     // =========================================================
 
-    [HttpGet("{idSolicitudCredito:int}")]
+    [HttpGet(
+        "{idSolicitudCredito:int}")]
     public async Task<IActionResult> ObtenerDetalle(
         int idSolicitudCredito)
     {
@@ -66,28 +81,70 @@ public class CreditoMotoGestionController : ControllerBase
                 idSolicitudCredito);
 
         return Ok(
-            new Response<CreditoMotoGestionDetalleDto>
+            new Response<
+                CreditoMotoGestionDetalleDto
+            >
             {
-                Success = true,
-                StatusCode = 200,
+                Success =
+                    true,
+
+                StatusCode =
+                    200,
+
                 Message =
                     "Solicitud de crédito obtenida correctamente.",
-                Data = data
+
+                Data =
+                    data
             });
     }
 
 
     // =========================================================
-    // MARCAR COMO ENVIADA A LA EMPRESA
+    // PDF PARA CHACOMER
+    //
+    // GET
+    // /api/creditos/motos/solicitudes/{id}/pdf
     // =========================================================
 
-    [HttpPatch("{idSolicitudCredito:int}/estado")]
+    [HttpGet(
+        "{idSolicitudCredito:int}/pdf")]
+    public async Task<IActionResult> GenerarPdf(
+        int idSolicitudCredito)
+    {
+        var archivo =
+            await _pdfService.GenerarPdf(
+                idSolicitudCredito);
+
+        return File(
+            archivo.Contenido,
+            archivo.MimeType,
+            archivo.NombreArchivo);
+    }
+
+
+    // =========================================================
+    // CAMBIAR ESTADO
+    // =========================================================
+
+    [HttpPatch(
+        "{idSolicitudCredito:int}/estado")]
     public async Task<IActionResult> CambiarEstado(
         int idSolicitudCredito,
-        [FromBody] CreditoMotoCambiarEstadoRequest request)
+        [FromBody]
+        CreditoMotoCambiarEstadoRequest request)
     {
-        var idUsuario =
-            ObtenerIdUsuario();
+        if (
+            !TryObtenerUsuarioId(
+                out var idUsuario))
+        {
+            return Unauthorized(
+                new
+                {
+                    message =
+                        "No se pudo identificar al usuario autenticado."
+                });
+        }
 
         var data =
             await _service.CambiarEstado(
@@ -96,19 +153,27 @@ public class CreditoMotoGestionController : ControllerBase
                 request);
 
         return Ok(
-            new Response<CreditoMotoGestionDetalleDto>
+            new Response<
+                CreditoMotoGestionDetalleDto
+            >
             {
-                Success = true,
-                StatusCode = 200,
+                Success =
+                    true,
+
+                StatusCode =
+                    200,
+
                 Message =
-                    "Solicitud marcada como enviada a la empresa correctamente.",
-                Data = data
+                    "Estado de la solicitud actualizado correctamente.",
+
+                Data =
+                    data
             });
     }
 
 
     // =========================================================
-    // VER DOCUMENTO PRIVADO
+    // DOCUMENTOS
     // =========================================================
 
     [HttpGet(
@@ -130,23 +195,36 @@ public class CreditoMotoGestionController : ControllerBase
 
 
     // =========================================================
-    // USUARIO AUTENTICADO
+    // USUARIO
     // =========================================================
 
-    private int ObtenerIdUsuario()
+    private bool TryObtenerUsuarioId(
+        out int idUsuario)
     {
-        var idUsuario =
-            _userContext.IdUsuario;
+        idUsuario =
+            0;
 
-        if (
-            idUsuario == null
-            || idUsuario <= 0
-        )
-        {
-            throw new UnauthorizedAccessException(
-                "No se pudo identificar al usuario autenticado.");
-        }
+        var valor =
+            User.FindFirstValue(
+                ClaimTypes.NameIdentifier)
+            ??
+            User.FindFirstValue(
+                "nameid")
+            ??
+            User.FindFirstValue(
+                "sub")
+            ??
+            User.FindFirstValue(
+                "id")
+            ??
+            User.FindFirstValue(
+                "IdUsuario");
 
-        return idUsuario.Value;
+        return
+            int.TryParse(
+                valor,
+                out idUsuario)
+            &&
+            idUsuario > 0;
     }
 }

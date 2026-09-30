@@ -10,21 +10,17 @@ public interface IContadoMotoGestionService
         string? buscar,
         DateTime? fecha);
 
-
     Task<ContadoMotoGestionDetalleDto> ObtenerDetalle(
         int idSolicitudContado);
 
-
     Task<ContadoMotoGestionDetalleDto> Contactar(
         int idSolicitudContado,
-        int idUsuario);
-
+        int? idUsuario);
 
     Task<ContadoMotoGestionDetalleDto> CambiarEstado(
         int idSolicitudContado,
-        int idUsuario,
+        int? idUsuario,
         CambiarEstadoContadoMotoRequest request);
-
 
     Task<ContadoMotoArchivoDto> ObtenerDocumento(
         int idSolicitudContado,

@@ -82,6 +82,7 @@ public static class DependencyInjection
         services.AddScoped<ICreditoMotoGestionService, CreditoMotoGestionService>();
         services.AddScoped<IDescuentoContadoMotoService,DescuentoContadoMotoService>();
         services.AddScoped<IContadoMotoGestionService,ContadoMotoGestionService>();
+        services.AddScoped<ICreditoMotoPdfService,CreditoMotoPdfService>();
 
         return services;
     }

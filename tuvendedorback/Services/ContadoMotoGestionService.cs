@@ -11,11 +11,8 @@ public class ContadoMotoGestionService
 {
     private readonly IContadoMotoGestionRepository _repository;
 
-
     private static readonly HashSet<string> EstadosValidos =
-        new(
-            StringComparer.OrdinalIgnoreCase
-        )
+        new(StringComparer.OrdinalIgnoreCase)
         {
             "PENDIENTE_CONTACTO",
             "CONTACTADO",
@@ -23,42 +20,32 @@ public class ContadoMotoGestionService
             "NO_CONCRETADA"
         };
 
-
     public ContadoMotoGestionService(
         IContadoMotoGestionRepository repository)
     {
-        _repository =
-            repository;
+        _repository = repository;
     }
 
 
-    public Task<
-        IReadOnlyList<ContadoMotoGestionListaDto>
-    > Listar(
+    public Task<IReadOnlyList<ContadoMotoGestionListaDto>> Listar(
         string? estado,
         string? buscar,
         DateTime? fecha)
     {
         var estadoNormalizado =
-            string.IsNullOrWhiteSpace(
-                estado)
+            string.IsNullOrWhiteSpace(estado)
                 ? "TODOS"
-                : estado
-                    .Trim()
-                    .ToUpperInvariant();
-
+                : estado.Trim().ToUpperInvariant();
 
         if (
             estadoNormalizado != "TODOS"
             &&
-            !EstadosValidos.Contains(
-                estadoNormalizado)
+            !EstadosValidos.Contains(estadoNormalizado)
         )
         {
             throw new ReglasdeNegocioException(
                 "El estado indicado para la bandeja de contado no es válido.");
         }
-
 
         return _repository.Listar(
             estadoNormalizado,
@@ -67,176 +54,127 @@ public class ContadoMotoGestionService
     }
 
 
-    public async Task<
-        ContadoMotoGestionDetalleDto
-    > ObtenerDetalle(
+    public async Task<ContadoMotoGestionDetalleDto> ObtenerDetalle(
         int idSolicitudContado)
     {
-        if (
-            idSolicitudContado <= 0
-        )
+        if (idSolicitudContado <= 0)
         {
             throw new ReglasdeNegocioException(
                 "La solicitud indicada no es válida.");
         }
 
-
         var detalle =
             await _repository.ObtenerDetalle(
                 idSolicitudContado);
 
-
-        if (
-            detalle == null
-        )
+        if (detalle == null)
         {
             throw new ReglasdeNegocioException(
                 "No se encontró la solicitud al contado.");
         }
 
-
         return detalle;
     }
 
 
-    public async Task<
-        ContadoMotoGestionDetalleDto
-    > Contactar(
+    public async Task<ContadoMotoGestionDetalleDto> Contactar(
         int idSolicitudContado,
-        int idUsuario)
+        int? idUsuario)
     {
-        if (
-            idUsuario <= 0
-        )
-        {
-            throw new ReglasdeNegocioException(
-                "No se pudo identificar al usuario que realiza la gestión.");
-        }
-
-
         var actual =
             await ObtenerDetalle(
                 idSolicitudContado);
 
-
         if (
-            actual.EstadoControl ==
-                "CONCRETADA"
-
+            actual.EstadoControl == "CONCRETADA"
             ||
-
-            actual.EstadoControl ==
-                "NO_CONCRETADA"
+            actual.EstadoControl == "NO_CONCRETADA"
         )
         {
             throw new ReglasdeNegocioException(
                 "La gestión de esta compra al contado ya está cerrada.");
         }
 
+        // El usuario autenticado puede no traer un claim numérico de IdUsuario.
+        // Eso NO debe impedir contactar una venta urgente.
+        var idUsuarioValido =
+            idUsuario.HasValue && idUsuario.Value > 0
+                ? idUsuario
+                : null;
 
         await _repository.Contactar(
             idSolicitudContado,
-            idUsuario);
-
+            idUsuarioValido);
 
         return await ObtenerDetalle(
             idSolicitudContado);
     }
 
 
-    public async Task<
-        ContadoMotoGestionDetalleDto
-    > CambiarEstado(
+    public async Task<ContadoMotoGestionDetalleDto> CambiarEstado(
         int idSolicitudContado,
-        int idUsuario,
+        int? idUsuario,
         CambiarEstadoContadoMotoRequest request)
     {
-        if (
-            request == null
-        )
+        if (request == null)
         {
             throw new ReglasdeNegocioException(
                 "Debe indicar el nuevo estado de la gestión.");
         }
-
-
-        if (
-            idUsuario <= 0
-        )
-        {
-            throw new ReglasdeNegocioException(
-                "No se pudo identificar al usuario que realiza la gestión.");
-        }
-
 
         var estado =
             request.Estado?
                 .Trim()
                 .ToUpperInvariant();
 
-
         if (
-            string.IsNullOrWhiteSpace(
-                estado)
-
+            string.IsNullOrWhiteSpace(estado)
             ||
-
-            !EstadosValidos.Contains(
-                estado)
-
+            !EstadosValidos.Contains(estado)
             ||
-
-            estado ==
-                "PENDIENTE_CONTACTO"
+            estado == "PENDIENTE_CONTACTO"
         )
         {
             throw new ReglasdeNegocioException(
                 "El nuevo estado de la gestión no es válido.");
         }
 
-
         if (
-            estado ==
-                "NO_CONCRETADA"
-
+            estado == "NO_CONCRETADA"
             &&
-
-            string.IsNullOrWhiteSpace(
-                request.Observacion)
+            string.IsNullOrWhiteSpace(request.Observacion)
         )
         {
             throw new ReglasdeNegocioException(
                 "Para cerrar como no concretada debe indicar el motivo.");
         }
 
-
         await ObtenerDetalle(
             idSolicitudContado);
 
+        var idUsuarioValido =
+            idUsuario.HasValue && idUsuario.Value > 0
+                ? idUsuario
+                : null;
 
         await _repository.CambiarEstado(
             idSolicitudContado,
-            idUsuario,
+            idUsuarioValido,
             estado,
             request.Observacion);
-
 
         return await ObtenerDetalle(
             idSolicitudContado);
     }
 
 
-    public async Task<
-        ContadoMotoArchivoDto
-    > ObtenerDocumento(
+    public async Task<ContadoMotoArchivoDto> ObtenerDocumento(
         int idSolicitudContado,
         int idDocumento)
     {
         if (
             idSolicitudContado <= 0
-
             ||
-
             idDocumento <= 0
         )
         {
@@ -244,56 +182,42 @@ public class ContadoMotoGestionService
                 "El documento indicado no es válido.");
         }
 
-
         var documento =
             await _repository.ObtenerDocumento(
                 idSolicitudContado,
                 idDocumento);
 
-
-        if (
-            documento == null
-        )
+        if (documento == null)
         {
             throw new ReglasdeNegocioException(
                 "No se encontró el documento solicitado.");
         }
 
-
         if (
-            string.IsNullOrWhiteSpace(
-                documento.RutaPrivada)
-
+            string.IsNullOrWhiteSpace(documento.RutaPrivada)
             ||
-
-            !File.Exists(
-                documento.RutaPrivada)
+            !File.Exists(documento.RutaPrivada)
         )
         {
             throw new ReglasdeNegocioException(
                 "El archivo físico del documento no está disponible.");
         }
 
-
         var bytes =
             await File.ReadAllBytesAsync(
                 documento.RutaPrivada);
 
-
         return new ContadoMotoArchivoDto
         {
-            Contenido =
-                bytes,
+            Contenido = bytes,
 
             NombreArchivo =
-                string.IsNullOrWhiteSpace(
-                    documento.NombreArchivo)
+                string.IsNullOrWhiteSpace(documento.NombreArchivo)
                     ? $"documento-{idDocumento}"
                     : documento.NombreArchivo,
 
             MimeType =
-                string.IsNullOrWhiteSpace(
-                    documento.MimeType)
+                string.IsNullOrWhiteSpace(documento.MimeType)
                     ? "application/octet-stream"
                     : documento.MimeType
         };

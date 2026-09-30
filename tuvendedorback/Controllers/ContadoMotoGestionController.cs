@@ -16,12 +16,10 @@ public class ContadoMotoGestionController
 {
     private readonly IContadoMotoGestionService _service;
 
-
     public ContadoMotoGestionController(
         IContadoMotoGestionService service)
     {
-        _service =
-            service;
+        _service = service;
     }
 
 
@@ -37,28 +35,19 @@ public class ContadoMotoGestionController
                 buscar,
                 fecha);
 
-
         return Ok(
-            new Response<
-                IReadOnlyList<ContadoMotoGestionListaDto>
-            >
+            new Response<IReadOnlyList<ContadoMotoGestionListaDto>>
             {
                 Success = true,
-
                 StatusCode = 200,
-
                 Message =
                     "Solicitudes al contado obtenidas correctamente.",
-
-                Data =
-                    data
+                Data = data
             });
     }
 
 
-    [HttpGet(
-        "solicitudes/{idSolicitudContado:int}"
-    )]
+    [HttpGet("solicitudes/{idSolicitudContado:int}")]
     public async Task<IActionResult> ObtenerDetalle(
         int idSolicitudContado)
     {
@@ -66,115 +55,82 @@ public class ContadoMotoGestionController
             await _service.ObtenerDetalle(
                 idSolicitudContado);
 
-
         return Ok(
-            new Response<
-                ContadoMotoGestionDetalleDto
-            >
+            new Response<ContadoMotoGestionDetalleDto>
             {
                 Success = true,
-
                 StatusCode = 200,
-
                 Message =
                     "Solicitud al contado obtenida correctamente.",
-
-                Data =
-                    data
+                Data = data
             });
     }
 
 
-    [HttpPost(
-        "solicitudes/{idSolicitudContado:int}/contactar"
-    )]
+    // =========================================================
+    // CONTACTAR
+    // =========================================================
+    // IMPORTANTE:
+    // [Authorize] sigue protegiendo el endpoint.
+    //
+    // Ya NO devolvemos 401 solamente porque el JWT no tenga
+    // un claim numérico que podamos convertir a IdUsuario.
+    //
+    // En ese caso la gestión se registra con IdUsuario = NULL.
+    // =========================================================
+
+    [HttpPost("solicitudes/{idSolicitudContado:int}/contactar")]
     public async Task<IActionResult> Contactar(
         int idSolicitudContado)
     {
         var idUsuario =
-            ObtenerIdUsuario();
-
-
-        if (
-            !idUsuario.HasValue
-        )
-        {
-            return Unauthorized();
-        }
-
+            ObtenerIdUsuarioOpcional();
 
         var data =
             await _service.Contactar(
                 idSolicitudContado,
-                idUsuario.Value);
-
+                idUsuario);
 
         return Ok(
-            new Response<
-                ContadoMotoGestionDetalleDto
-            >
+            new Response<ContadoMotoGestionDetalleDto>
             {
                 Success = true,
-
                 StatusCode = 200,
-
                 Message =
                     "La oportunidad quedó marcada como contactada.",
-
-                Data =
-                    data
+                Data = data
             });
     }
 
 
-    [HttpPatch(
-        "solicitudes/{idSolicitudContado:int}/estado"
-    )]
+    [HttpPatch("solicitudes/{idSolicitudContado:int}/estado")]
     public async Task<IActionResult> CambiarEstado(
         int idSolicitudContado,
-        [FromBody]
-        CambiarEstadoContadoMotoRequest request)
+        [FromBody] CambiarEstadoContadoMotoRequest request)
     {
         var idUsuario =
-            ObtenerIdUsuario();
-
-
-        if (
-            !idUsuario.HasValue
-        )
-        {
-            return Unauthorized();
-        }
-
+            ObtenerIdUsuarioOpcional();
 
         var data =
             await _service.CambiarEstado(
                 idSolicitudContado,
-                idUsuario.Value,
+                idUsuario,
                 request);
 
-
         return Ok(
-            new Response<
-                ContadoMotoGestionDetalleDto
-            >
+            new Response<ContadoMotoGestionDetalleDto>
             {
                 Success = true,
-
                 StatusCode = 200,
-
                 Message =
                     "Estado de la solicitud al contado actualizado correctamente.",
-
-                Data =
-                    data
+                Data = data
             });
     }
 
 
     [HttpGet(
-        "solicitudes/{idSolicitudContado:int}/documentos/{idDocumento:int}"
-    )]
+        "solicitudes/{idSolicitudContado:int}/documentos/{idDocumento:int}")]
     public async Task<IActionResult> ObtenerDocumento(
         int idSolicitudContado,
         int idDocumento)
@@ -184,7 +140,6 @@ public class ContadoMotoGestionController
                 idSolicitudContado,
                 idDocumento);
 
-
         return File(
             archivo.Contenido,
             archivo.MimeType,
@@ -192,42 +147,92 @@ public class ContadoMotoGestionController
     }
 
 
-    private int? ObtenerIdUsuario()
+    // =========================================================
+    // USUARIO OPCIONAL
+    // =========================================================
+
+    private int? ObtenerIdUsuarioOpcional()
     {
-        var valor =
-            User.FindFirst(
-                ClaimTypes.NameIdentifier
-            )?.Value
+        string[] tiposPreferidos =
+        {
+            ClaimTypes.NameIdentifier,
+            "nameid",
+            "idUsuario",
+            "IdUsuario",
+            "usuarioId",
+            "UsuarioId",
+            "userId",
+            "UserId",
+            "userid",
+            "id",
+            "Id",
+            "uid",
+            "sub"
+        };
 
-            ??
+        foreach (var tipo in tiposPreferidos)
+        {
+            var claim =
+                User.Claims.FirstOrDefault(
+                    c => string.Equals(
+                        c.Type,
+                        tipo,
+                        StringComparison.OrdinalIgnoreCase));
 
-            User.FindFirst(
-                "idUsuario"
-            )?.Value
+            if (
+                claim != null
+                &&
+                int.TryParse(
+                    claim.Value,
+                    out var idUsuario)
+                &&
+                idUsuario > 0
+            )
+            {
+                return idUsuario;
+            }
+        }
 
-            ??
+        foreach (var claim in User.Claims)
+        {
+            var tipo =
+                claim.Type ?? string.Empty;
 
-            User.FindFirst(
-                "IdUsuario"
-            )?.Value
+            var pareceIdUsuario =
+                tipo.EndsWith(
+                    "/nameidentifier",
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                tipo.EndsWith(
+                    "/userid",
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                tipo.EndsWith(
+                    "/idusuario",
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                tipo.Contains(
+                    "userid",
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                tipo.Contains(
+                    "idusuario",
+                    StringComparison.OrdinalIgnoreCase);
 
-            ??
+            if (
+                pareceIdUsuario
+                &&
+                int.TryParse(
+                    claim.Value,
+                    out var idUsuario)
+                &&
+                idUsuario > 0
+            )
+            {
+                return idUsuario;
+            }
+        }
 
-            User.FindFirst(
-                "id"
-            )?.Value
-
-            ??
-
-            User.FindFirst(
-                "sub"
-            )?.Value;
-
-
-        return int.TryParse(
-            valor,
-            out var idUsuario)
-                ? idUsuario
-                : null;
+        return null;
     }
 }
