@@ -12,6 +12,9 @@ public interface IMotoOfertaRepository
         int idModeloProducto,
         DateTime fechaActual);
 
+    Task<List<MotoModeloCandidatoDto>> ObtenerModelosConPromoVigente(
+        DateTime fechaActual);
+
     Task<List<MotoPlanOfertaDataDto>> ObtenerPlanesPorListaPrecio(
         int idListaPrecio);
 }

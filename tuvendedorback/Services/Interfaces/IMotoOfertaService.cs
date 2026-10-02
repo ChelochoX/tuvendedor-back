@@ -9,4 +9,6 @@ public interface IMotoOfertaService
 
     Task<MotoOfertaDto> ObtenerOfertaPorModelo(
         int idModeloProducto);
+
+    Task<List<MotoModeloCandidatoDto>> ObtenerModelosConPromoVigente();
 }

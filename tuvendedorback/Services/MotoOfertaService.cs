@@ -86,6 +86,26 @@ public class MotoOfertaService : IMotoOfertaService
 
 
     // =========================================================
+    // MODELOS CON PROMO VIGENTE
+    //
+    // Se usa para responder preguntas como:
+    // - "que modelos estan en promo?"
+    // - "que motos tienen en promocion?"
+    //
+    // La definicion de promo es la misma que usa la oferta:
+    // lista EsPromo = 1, vigente y con al menos un plan activo.
+    // =========================================================
+
+    public async Task<List<MotoModeloCandidatoDto>>
+        ObtenerModelosConPromoVigente()
+    {
+        return await _repository
+            .ObtenerModelosConPromoVigente(
+                DateTime.Today);
+    }
+
+
+    // =========================================================
     // CONSTRUIR OFERTA
     //
     // IMPORTANTE:

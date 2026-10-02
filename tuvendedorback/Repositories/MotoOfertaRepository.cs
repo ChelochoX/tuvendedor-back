@@ -117,6 +117,123 @@ ORDER BY
 
 
     // =========================================================
+    // MODELOS CON PROMO VIGENTE
+    //
+    // Una promo es valida solamente cuando:
+    // - modelo y marca estan activos
+    // - existe una lista NORMAL activa (base comercial confiable)
+    // - existe una lista PROMO activa y vigente
+    // - esa lista PROMO tiene al menos un plan activo
+    //
+    // Devolvemos solamente datos del modelo para que la
+    // conversacion pueda listar opciones sin invocar a Ollama.
+    // =========================================================
+
+    public async Task<List<MotoModeloCandidatoDto>>
+        ObtenerModelosConPromoVigente(
+            DateTime fechaActual)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+SELECT
+    mp.Id AS IdModeloProducto,
+    mp.IdMarca,
+    ma.Nombre AS Marca,
+    mp.NombreModelo AS Modelo,
+    mp.CodigoReferencia,
+    mp.Cilindrada,
+    pub.IdPublicacion
+FROM dbo.ModelosProducto mp
+INNER JOIN dbo.Marcas ma
+    ON ma.Id = mp.IdMarca
+OUTER APPLY
+(
+    SELECT TOP (1)
+        pmp.IdPublicacion
+    FROM dbo.PublicacionModeloProducto pmp
+    INNER JOIN dbo.Publicaciones p
+        ON p.Id = pmp.IdPublicacion
+    WHERE pmp.IdModeloProducto = mp.Id
+      AND pmp.Estado = 'Activo'
+      AND p.Estado = 'Activo'
+    ORDER BY
+        pmp.EsPrincipal DESC,
+        pmp.Id DESC
+) pub
+WHERE mp.Estado = 'Activo'
+  AND ma.Estado = 'Activo'
+
+  /* Debe existir precio NORMAL vigente. */
+  AND EXISTS
+  (
+      SELECT 1
+      FROM dbo.ListasPreciosProducto normal
+      WHERE normal.IdModeloProducto = mp.Id
+        AND normal.Estado = 'Activo'
+        AND normal.EsPromo = 0
+        AND normal.FechaDesde <= @FechaActual
+        AND
+        (
+            normal.FechaHasta IS NULL
+            OR normal.FechaHasta >= @FechaActual
+        )
+  )
+
+  /* Debe existir una promo vigente con plan activo. */
+  AND EXISTS
+  (
+      SELECT 1
+      FROM dbo.ListasPreciosProducto promo
+      WHERE promo.IdModeloProducto = mp.Id
+        AND promo.Estado = 'Activo'
+        AND promo.EsPromo = 1
+        AND promo.FechaDesde <= @FechaActual
+        AND
+        (
+            promo.FechaHasta IS NULL
+            OR promo.FechaHasta >= @FechaActual
+        )
+        AND EXISTS
+        (
+            SELECT 1
+            FROM dbo.PlanesFinanciacionProducto pf
+            WHERE pf.IdListaPrecio = promo.Id
+              AND pf.Estado = 'Activo'
+        )
+  )
+ORDER BY
+    ma.Nombre,
+    mp.NombreModelo;
+";
+
+            var data =
+                await conn.QueryAsync<MotoModeloCandidatoDto>(
+                    sql,
+                    new
+                    {
+                        FechaActual = fechaActual.Date
+                    });
+
+            return data.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error obteniendo modelos con promo vigente. Fecha={FechaActual}",
+                fechaActual.Date);
+
+            throw new RepositoryException(
+                "Error obteniendo modelos con promoción vigente.",
+                ex);
+        }
+    }
+
+
+    // =========================================================
     // OFERTA BASE POR MODELO
     //
     // REGLAS:
