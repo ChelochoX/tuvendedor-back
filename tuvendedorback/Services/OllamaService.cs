@@ -8,6 +8,18 @@ namespace tuvendedorback.Services;
 public class OllamaService
     : IOllamaService
 {
+    /*
+     * El VPS tiene un único runner de Ollama.
+     * Evitamos acumular muchas peticiones simultáneas:
+     * si ya está ocupado, devolvemos control al backend
+     * para que use una respuesta comercial segura.
+     */
+    private static readonly SemaphoreSlim
+        _semaforoOllama =
+            new(
+                1,
+                1);
+
     private readonly HttpClient
         _httpClient;
 
@@ -19,6 +31,12 @@ public class OllamaService
 
     private readonly string
         _modelo;
+
+    private readonly int
+        _esperaColaSegundos;
+
+    private readonly string
+        _keepAlive;
 
 
     public OllamaService(
@@ -51,7 +69,19 @@ public class OllamaService
             configuration.GetValue<int?>(
                 "IA:TimeoutSeconds")
             ??
-            120;
+            30;
+
+        _esperaColaSegundos =
+            configuration.GetValue<int?>(
+                "IA:QueueWaitSeconds")
+            ??
+            2;
+
+        _keepAlive =
+            configuration[
+                "IA:KeepAlive"]
+            ??
+            "30m";
 
 
         _httpClient.Timeout =
@@ -65,8 +95,30 @@ public class OllamaService
         IReadOnlyList<MensajeConversacionHistorialDto> historial,
         CancellationToken cancellationToken = default)
     {
+        var obtuvoTurno =
+            false;
+
         try
         {
+            /*
+             * No dejamos que varias conversaciones formen una cola
+             * larga detrás de un único runner CPU.
+             */
+            obtuvoTurno =
+                await _semaforoOllama
+                    .WaitAsync(
+                        TimeSpan.FromSeconds(
+                            _esperaColaSegundos),
+                        cancellationToken);
+
+            if (!obtuvoTurno)
+            {
+                _logger.LogWarning(
+                    "Ollama ocupado. Se omite IA generativa para responder con fallback seguro.");
+
+                return string.Empty;
+            }
+
             var mensajes =
                 new List<OllamaMessage>
                 {
@@ -117,6 +169,9 @@ public class OllamaService
                     Think =
                         false,
 
+                    KeepAlive =
+                        _keepAlive,
+
                     Messages =
                         mensajes,
 
@@ -127,7 +182,10 @@ public class OllamaService
                                 0.25,
 
                             NumCtx =
-                                4096
+                                3072,
+
+                            NumPredict =
+                                180
                         }
                 };
 
@@ -137,8 +195,9 @@ public class OllamaService
 
 
             _logger.LogInformation(
-                "Consultando Ollama. Modelo={Modelo}",
-                _modelo);
+                "Consultando Ollama. Modelo={Modelo}, Mensajes={CantidadMensajes}",
+                _modelo,
+                mensajes.Count);
 
 
             using var response =
@@ -161,9 +220,7 @@ public class OllamaService
                     (int)response.StatusCode,
                     body);
 
-
-                throw new InvalidOperationException(
-                    $"Ollama respondió HTTP {(int)response.StatusCode}.");
+                return string.Empty;
             }
 
 
@@ -185,32 +242,63 @@ public class OllamaService
                     respuesta)
             )
             {
-                throw new InvalidOperationException(
+                _logger.LogWarning(
                     "Ollama devolvió una respuesta vacía.");
+
+                return string.Empty;
             }
 
 
             return respuesta;
         }
-        catch (TaskCanceledException ex)
+        catch (OperationCanceledException)
+            when (
+                cancellationToken
+                    .IsCancellationRequested
+            )
+        {
+            /*
+             * Si el cliente/caller canceló realmente la petición,
+             * respetamos la cancelación.
+             */
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            /*
+             * Timeout del HttpClient.
+             * NO propagamos 500: MotoConversacionService utilizará
+             * una respuesta comercial segura.
+             */
+            _logger.LogWarning(
+                ex,
+                "Timeout consultando Ollama. Se utilizará fallback seguro.");
+
+            return string.Empty;
+        }
+        catch (HttpRequestException ex)
         {
             _logger.LogError(
                 ex,
-                "Timeout consultando Ollama.");
+                "No se pudo conectar con Ollama. Se utilizará fallback seguro.");
 
-
-            throw new InvalidOperationException(
-                "La IA tardó demasiado en responder.",
-                ex);
+            return string.Empty;
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
-                "Error comunicando con Ollama.");
+                "Error comunicando con Ollama. Se utilizará fallback seguro.");
 
-
-            throw;
+            return string.Empty;
+        }
+        finally
+        {
+            if (obtuvoTurno)
+            {
+                _semaforoOllama
+                    .Release();
+            }
         }
     }
 
@@ -260,6 +348,11 @@ public class OllamaService
         public bool Think { get; set; }
 
 
+        [JsonPropertyName("keep_alive")]
+        public string KeepAlive { get; set; } =
+            "30m";
+
+
         [JsonPropertyName("options")]
         public OllamaOptions Options
         {
@@ -294,6 +387,14 @@ public class OllamaService
 
         [JsonPropertyName("num_ctx")]
         public int NumCtx
+        {
+            get;
+            set;
+        }
+
+
+        [JsonPropertyName("num_predict")]
+        public int NumPredict
         {
             get;
             set;
