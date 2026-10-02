@@ -540,35 +540,50 @@ public class MotoConversacionService
         }
 
         // =====================================================
-        // 8. CONSULTA GENERAL DE MODELOS / CATALOGO
+        // 8. SALUDO / CONSULTA GENERAL / CATALOGO
+        //
+        // IMPORTANTE:
+        // Estas intenciones se resuelven ANTES de recuperar el
+        // modelo guardado en contexto. De esa forma un "hola",
+        // "que tienen?" o "mostrame las motos" no vuelve a disparar
+        // una consulta sobre el modelo anterior.
+        //
+        // Siempre arrancamos mostrando MARCAS.
         // =====================================================
 
         if (
+            EsSaludoSimple(
+                request.Mensaje)
+            ||
+            EsConsultaGeneralVenta(
+                request.Mensaje)
+            ||
             EsConsultaOtrosModelos(
                 request.Mensaje)
         )
         {
-            /*
-             * CONSULTA DE CATALOGO:
-             *
-             * SIEMPRE mostramos TODOS los modelos activos
-             * recuperados desde BBDD.
-             *
-             * No filtramos por el modelo que quedó en contexto.
-             * No excluimos el modelo actual.
-             * No dejamos que Qwen invente opciones.
-             */
+            await _repository
+                .LimpiarProductoContexto(
+                    idConversacion);
 
-            var respuestaCatalogo =
-                ConstruirRespuestaOtrosModelos(
+            var encabezado =
+                EsSaludoSimple(
+                    request.Mensaje)
+
+                    ? "¡Hola! ¿Qué tal? 😊 Soy Panambí, asistente de TuVendedor. Con gusto te ayudo a encontrar tu moto."
+
+                    : "¡Claro! 😊 Te ayudo a encontrar la moto que estás buscando.";
+
+            var respuestaMarcas =
+                ConstruirRespuestaMarcas(
                     modelos,
-                    null);
+                    encabezado);
 
             await _repository
                 .RegistrarMensaje(
                     idConversacion,
                     "IA",
-                    respuestaCatalogo);
+                    respuestaMarcas);
 
             return new MotoConversacionResponseDto
             {
@@ -576,13 +591,16 @@ public class MotoConversacionService
                 IdPublicacion = null,
                 Marca = null,
                 Modelo = null,
-                Respuesta = respuestaCatalogo,
+                Respuesta = respuestaMarcas,
                 RequierePublicacion = false
             };
         }
 
         // =====================================================
         // 9. DETECTAR QUE QUIERE CAMBIAR DE MODELO
+        //
+        // Al cambiar de producto limpiamos el contexto anterior
+        // y volvemos al punto de partida: selección de MARCA.
         // =====================================================
 
         if (
@@ -595,9 +613,9 @@ public class MotoConversacionService
                     idConversacion);
 
             var respuestaCambio =
-                ConstruirRespuestaGuiada(
+                ConstruirRespuestaMarcas(
                     modelos,
-                    "Claro 😊 Decime cuál de estos modelos te interesa:");
+                    "¡Claro! 😊 Veamos otra opción.");
 
             await _repository
                 .RegistrarMensaje(
@@ -617,13 +635,50 @@ public class MotoConversacionService
         }
 
         // =====================================================
-        // 10. RECUPERAR MODELO DEL CONTEXTO
+        // 10. CORTESIA SIN CONSULTA
         //
-        // Si ya eligio una VIVA 110, frases como:
+        // Un "gracias", "perfecto", etc. no debe despertar Qwen
+        // ni reutilizar accidentalmente el modelo anterior.
+        // Conservamos el contexto por si el cliente continúa.
+        // =====================================================
+
+        if (
+            EsMensajeCortesia(
+                request.Mensaje)
+        )
+        {
+            const string respuestaCortesia =
+                "¡A vos! 😊 Cuando quieras seguimos. Si querés ver otra moto, decime y te muestro las marcas disponibles.";
+
+            await _repository
+                .RegistrarMensaje(
+                    idConversacion,
+                    "IA",
+                    respuestaCortesia);
+
+            return new MotoConversacionResponseDto
+            {
+                IdConversacion = idConversacion,
+                IdPublicacion = null,
+                Marca = null,
+                Modelo = null,
+                Respuesta = respuestaCortesia,
+                RequierePublicacion = false
+            };
+        }
+
+        // =====================================================
+        // 11. RECUPERAR MODELO DEL CONTEXTO
+        //
+        // Solamente llegamos aquí si el mensaje NO fue saludo,
+        // NO fue consulta general y NO pidió cambiar de modelo.
+        //
+        // Ejemplos válidos:
         // "y al contado?"
         // "que precio tiene?"
         // "cuanto es la cuota?"
-        // siguen trabajando sobre la VIVA 110.
+        // "y a credito?"
+        // "me interesa"
         // =====================================================
 
         var idModeloActual =
@@ -650,7 +705,7 @@ public class MotoConversacionService
         }
 
         // =====================================================
-        // 11. COMPATIBILIDAD CON CONTEXTO VIEJO
+        // 12. COMPATIBILIDAD CON CONTEXTO VIEJO
         // =====================================================
 
         var idPublicacionContexto =
@@ -667,15 +722,10 @@ public class MotoConversacionService
         }
 
         // =====================================================
-        // 12. PREGUNTA COMERCIAL SIN MODELO ELEGIDO
+        // 13. PREGUNTA COMERCIAL SIN MODELO ELEGIDO
         //
-        // Ejemplo:
-        // "me pasas sus precios?"
-        // "que precio tienen?"
-        // "que cuotas tienen?"
-        //
-        // NO PASAMOS A HUMANO.
-        // Pedimos elegir un modelo usando datos de BBDD.
+        // No inventamos un modelo. Volvemos a las marcas para
+        // que el cliente elija y después mostramos sus modelos.
         // =====================================================
 
         if (
@@ -684,9 +734,9 @@ public class MotoConversacionService
         )
         {
             var respuestaSeleccion =
-                ConstruirRespuestaGuiada(
+                ConstruirRespuestaMarcas(
                     modelos,
-                    "Claro 😊 ¿De cuál modelo querés que te pase el precio o las cuotas?");
+                    "¡Claro! 😊 Te paso precios o cuotas. Primero elegí la marca que te interesa:");
 
             await _repository
                 .RegistrarMensaje(
@@ -706,47 +756,21 @@ public class MotoConversacionService
         }
 
         // =====================================================
-        // 13. SALUDO SIMPLE
-        // =====================================================
-
-        if (
-            EsSaludoSimple(
-                request.Mensaje)
-        )
-        {
-            const string respuestaSaludo =
-                "¡Hola! ¿Qué tal? 😊 Soy Panambí, asistente de TuVendedor. ¿Qué modelo de moto tenés en mente?";
-
-            await _repository
-                .RegistrarMensaje(
-                    idConversacion,
-                    "IA",
-                    respuestaSaludo);
-
-            return new MotoConversacionResponseDto
-            {
-                IdConversacion = idConversacion,
-                IdPublicacion = null,
-                Marca = null,
-                Modelo = null,
-                Respuesta = respuestaSaludo,
-                RequierePublicacion = false
-            };
-        }
-
-        // =====================================================
         // 14. NO ENTENDIMOS DEL TODO
         //
-        // IMPORTANTE:
-        // NO PASAMOS A HUMANO.
-        // NO INVENTAMOS.
-        // GUIAMOS AL CLIENTE CON EL CATALOGO REAL.
+        // NO usamos el producto anterior.
+        // NO inventamos.
+        // Volvemos amablemente a las marcas reales de la BBDD.
         // =====================================================
 
+        await _repository
+            .LimpiarProductoContexto(
+                idConversacion);
+
         var respuestaOrientacion =
-            ConstruirRespuestaGuiada(
+            ConstruirRespuestaMarcas(
                 modelos,
-                "Para ayudarte bien 😊 decime cuál de estas opciones te interesa:");
+                "Con gusto te ayudo 😊. Para empezar, elegí una de las marcas que tenemos:");
 
         await _repository
             .RegistrarMensaje(
@@ -980,7 +1004,7 @@ public class MotoConversacionService
             await _repository
                 .ObtenerUltimosMensajes(
                     idConversacion,
-                    12);
+                    6);
 
 
         // =====================================================
@@ -1313,10 +1337,10 @@ public class MotoConversacionService
                 .Select(
                     x =>
                         $"{x.Marca} {x.Modelo}")
-                .Distinct()
-                .Take(5)
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .Take(9)
                 .ToList();
-
 
         if (
             nombres.Count == 0
@@ -1326,7 +1350,6 @@ public class MotoConversacionService
                 "Claro 😊 ¿Qué modelo de moto te interesa?";
         }
 
-
         if (
             nombres.Count == 1
         )
@@ -1335,20 +1358,25 @@ public class MotoConversacionService
                 $"¿Te referís a la {nombres[0]}?";
         }
 
+        var sb =
+            new StringBuilder();
 
-        var opciones =
-            string.Join(
-                ", ",
-                nombres.Take(
-                    nombres.Count - 1));
+        sb.AppendLine(
+            "Claro 😊 encontré varias opciones que pueden coincidir:");
 
+        sb.AppendLine();
 
-        var ultima =
-            nombres.Last();
+        sb.AppendLine(
+            ConstruirGrillaTresColumnas(
+                nombres));
 
+        sb.AppendLine();
+        sb.AppendLine();
 
-        return
-            $"Claro 😊 Encontré varias opciones que coinciden: {opciones} o {ultima}. ¿Cuál de estos modelos te interesa?";
+        sb.Append(
+            "¿Cuál de estas te interesa?");
+
+        return sb.ToString();
     }
 
 
@@ -1898,68 +1926,131 @@ public class MotoConversacionService
             return false;
         }
 
+        var palabrasCatalogo =
+            new[]
+            {
+                "MODELO",
+                "MODELOS",
+                "MOTO",
+                "MOTOS",
+                "MARCA",
+                "MARCAS",
+                "CATALOGO",
+                "OPCION",
+                "OPCIONES",
+                "DISPONIBLE",
+                "DISPONIBLES"
+            };
+
         var hablaDeCatalogo =
-            texto.Contains("MODELO")
-            ||
-            texto.Contains("MODELOS")
-            ||
-            texto.Contains("MOTO")
-            ||
-            texto.Contains("MOTOS")
-            ||
-            texto.Contains("CATALOGO")
-            ||
-            texto.Contains("OPCIONES");
+            palabrasCatalogo.Any(
+                palabra =>
+                    texto.Contains(
+                        palabra,
+                        StringComparison.OrdinalIgnoreCase));
 
         if (!hablaDeCatalogo)
         {
             return false;
         }
 
-        /*
-         * Frases naturales:
-         *
-         * "que modelos tenes"
-         * "me pasas los modelos"
-         * "que motos hay"
-         * "mostrame las opciones"
-         * "que otras motos tenes"
-         *
-         * Los nombres reales de los modelos NO estan aca.
-         * Siempre salen de la BBDD.
-         */
-        return
-            texto.Contains("QUE ")
-            ||
-            texto.StartsWith("QUE")
-            ||
-            texto.Contains("CUALES")
-            ||
-            texto.Contains("PASAME")
-            ||
-            texto.Contains("PASAS")
-            ||
-            texto.Contains("MOSTRAME")
-            ||
-            texto.Contains("MOSTRAR")
-            ||
-            texto.Contains("TENES")
-            ||
-            texto.Contains("TIENES")
-            ||
-            texto.Contains("HAY")
-            ||
-            texto.Contains("OTRO")
-            ||
-            texto.Contains("OTRA")
-            ||
-            texto.Contains("OTROS")
-            ||
-            texto.Contains("OTRAS")
-            ||
-            texto.Contains("CATALOGO")
-            ||
-            texto.Contains("OPCIONES");
+        var expresiones =
+            new[]
+            {
+                "QUE",
+                "CUALES",
+                "PASAME",
+                "PASAS",
+                "MOSTRAME",
+                "MOSTRAR",
+                "MOSTRARME",
+                "TENES",
+                "TIENES",
+                "HAY",
+                "VER",
+                "CONOCER",
+                "OTRO",
+                "OTRA",
+                "OTROS",
+                "OTRAS",
+                "CATALOGO",
+                "OPCIONES",
+                "DISPONIBLE",
+                "DISPONIBLES"
+            };
+
+        return expresiones.Any(
+            expresion =>
+                texto.Contains(
+                    expresion,
+                    StringComparison.OrdinalIgnoreCase));
+    }
+
+
+    // =========================================================
+    // CONSULTA GENERAL DE VENTA
+    //
+    // Casos:
+    // "que tienen?"
+    // "que venden?"
+    // "quiero informacion"
+    // "quiero ver que tienen"
+    // "que ofrecen?"
+    //
+    // Si menciona un modelo real, ese modelo ya fue resuelto antes
+    // y nunca llega a este método.
+    // =========================================================
+
+    private static bool EsConsultaGeneralVenta(
+        string mensaje)
+    {
+        var texto =
+            NormalizarTexto(
+                mensaje);
+
+        if (
+            string.IsNullOrWhiteSpace(
+                texto)
+        )
+        {
+            return false;
+        }
+
+        var frases =
+            new[]
+            {
+                "QUE TENES",
+                "QUE TIENES",
+                "QUE TIENEN",
+                "QUE HAY",
+                "QUE VENDEN",
+                "QUE VENDES",
+                "QUE OFRECEN",
+                "QUE OFRECES",
+                "QUIERO INFORMACION",
+                "QUIERO INFO",
+                "QUIERO VER",
+                "QUIERO CONOCER",
+                "MOSTRAME LO QUE TENES",
+                "MOSTRAME LO QUE TIENEN",
+                "QUE OPCIONES TENES",
+                "QUE OPCIONES TIENEN"
+            };
+
+        return frases.Any(
+            frase =>
+                ContieneFrase(
+                    texto,
+                    frase)
+                ||
+                texto.StartsWith(
+                    frase + " ",
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                string.Equals(
+                    texto,
+                    frase,
+                    StringComparison.OrdinalIgnoreCase));
     }
 
 
@@ -2024,24 +2115,102 @@ public class MotoConversacionService
             return false;
         }
 
-        var saludos =
+        /*
+         * No buscamos una oración exacta.
+         * Detectamos cómo EMPIEZA el mensaje para tolerar:
+         *
+         * "hola"
+         * "hola otra vez"
+         * "hola que tal"
+         * "holla"
+         * "ola"
+         * "buenas"
+         * "buenas tardes"
+         * "como estas"
+         *
+         * Si el mismo mensaje menciona un modelo real, el modelo
+         * se procesa antes y esta regla no le roba prioridad.
+         */
+        var iniciosSaludo =
             new[]
             {
                 "HOLA",
                 "HOLAA",
                 "HOLAAA",
+                "HOLI",
+                "HOLIS",
+                "HOLLA",
+                "OLA",
+                "OLAA",
                 "BUEN DIA",
+                "BUENOS DIAS",
                 "BUENAS",
                 "BUENAS TARDES",
                 "BUENAS NOCHES",
-                "QUE TAL"
+                "QUE TAL",
+                "COMO ESTAS",
+                "COMO ESTA",
+                "COMO ANDAS",
+                "COMO VA",
+                "HEY",
+                "EY",
+                "SALUDOS"
             };
 
-        return saludos.Any(
+        return iniciosSaludo.Any(
             saludo =>
                 string.Equals(
                     texto,
                     saludo,
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                texto.StartsWith(
+                    saludo + " ",
+                    StringComparison.OrdinalIgnoreCase));
+    }
+
+
+    // =========================================================
+    // CORTESIA SIN CONSULTA
+    // =========================================================
+
+    private static bool EsMensajeCortesia(
+        string mensaje)
+    {
+        var texto =
+            NormalizarTexto(
+                mensaje);
+
+        if (
+            string.IsNullOrWhiteSpace(
+                texto)
+        )
+        {
+            return false;
+        }
+
+        var frases =
+            new[]
+            {
+                "GRACIAS",
+                "MUCHAS GRACIAS",
+                "MIL GRACIAS",
+                "OK GRACIAS",
+                "DALE GRACIAS",
+                "PERFECTO GRACIAS",
+                "GENIAL GRACIAS",
+                "MUY AMABLE"
+            };
+
+        return frases.Any(
+            frase =>
+                string.Equals(
+                    texto,
+                    frase,
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                texto.StartsWith(
+                    frase + " ",
                     StringComparison.OrdinalIgnoreCase));
     }
 
@@ -2139,25 +2308,28 @@ public class MotoConversacionService
         )
         {
             return
-                $"No tengo modelos de {marca} cargados en este momento 😊.";
+                $"Por el momento no tengo modelos de {marca} cargados 😊.";
         }
+
+        var nombres =
+            encontrados
+                .Select(
+                    x => x.Modelo)
+                .ToList();
 
         var sb =
             new StringBuilder();
 
         sb.AppendLine(
-            $"Claro 😊 De {marca} tenemos:");
+            $"¡Claro! 😊 Estos son los modelos *{marca}* que tenemos:");
 
         sb.AppendLine();
 
-        foreach (
-            var moto
-            in encontrados)
-        {
-            sb.AppendLine(
-                $"• {moto.Modelo}");
-        }
+        sb.AppendLine(
+            ConstruirGrillaTresColumnas(
+                nombres));
 
+        sb.AppendLine();
         sb.AppendLine();
 
         sb.Append(
@@ -2170,31 +2342,51 @@ public class MotoConversacionService
     // =========================================================
     // RESPUESTA GUIADA
     //
-    // Si hay pocos modelos, los muestra.
-    // Si mañana hay 50, muestra primero las marcas.
-    // TODO sale de BBDD.
+    // Si todavía no existe un modelo elegido, NO largamos toda
+    // la lista de motos. Empezamos por MARCAS.
+    // Cuando el cliente elige una marca, recién ahí mostramos
+    // sus modelos en 3 columnas.
     // =========================================================
 
     private static string ConstruirRespuestaGuiada(
         IReadOnlyList<MotoModeloCandidatoDto> modelos,
         string encabezado)
     {
-        var disponibles =
+        return
+            ConstruirRespuestaMarcas(
+                modelos,
+                encabezado);
+    }
+
+
+    // =========================================================
+    // MOSTRAR MARCAS DISPONIBLES
+    // =========================================================
+
+    private static string ConstruirRespuestaMarcas(
+        IReadOnlyList<MotoModeloCandidatoDto> modelos,
+        string encabezado)
+    {
+        var marcas =
             modelos
-                .DistinctBy(
-                    x => x.IdModeloProducto)
+                .Where(
+                    x =>
+                        !string.IsNullOrWhiteSpace(
+                            x.Marca))
+                .Select(
+                    x => x.Marca.Trim())
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
                 .OrderBy(
-                    x => x.Marca)
-                .ThenBy(
-                    x => x.Modelo)
+                    x => x)
                 .ToList();
 
         if (
-            disponibles.Count == 0
+            marcas.Count == 0
         )
         {
             return
-                "En este momento no tengo modelos cargados para mostrarte 😊.";
+                "En este momento no tengo marcas de motos cargadas para mostrarte 😊.";
         }
 
         var sb =
@@ -2204,49 +2396,127 @@ public class MotoConversacionService
             encabezado);
 
         sb.AppendLine();
+        sb.AppendLine(
+            "🏍️ *Marcas disponibles*");
+        sb.AppendLine();
+
+        foreach (
+            var marca
+            in marcas)
+        {
+            sb.AppendLine(
+                $"• *{marca}*");
+        }
+
+        sb.AppendLine();
 
         if (
-            disponibles.Count <= 5
+            marcas.Count == 1
         )
         {
-            foreach (
-                var moto
-                in disponibles)
-            {
-                sb.AppendLine(
-                    $"• {moto.Marca} {moto.Modelo}");
-            }
-
-            sb.AppendLine();
-
             sb.Append(
-                "¿Cuál te interesa?");
+                $"Tenemos *{marcas[0]}*. Decime *{marcas[0]}* y te muestro todos los modelos disponibles 😊.");
         }
         else
         {
-            var marcas =
-                disponibles
-                    .Select(
-                        x => x.Marca)
-                    .Distinct(
-                        StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(
-                        x => x)
-                    .ToList();
+            sb.Append(
+                "¿Qué marca te gustaría ver? 😊");
+        }
 
-            foreach (
-                var marca
-                in marcas)
+        return sb.ToString();
+    }
+
+
+    // =========================================================
+    // GRILLA DE MODELOS EN 3 COLUMNAS PARA WHATSAPP
+    //
+    // Usamos bloque monoespaciado para que las columnas mantengan
+    // alineación. Distribuimos verticalmente para que sea fácil
+    // recorrer la lista de arriba hacia abajo.
+    // =========================================================
+
+    private static string ConstruirGrillaTresColumnas(
+        IReadOnlyList<string> valores)
+    {
+        if (
+            valores is null
+            ||
+            valores.Count == 0
+        )
+        {
+            return string.Empty;
+        }
+
+        const int cantidadColumnas =
+            3;
+
+        const int anchoColumna =
+            18;
+
+        var cantidadFilas =
+            (int)Math.Ceiling(
+                valores.Count
+                /
+                (double)cantidadColumnas);
+
+        var sb =
+            new StringBuilder();
+
+        sb.AppendLine(
+            "```");
+
+        for (
+            var fila = 0;
+            fila < cantidadFilas;
+            fila++)
+        {
+            for (
+                var columna = 0;
+                columna < cantidadColumnas;
+                columna++)
             {
-                sb.AppendLine(
-                    $"• {marca}");
+                var indice =
+                    fila
+                    +
+                    (
+                        columna
+                        *
+                        cantidadFilas
+                    );
+
+                if (
+                    indice >= valores.Count
+                )
+                {
+                    continue;
+                }
+
+                var valor =
+                    (valores[indice] ?? string.Empty)
+                        .Trim();
+
+                if (
+                    valor.Length
+                    >=
+                    anchoColumna
+                )
+                {
+                    valor =
+                        valor[..(anchoColumna - 2)]
+                        +
+                        "…";
+                }
+
+                sb.Append(
+                    valor.PadRight(
+                        anchoColumna));
             }
 
             sb.AppendLine();
-
-            sb.Append(
-                "¿Qué marca te interesa?");
         }
+
+        sb.Append(
+            "```");
 
         return sb.ToString();
     }
@@ -2307,76 +2577,16 @@ public class MotoConversacionService
         MotoModeloCandidatoDto? modeloActual)
     {
         /*
-         * CATALOGO COMPLETO DESDE BBDD.
+         * Una consulta general vuelve al inicio del catálogo:
+         * primero marcas, después modelos.
          *
-         * IMPORTANTE:
-         * - Se muestran TODOS los modelos activos.
-         * - No se excluye el modelo actual.
-         * - No se depende de publicación.
-         * - No se depende de promo.
-         * - No se inventa ningún nombre.
-         *
-         * modeloActual se mantiene en la firma para no romper
-         * otras referencias, pero NO se usa para filtrar.
+         * modeloActual queda en la firma para mantener
+         * compatibilidad con llamadas existentes.
          */
-
-        var disponibles =
-            modelos
-                .DistinctBy(
-                    x => x.IdModeloProducto)
-                .OrderBy(
-                    x => x.Marca)
-                .ThenBy(
-                    x => x.Modelo)
-                .ToList();
-
-        if (
-            disponibles.Count == 0
-        )
-        {
-            return
-                "En este momento no tengo modelos cargados para mostrarte 😊.";
-        }
-
-        var sb =
-            new StringBuilder();
-
-        sb.AppendLine(
-            "Claro 😊 Estos son los modelos que tenemos:");
-
-        sb.AppendLine();
-
-        var gruposPorMarca =
-            disponibles
-                .GroupBy(
-                    x => x.Marca,
-                    StringComparer.OrdinalIgnoreCase)
-                .OrderBy(
-                    g => g.Key);
-
-        foreach (
-            var grupo
-            in gruposPorMarca)
-        {
-            sb.AppendLine(
-                $"*{grupo.Key}*");
-
-            foreach (
-                var moto
-                in grupo.OrderBy(
-                    x => x.Modelo))
-            {
-                sb.AppendLine(
-                    $"• {moto.Modelo}");
-            }
-
-            sb.AppendLine();
-        }
-
-        sb.Append(
-            "¿Cuál te interesa?");
-
-        return sb.ToString();
+        return
+            ConstruirRespuestaMarcas(
+                modelos,
+                "¡Claro! 😊 Estas son las marcas que tenemos disponibles:");
     }
 
 
