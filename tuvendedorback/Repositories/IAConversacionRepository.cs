@@ -213,6 +213,53 @@ ORDER BY Id DESC;
 
 
     // =========================================================
+    // CONTEXTO ACTUAL COMPLETO
+    // =========================================================
+
+    public async Task<MotoConversacionContextoDto?> ObtenerContextoActual(
+        int idConversacion)
+    {
+        using var conn =
+            _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+SELECT TOP (1)
+    IdPublicacion,
+    IdModeloProductoActual,
+    PasoActual,
+    Intencion,
+    FechaActualizacion
+FROM dbo.ContextoConversacion
+WHERE IdConversacion = @IdConversacion
+ORDER BY Id DESC;
+";
+
+            return await conn
+                .QueryFirstOrDefaultAsync<MotoConversacionContextoDto>(
+                    sql,
+                    new
+                    {
+                        IdConversacion =
+                            idConversacion
+                    });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error obteniendo contexto actual. IdConversacion={IdConversacion}",
+                idConversacion);
+
+            throw new RepositoryException(
+                "Error obteniendo contexto actual de la conversación.",
+                ex);
+        }
+    }
+
+
+    // =========================================================
     // ACTUALIZAR CONTEXTO
     // =========================================================
 

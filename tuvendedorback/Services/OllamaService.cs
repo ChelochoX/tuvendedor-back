@@ -10,9 +10,8 @@ public class OllamaService
 {
     /*
      * El VPS tiene un único runner de Ollama.
-     * Evitamos acumular muchas peticiones simultáneas:
-     * si ya está ocupado, devolvemos control al backend
-     * para que use una respuesta comercial segura.
+     * Texto y visión comparten el mismo semáforo para no saturar
+     * CPU/RAM ni formar colas largas.
      */
     private static readonly SemaphoreSlim
         _semaforoOllama =
@@ -32,11 +31,23 @@ public class OllamaService
     private readonly string
         _modelo;
 
+    private readonly string
+        _modeloVision;
+
     private readonly int
         _esperaColaSegundos;
 
     private readonly string
         _keepAlive;
+
+    private readonly string
+        _keepAliveVision;
+
+    private readonly bool
+        _visionHabilitada;
+
+    private readonly int
+        _maxVisionImageBytes;
 
 
     public OllamaService(
@@ -50,13 +61,11 @@ public class OllamaService
         _logger =
             logger;
 
-
         _baseUrl =
             configuration[
                 "IA:OllamaBaseUrl"]
             ??
             "http://localhost:11434";
-
 
         _modelo =
             configuration[
@@ -64,6 +73,11 @@ public class OllamaService
             ??
             "qwen3.5:4b";
 
+        _modeloVision =
+            configuration[
+                "IA:VisionModel"]
+            ??
+            "qwen3-vl:4b";
 
         var timeoutSegundos =
             configuration.GetValue<int?>(
@@ -83,6 +97,23 @@ public class OllamaService
             ??
             "30m";
 
+        _keepAliveVision =
+            configuration[
+                "IA:VisionKeepAlive"]
+            ??
+            "2m";
+
+        _visionHabilitada =
+            configuration.GetValue<bool?>(
+                "IA:VisionEnabled")
+            ??
+            true;
+
+        _maxVisionImageBytes =
+            configuration.GetValue<int?>(
+                "IA:MaxVisionImageBytes")
+            ??
+            6 * 1024 * 1024;
 
         _httpClient.Timeout =
             TimeSpan.FromSeconds(
@@ -100,10 +131,6 @@ public class OllamaService
 
         try
         {
-            /*
-             * No dejamos que varias conversaciones formen una cola
-             * larga detrás de un único runner CPU.
-             */
             obtuvoTurno =
                 await _semaforoOllama
                     .WaitAsync(
@@ -132,7 +159,6 @@ public class OllamaService
                     }
                 };
 
-
             foreach (
                 var mensaje
                 in historial)
@@ -144,7 +170,6 @@ public class OllamaService
                         ? "assistant"
                         : "user";
 
-
                 mensajes.Add(
                     new OllamaMessage
                     {
@@ -155,7 +180,6 @@ public class OllamaService
                             mensaje.Mensaje
                     });
             }
-
 
             var request =
                 new OllamaChatRequest
@@ -189,53 +213,29 @@ public class OllamaService
                         }
                 };
 
-
-            var url =
-                $"{_baseUrl.TrimEnd('/')}/api/chat";
-
-
-            _logger.LogInformation(
-                "Consultando Ollama. Modelo={Modelo}, Mensajes={CantidadMensajes}",
-                _modelo,
-                mensajes.Count);
-
-
-            using var response =
-                await _httpClient.PostAsJsonAsync(
-                    url,
+            var body =
+                await EjecutarChat(
                     request,
                     cancellationToken);
 
-
-            var body =
-                await response.Content
-                    .ReadAsStringAsync(
-                        cancellationToken);
-
-
-            if (!response.IsSuccessStatusCode)
+            if (
+                string.IsNullOrWhiteSpace(
+                    body)
+            )
             {
-                _logger.LogError(
-                    "Ollama respondió HTTP {StatusCode}. Body={Body}",
-                    (int)response.StatusCode,
-                    body);
-
                 return string.Empty;
             }
-
 
             var result =
                 JsonSerializer.Deserialize<
                     OllamaChatResponse>(
                     body);
 
-
             var respuesta =
                 result?
                     .Message?
                     .Content?
                     .Trim();
-
 
             if (
                 string.IsNullOrWhiteSpace(
@@ -248,7 +248,6 @@ public class OllamaService
                 return string.Empty;
             }
 
-
             return respuesta;
         }
         catch (OperationCanceledException)
@@ -257,19 +256,10 @@ public class OllamaService
                     .IsCancellationRequested
             )
         {
-            /*
-             * Si el cliente/caller canceló realmente la petición,
-             * respetamos la cancelación.
-             */
             throw;
         }
         catch (OperationCanceledException ex)
         {
-            /*
-             * Timeout del HttpClient.
-             * NO propagamos 500: MotoConversacionService utilizará
-             * una respuesta comercial segura.
-             */
             _logger.LogWarning(
                 ex,
                 "Timeout consultando Ollama. Se utilizará fallback seguro.");
@@ -303,6 +293,367 @@ public class OllamaService
     }
 
 
+    public async Task<AnalisisImagenMotoDto?> AnalizarImagenMoto(
+        string mediaBase64,
+        string? mediaMimeType,
+        string? textoAcompaniante,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_visionHabilitada)
+        {
+            return null;
+        }
+
+        if (
+            string.IsNullOrWhiteSpace(
+                mediaBase64)
+            ||
+            !EsMimeImagen(
+                mediaMimeType)
+        )
+        {
+            return null;
+        }
+
+        var imagenBase64 =
+            LimpiarBase64(
+                mediaBase64);
+
+        if (
+            string.IsNullOrWhiteSpace(
+                imagenBase64)
+        )
+        {
+            return null;
+        }
+
+        var bytesEstimados =
+            (long)imagenBase64.Length
+            *
+            3
+            /
+            4;
+
+        if (
+            bytesEstimados
+            >
+            _maxVisionImageBytes
+        )
+        {
+            _logger.LogWarning(
+                "Imagen omitida para visión por tamaño. BytesEstimados={BytesEstimados}, Max={Max}",
+                bytesEstimados,
+                _maxVisionImageBytes);
+
+            return null;
+        }
+
+        var obtuvoTurno =
+            false;
+
+        try
+        {
+            obtuvoTurno =
+                await _semaforoOllama
+                    .WaitAsync(
+                        TimeSpan.FromSeconds(
+                            _esperaColaSegundos),
+                        cancellationToken);
+
+            if (!obtuvoTurno)
+            {
+                _logger.LogWarning(
+                    "Ollama ocupado. Se omite análisis visual y se usa fallback seguro.");
+
+                return null;
+            }
+
+            var textoExtra =
+                string.IsNullOrWhiteSpace(
+                    textoAcompaniante)
+
+                    ? "(sin texto adicional)"
+                    : textoAcompaniante.Trim();
+
+            var prompt =
+                $"""
+                Analizá esta imagen únicamente para asistir una venta de motocicletas de TuVendedor.
+
+                Texto que acompañó la imagen:
+                {textoExtra}
+
+                Respondé SOLO JSON válido, sin markdown y con esta forma exacta:
+                {{
+                  "esMoto": true,
+                  "marca": "marca visible o inferida con prudencia, o null",
+                  "modelo": "modelo visible o inferido con prudencia, o null",
+                  "textoVisible": "texto útil visible en la imagen, o null",
+                  "confianza": 0.0,
+                  "motivo": "explicación muy breve"
+                }}
+
+                Reglas:
+                - esMoto=true solo si la imagen muestra claramente una motocicleta, scooter o material/publicación comercial de una moto.
+                - No inventes marca ni modelo. Si no se distingue, usá null.
+                - confianza debe estar entre 0 y 1.
+                - Si la imagen no corresponde a motos, esMoto=false.
+                - No respondas preguntas generales ni describas personas, documentos u otros datos sensibles.
+                """;
+
+            var request =
+                new OllamaChatRequest
+                {
+                    Model =
+                        _modeloVision,
+
+                    Stream =
+                        false,
+
+                    Think =
+                        false,
+
+                    KeepAlive =
+                        _keepAliveVision,
+
+                    Format =
+                        "json",
+
+                    Messages =
+                        new List<OllamaMessage>
+                        {
+                            new()
+                            {
+                                Role =
+                                    "user",
+
+                                Content =
+                                    prompt,
+
+                                Images =
+                                    new List<string>
+                                    {
+                                        imagenBase64
+                                    }
+                            }
+                        },
+
+                    Options =
+                        new OllamaOptions
+                        {
+                            Temperature =
+                                0.0,
+
+                            NumCtx =
+                                2048,
+
+                            NumPredict =
+                                180
+                        }
+                };
+
+            var body =
+                await EjecutarChat(
+                    request,
+                    cancellationToken);
+
+            if (
+                string.IsNullOrWhiteSpace(
+                    body)
+            )
+            {
+                return null;
+            }
+
+            var result =
+                JsonSerializer.Deserialize<OllamaChatResponse>(
+                    body);
+
+            var contenido =
+                result?
+                    .Message?
+                    .Content?
+                    .Trim();
+
+            if (
+                string.IsNullOrWhiteSpace(
+                    contenido)
+            )
+            {
+                return null;
+            }
+
+            contenido =
+                LimpiarBloqueJson(
+                    contenido);
+
+            var analisis =
+                JsonSerializer.Deserialize<AnalisisImagenMotoDto>(
+                    contenido,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive =
+                            true
+                    });
+
+            if (analisis is null)
+            {
+                return null;
+            }
+
+            analisis.Confianza =
+                Math.Clamp(
+                    analisis.Confianza,
+                    0,
+                    1);
+
+            return analisis;
+        }
+        catch (OperationCanceledException)
+            when (
+                cancellationToken
+                    .IsCancellationRequested
+            )
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "No se pudo analizar la imagen con el modelo visual. Se usa fallback seguro.");
+
+            return null;
+        }
+        finally
+        {
+            if (obtuvoTurno)
+            {
+                _semaforoOllama
+                    .Release();
+            }
+        }
+    }
+
+
+    private async Task<string?> EjecutarChat(
+        OllamaChatRequest request,
+        CancellationToken cancellationToken)
+    {
+        var url =
+            $"{_baseUrl.TrimEnd('/')}/api/chat";
+
+        _logger.LogInformation(
+            "Consultando Ollama. Modelo={Modelo}, Mensajes={CantidadMensajes}, Vision={Vision}",
+            request.Model,
+            request.Messages.Count,
+            request.Messages.Any(
+                x => x.Images is { Count: > 0 }));
+
+        using var response =
+            await _httpClient.PostAsJsonAsync(
+                url,
+                request,
+                cancellationToken);
+
+        var body =
+            await response.Content
+                .ReadAsStringAsync(
+                    cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning(
+                "Ollama respondió HTTP {StatusCode}. Modelo={Modelo}. Body={Body}",
+                (int)response.StatusCode,
+                request.Model,
+                body);
+
+            return null;
+        }
+
+        return body;
+    }
+
+
+    private static bool EsMimeImagen(
+        string? mimeType)
+    {
+        return
+            !string.IsNullOrWhiteSpace(
+                mimeType)
+            &&
+            mimeType.StartsWith(
+                "image/",
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+
+    private static string LimpiarBase64(
+        string valor)
+    {
+        var limpio =
+            valor.Trim();
+
+        if (
+            limpio.StartsWith(
+                "data:",
+                StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            var indiceComa =
+                limpio.IndexOf(',');
+
+            if (
+                indiceComa >= 0
+                &&
+                indiceComa < limpio.Length - 1
+            )
+            {
+                limpio =
+                    limpio[(indiceComa + 1)..];
+            }
+        }
+
+        return limpio
+            .Replace("\r", string.Empty)
+            .Replace("\n", string.Empty)
+            .Trim();
+    }
+
+
+    private static string LimpiarBloqueJson(
+        string contenido)
+    {
+        var texto =
+            contenido.Trim();
+
+        if (
+            texto.StartsWith("```", StringComparison.Ordinal)
+        )
+        {
+            var primerSalto =
+                texto.IndexOf('\n');
+
+            if (primerSalto >= 0)
+            {
+                texto =
+                    texto[(primerSalto + 1)..];
+            }
+
+            var ultimoCierre =
+                texto.LastIndexOf("```", StringComparison.Ordinal);
+
+            if (ultimoCierre >= 0)
+            {
+                texto =
+                    texto[..ultimoCierre];
+            }
+        }
+
+        return texto.Trim();
+    }
+
+
     private static bool EsMensajeIA(
         string emisor)
     {
@@ -331,7 +682,6 @@ public class OllamaService
         public string Model { get; set; } =
             string.Empty;
 
-
         [JsonPropertyName("messages")]
         public List<OllamaMessage> Messages
         {
@@ -339,19 +689,19 @@ public class OllamaService
             set;
         } = new();
 
-
         [JsonPropertyName("stream")]
         public bool Stream { get; set; }
 
-
         [JsonPropertyName("think")]
         public bool Think { get; set; }
-
 
         [JsonPropertyName("keep_alive")]
         public string KeepAlive { get; set; } =
             "30m";
 
+        [JsonPropertyName("format")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Format { get; set; }
 
         [JsonPropertyName("options")]
         public OllamaOptions Options
@@ -368,10 +718,13 @@ public class OllamaService
         public string Role { get; set; } =
             string.Empty;
 
-
         [JsonPropertyName("content")]
         public string Content { get; set; } =
             string.Empty;
+
+        [JsonPropertyName("images")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? Images { get; set; }
     }
 
 
@@ -384,14 +737,12 @@ public class OllamaService
             set;
         }
 
-
         [JsonPropertyName("num_ctx")]
         public int NumCtx
         {
             get;
             set;
         }
-
 
         [JsonPropertyName("num_predict")]
         public int NumPredict

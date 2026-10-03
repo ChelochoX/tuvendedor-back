@@ -8,4 +8,10 @@ public interface IOllamaService
         string systemPrompt,
         IReadOnlyList<MensajeConversacionHistorialDto> historial,
         CancellationToken cancellationToken = default);
+
+    Task<AnalisisImagenMotoDto?> AnalizarImagenMoto(
+        string mediaBase64,
+        string? mediaMimeType,
+        string? textoAcompaniante,
+        CancellationToken cancellationToken = default);
 }

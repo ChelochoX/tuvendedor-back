@@ -70,11 +70,27 @@ public class MotoConversacionRequestValidator
             {
                 RuleFor(x => x.MediaBase64)
                     .NotEmpty()
-                    .WithMessage("El archivo es obligatorio para este tipo de mensaje.");
+                    .WithMessage("El archivo es obligatorio para este tipo de mensaje.")
+                    .MaximumLength(9_000_000)
+                    .WithMessage("El archivo supera el tamaño permitido para procesamiento automático.");
 
                 RuleFor(x => x.MediaMimeType)
                     .NotEmpty()
                     .WithMessage("El tipo MIME del archivo es obligatorio.");
+            });
+
+        When(
+            x => string.Equals(
+                (x.TipoMensaje ?? string.Empty).Trim(),
+                "IMAGEN",
+                StringComparison.OrdinalIgnoreCase),
+            () =>
+            {
+                RuleFor(x => x.MediaMimeType)
+                    .Must(mime =>
+                        !string.IsNullOrWhiteSpace(mime)
+                        && mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                    .WithMessage("El archivo recibido no es una imagen válida.");
             });
 
         RuleFor(x => x.Mensaje)

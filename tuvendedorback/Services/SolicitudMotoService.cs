@@ -111,6 +111,25 @@ public class SolicitudMotoService : ISolicitudMotoService
         };
     }
 
+    public async Task CancelarActivaPorCambioDeProducto(
+        SolicitudMotoProcesoDto solicitud,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await _repository.Cancelar(
+            solicitud.TipoOperacion,
+            solicitud.IdSolicitud,
+            "Cancelada automáticamente porque el cliente inició una consulta sobre otra publicación/modelo desde TuVendedor.");
+
+        _logger.LogInformation(
+            "Solicitud activa cancelada por cambio explícito de producto. Tipo={TipoOperacion}, IdSolicitud={IdSolicitud}, IdConversacion={IdConversacion}",
+            solicitud.TipoOperacion,
+            solicitud.IdSolicitud,
+            solicitud.IdConversacion);
+    }
+
+
     public async Task<SolicitudMotoProcesoResultadoDto> ProcesarActiva(
         SolicitudMotoProcesoDto solicitud,
         MotoConversacionRequest request,

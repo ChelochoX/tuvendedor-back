@@ -16,6 +16,10 @@ public interface IIAConversacionRepository
         int idConversacion);
 
 
+    Task<MotoConversacionContextoDto?> ObtenerContextoActual(
+        int idConversacion);
+
+
     Task ActualizarContexto(
         int idConversacion,
         int? idPublicacion,

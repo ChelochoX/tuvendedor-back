@@ -20,4 +20,8 @@ public interface ISolicitudMotoService
         SolicitudMotoProcesoDto solicitud,
         MotoConversacionRequest request,
         CancellationToken cancellationToken = default);
+
+    Task CancelarActivaPorCambioDeProducto(
+        SolicitudMotoProcesoDto solicitud,
+        CancellationToken cancellationToken = default);
 }
