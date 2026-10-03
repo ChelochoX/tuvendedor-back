@@ -4122,7 +4122,7 @@ public class MotoConversacionService
             else
             {
                 sb.AppendLine(
-                    ConstruirListaModelosWhatsApp(
+                    ConstruirGrillaDosColumnasWhatsApp(
                         nombres));
             }
 
@@ -4642,7 +4642,7 @@ public class MotoConversacionService
                 $"🏍️ *{grupo.Key}*");
 
             sb.AppendLine(
-                ConstruirListaModelosWhatsApp(
+                ConstruirGrillaDosColumnasWhatsApp(
                     nombres));
 
             sb.AppendLine();

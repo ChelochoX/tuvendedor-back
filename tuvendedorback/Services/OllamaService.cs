@@ -376,21 +376,21 @@ public class OllamaService
                     : textoAcompaniante.Trim();
 
             var prompt =
-                $"""
+                $$"""
                 Analizá esta imagen únicamente para asistir una venta de motocicletas de TuVendedor.
 
                 Texto que acompañó la imagen:
-                {textoExtra}
+                {{textoExtra}}
 
                 Respondé SOLO JSON válido, sin markdown y con esta forma exacta:
-                {{
+                {
                   "esMoto": true,
                   "marca": "marca visible o inferida con prudencia, o null",
                   "modelo": "modelo visible o inferido con prudencia, o null",
                   "textoVisible": "texto útil visible en la imagen, o null",
                   "confianza": 0.0,
                   "motivo": "explicación muy breve"
-                }}
+                }
 
                 Reglas:
                 - esMoto=true solo si la imagen muestra claramente una motocicleta, scooter o material/publicación comercial de una moto.
