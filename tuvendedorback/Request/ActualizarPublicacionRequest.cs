@@ -21,6 +21,14 @@ public class ActualizarPublicacionRequest
         string.Empty;
 
     /*
+     * Si viene informado, actualiza el vínculo principal con
+     * ModelosProducto. Si viene null se conserva el vínculo actual;
+     * si la publicación todavía no tiene vínculo, el repository
+     * intenta resolverlo de forma segura por título/descripción.
+     */
+    public int? IdModeloProducto { get; set; }
+
+    /*
      * Si viene null/vacío:
      * conservaremos el canal actual de la publicación.
      */
@@ -93,6 +101,11 @@ public class ActualizarPublicacionRequestValidator
         RuleFor(x => x.Categoria)
             .NotEmpty()
             .MaximumLength(250);
+
+        RuleFor(x => x.IdModeloProducto)
+            .GreaterThan(0)
+            .When(x => x.IdModeloProducto.HasValue)
+            .WithMessage("IdModeloProducto debe ser mayor a cero.");
 
         RuleFor(x => x.CanalPublicacion)
             .Must(canal =>

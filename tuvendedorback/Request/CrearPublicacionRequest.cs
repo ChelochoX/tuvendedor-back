@@ -21,6 +21,14 @@ public class CrearPublicacionRequest
         string.Empty;
 
     /*
+     * Para publicaciones de motos, vincula la publicación con
+     * ModelosProducto. Es opcional para mantener compatibilidad
+     * con clientes anteriores; si no viene, el repository intenta
+     * resolverlo de forma segura por título/descripción.
+     */
+    public int? IdModeloProducto { get; set; }
+
+    /*
      * MARKETPLACE o VITRINA.
      *
      * Por ahora se deja nullable para mantener compatibilidad
@@ -84,6 +92,11 @@ public class CrearPublicacionRequestValidator
         RuleFor(x => x.Categoria)
             .NotEmpty()
             .MaximumLength(250);
+
+        RuleFor(x => x.IdModeloProducto)
+            .GreaterThan(0)
+            .When(x => x.IdModeloProducto.HasValue)
+            .WithMessage("IdModeloProducto debe ser mayor a cero.");
 
         RuleFor(x => x.CanalPublicacion)
             .Must(canal =>

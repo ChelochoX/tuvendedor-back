@@ -1,4 +1,8 @@
-﻿using Dapper;
+﻿using System.Data;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using Dapper;
 using tuvendedorback.Data;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
@@ -60,6 +64,28 @@ ORDER BY
                         IdPublicacion = idPublicacion
                     });
 
+            /*
+             * IMPORTANTE:
+             *
+             * Las publicaciones antiguas (y algunas nuevas creadas desde
+             * el Marketplace) pueden existir sin una fila en
+             * PublicacionModeloProducto. En ese caso NO debemos rechazar
+             * inmediatamente la consulta de WhatsApp.
+             *
+             * Intentamos resolver el modelo de forma segura usando el
+             * titulo/descripcion de la publicacion contra Marcas +
+             * ModelosProducto activos. Solo aceptamos una coincidencia
+             * cuando podemos determinar un unico candidato confiable.
+             */
+            if (!idModeloProducto.HasValue)
+            {
+                idModeloProducto =
+                    await ResolverModeloPorTextoPublicacion(
+                        conn,
+                        idPublicacion,
+                        fechaActual);
+            }
+
             if (!idModeloProducto.HasValue)
             {
                 return null;
@@ -81,6 +107,304 @@ ORDER BY
                 "Error obteniendo oferta comercial de moto.",
                 ex);
         }
+    }
+
+
+    // =========================================================
+    // RESOLVER MODELO DESDE TITULO/DESCRIPCION DE PUBLICACION
+    // =========================================================
+
+    private async Task<int?> ResolverModeloPorTextoPublicacion(
+        IDbConnection conn,
+        int idPublicacion,
+        DateTime fechaActual)
+    {
+        const string sqlPublicacion = @"
+SELECT TOP (1)
+    p.Titulo,
+    p.Descripcion
+FROM dbo.Publicaciones p
+WHERE p.Id = @IdPublicacion
+  AND p.Estado = 'Activo';
+";
+
+        var publicacion =
+            await conn.QueryFirstOrDefaultAsync<PublicacionTextoData>(
+                sqlPublicacion,
+                new
+                {
+                    IdPublicacion = idPublicacion
+                });
+
+        if (publicacion is null)
+        {
+            return null;
+        }
+
+        var textoPublicacion =
+            NormalizarParaComparacion(
+                $"{publicacion.Titulo} {publicacion.Descripcion}");
+
+        if (string.IsNullOrWhiteSpace(textoPublicacion))
+        {
+            return null;
+        }
+
+        const string sqlModelos = @"
+SELECT
+    mp.Id AS IdModeloProducto,
+    mp.IdMarca,
+    ma.Nombre AS Marca,
+    mp.NombreModelo AS Modelo,
+    mp.CodigoReferencia,
+    mp.Cilindrada,
+    CAST(NULL AS INT) AS IdPublicacion
+FROM dbo.ModelosProducto mp
+INNER JOIN dbo.Marcas ma
+    ON ma.Id = mp.IdMarca
+WHERE mp.Estado = 'Activo'
+  AND ma.Estado = 'Activo'
+  AND EXISTS
+  (
+      SELECT 1
+      FROM dbo.ListasPreciosProducto lp
+      WHERE lp.IdModeloProducto = mp.Id
+        AND lp.Estado = 'Activo'
+        AND lp.EsPromo = 0
+        AND lp.FechaDesde <= @FechaActual
+        AND
+        (
+            lp.FechaHasta IS NULL
+            OR lp.FechaHasta >= @FechaActual
+        )
+  );
+";
+
+        var modelos =
+            (
+                await conn.QueryAsync<MotoModeloCandidatoDto>(
+                    sqlModelos,
+                    new
+                    {
+                        FechaActual = fechaActual.Date
+                    })
+            )
+            .ToList();
+
+        if (modelos.Count == 0)
+        {
+            return null;
+        }
+
+        /*
+         * Primera pasada (la mas segura):
+         * la publicacion debe contener MARCA y MODELO.
+         */
+        var candidatosMarcaModelo =
+            modelos
+                .Where(modelo =>
+                {
+                    var marca =
+                        NormalizarParaComparacion(modelo.Marca);
+
+                    var nombreModelo =
+                        NormalizarParaComparacion(modelo.Modelo);
+
+                    return
+                        ContieneFrase(
+                            textoPublicacion,
+                            marca)
+                        &&
+                        ContieneFrase(
+                            textoPublicacion,
+                            nombreModelo);
+                })
+                .ToList();
+
+        var resuelto =
+            ElegirCandidatoSeguro(
+                candidatosMarcaModelo);
+
+        if (resuelto is not null)
+        {
+            _logger.LogInformation(
+                "Publicacion {IdPublicacion} sin vinculo en PublicacionModeloProducto. Modelo resuelto por texto: {IdModeloProducto} - {Marca} {Modelo}",
+                idPublicacion,
+                resuelto.IdModeloProducto,
+                resuelto.Marca,
+                resuelto.Modelo);
+
+            return resuelto.IdModeloProducto;
+        }
+
+        /*
+         * Segunda pasada:
+         * si la marca no aparece en el titulo, aceptamos SOLO un modelo
+         * unico en todo el catalogo. Esto permite publicaciones como
+         * "GTR 150 LTD promo" sin inventar cuando hay nombres ambiguos.
+         */
+        var candidatosSoloModelo =
+            modelos
+                .Where(modelo =>
+                {
+                    var nombreModelo =
+                        NormalizarParaComparacion(modelo.Modelo);
+
+                    return
+                        nombreModelo.Length >= 4
+                        &&
+                        ContieneFrase(
+                            textoPublicacion,
+                            nombreModelo);
+                })
+                .ToList();
+
+        resuelto =
+            ElegirCandidatoSeguro(
+                candidatosSoloModelo);
+
+        if (resuelto is not null)
+        {
+            _logger.LogInformation(
+                "Publicacion {IdPublicacion} sin vinculo. Modelo resuelto de forma unica por nombre: {IdModeloProducto} - {Marca} {Modelo}",
+                idPublicacion,
+                resuelto.IdModeloProducto,
+                resuelto.Marca,
+                resuelto.Modelo);
+
+            return resuelto.IdModeloProducto;
+        }
+
+        _logger.LogWarning(
+            "No se pudo resolver de forma segura el modelo de la publicacion {IdPublicacion}. Titulo={Titulo}",
+            idPublicacion,
+            publicacion.Titulo);
+
+        return null;
+    }
+
+
+    private static MotoModeloCandidatoDto? ElegirCandidatoSeguro(
+        List<MotoModeloCandidatoDto> candidatos)
+    {
+        if (candidatos.Count == 0)
+        {
+            return null;
+        }
+
+        var distintos =
+            candidatos
+                .GroupBy(x => x.IdModeloProducto)
+                .Select(x => x.First())
+                .ToList();
+
+        if (distintos.Count == 1)
+        {
+            return distintos[0];
+        }
+
+        /*
+         * Si un nombre es prefijo de otro (ej. GL 150 / GL 150 PRO),
+         * elegimos el nombre mas especifico SOLO si hay un unico modelo
+         * con la mayor longitud normalizada.
+         */
+        var maxLongitud =
+            distintos.Max(x =>
+                NormalizarParaComparacion(x.Modelo).Length);
+
+        var masEspecificos =
+            distintos
+                .Where(x =>
+                    NormalizarParaComparacion(x.Modelo).Length
+                    == maxLongitud)
+                .ToList();
+
+        return
+            masEspecificos.Count == 1
+                ? masEspecificos[0]
+                : null;
+    }
+
+
+    private static bool ContieneFrase(
+        string textoNormalizado,
+        string fraseNormalizada)
+    {
+        if (
+            string.IsNullOrWhiteSpace(textoNormalizado)
+            ||
+            string.IsNullOrWhiteSpace(fraseNormalizada)
+        )
+        {
+            return false;
+        }
+
+        return
+            $" {textoNormalizado} "
+                .Contains(
+                    $" {fraseNormalizada} ",
+                    StringComparison.Ordinal);
+    }
+
+
+    private static string NormalizarParaComparacion(
+        string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor))
+        {
+            return string.Empty;
+        }
+
+        var normalizado =
+            valor
+                .Normalize(
+                    NormalizationForm.FormD);
+
+        var sb =
+            new StringBuilder(
+                normalizado.Length);
+
+        foreach (var c in normalizado)
+        {
+            var categoria =
+                CharUnicodeInfo.GetUnicodeCategory(c);
+
+            if (
+                categoria ==
+                UnicodeCategory.NonSpacingMark
+            )
+            {
+                continue;
+            }
+
+            if (c == '+')
+            {
+                sb.Append(" PLUS ");
+                continue;
+            }
+
+            sb.Append(
+                char.IsLetterOrDigit(c)
+                    ? char.ToUpperInvariant(c)
+                    : ' ');
+        }
+
+        return
+            Regex.Replace(
+                    sb.ToString(),
+                    @"\s+",
+                    " ")
+                .Trim();
+    }
+
+
+    private sealed class PublicacionTextoData
+    {
+        public string Titulo { get; set; } =
+            string.Empty;
+
+        public string Descripcion { get; set; } =
+            string.Empty;
     }
 
 

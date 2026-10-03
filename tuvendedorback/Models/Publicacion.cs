@@ -17,6 +17,9 @@ public class Publicacion
     public string Categoria { get; set; } =
         "";
 
+    // Modelo de producto principal asociado a la publicación (motos).
+    public int? IdModeloProducto { get; set; }
+
     public string Ubicacion { get; set; } =
         "";
 

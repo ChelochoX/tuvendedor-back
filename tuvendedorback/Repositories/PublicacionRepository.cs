@@ -1,4 +1,8 @@
-﻿using Dapper;
+﻿using System.Data;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using Dapper;
 using Microsoft.Data.SqlClient;
 using tuvendedorback.Common;
 using tuvendedorback.Data;
@@ -104,6 +108,33 @@ public class PublicacionRepository : IPublicacionRepository
                 tran
             );
 
+            // =============================================================
+            // VINCULO PUBLICACION -> MODELO DE PRODUCTO (MOTOS)
+            // =============================================================
+            var idModeloProducto = await ResolverModeloProductoParaPublicacionAsync(
+                conn,
+                tran,
+                request.IdModeloProducto,
+                request.Categoria,
+                request.Titulo,
+                request.Descripcion);
+
+            if (idModeloProducto.HasValue)
+            {
+                await SincronizarModeloPrincipalPublicacionAsync(
+                    conn,
+                    tran,
+                    publicacionId,
+                    idModeloProducto.Value);
+            }
+            else if (EsCategoriaMoto(request.Categoria))
+            {
+                _logger.LogWarning(
+                    "Publicación de moto creada sin vínculo de modelo. IdPublicacion={IdPublicacion}, Titulo={Titulo}",
+                    publicacionId,
+                    request.Titulo);
+            }
+
             foreach (var img in imagenes)
             {
                 await conn.ExecuteAsync(
@@ -171,6 +202,11 @@ public class PublicacionRepository : IPublicacionRepository
 
             return publicacionId;
         }
+        catch (ReglasdeNegocioException)
+        {
+            tran.Rollback();
+            throw;
+        }
         catch (Exception ex)
         {
             tran.Rollback();
@@ -206,6 +242,7 @@ public class PublicacionRepository : IPublicacionRepository
                 p.Precio              AS Precio,
                 p.Moneda              AS Moneda,
                 p.Categoria           AS Categoria,
+                modelo.IdModeloProducto AS IdModeloProducto,
                 p.CanalPublicacion    AS CanalPublicacion,
                 p.Ubicacion           AS Ubicacion,
                 p.Latitud             AS Latitud,
@@ -274,6 +311,17 @@ public class PublicacionRepository : IPublicacionRepository
                 ON t.IdPublicacion = p.Id
                 AND t.Estado = 'Activo'
                 AND GETDATE() BETWEEN t.FechaInicio AND t.FechaFin
+            OUTER APPLY
+            (
+                SELECT TOP (1)
+                    pmp.IdModeloProducto
+                FROM dbo.PublicacionModeloProducto pmp
+                WHERE pmp.IdPublicacion = p.Id
+                  AND pmp.Estado = 'Activo'
+                ORDER BY
+                    pmp.EsPrincipal DESC,
+                    pmp.Id ASC
+            ) modelo
             WHERE p.Estado = 'Activo'
                AND p.CanalPublicacion = 'MARKETPLACE'
               AND (@Categoria IS NULL OR p.Categoria = @Categoria)
@@ -597,6 +645,7 @@ public class PublicacionRepository : IPublicacionRepository
             p.Precio                AS Precio,
             p.Moneda                AS Moneda,
             p.Categoria             AS Categoria,
+            modelo.IdModeloProducto AS IdModeloProducto,
             p.CanalPublicacion      AS CanalPublicacion,
             p.Ubicacion             AS Ubicacion,
             p.Latitud               AS Latitud,
@@ -683,6 +732,18 @@ public class PublicacionRepository : IPublicacionRepository
                 ptemp.FechaFin DESC,
                 ptemp.Id DESC
         ) pt
+
+        OUTER APPLY
+        (
+            SELECT TOP (1)
+                pmp.IdModeloProducto
+            FROM dbo.PublicacionModeloProducto pmp
+            WHERE pmp.IdPublicacion = p.Id
+              AND pmp.Estado = 'Activo'
+            ORDER BY
+                pmp.EsPrincipal DESC,
+                pmp.Id ASC
+        ) modelo
 
         WHERE p.IdUsuario = @IdUsuario
 
@@ -1228,6 +1289,54 @@ public class PublicacionRepository : IPublicacionRepository
                  },
                  tran);
 
+            // Si el front envía IdModeloProducto, ese valor manda.
+            // Si no lo envía y la publicación todavía no tiene vínculo,
+            // intentamos resolverlo una sola vez por título/descripción.
+            var idModeloProducto = request.IdModeloProducto;
+
+            if (!idModeloProducto.HasValue && EsCategoriaMoto(request.Categoria))
+            {
+                var tieneVinculoActivo = await conn.ExecuteScalarAsync<int>(
+                    @"SELECT COUNT(1)
+                      FROM dbo.PublicacionModeloProducto
+                      WHERE IdPublicacion = @IdPublicacion
+                        AND Estado = 'Activo';",
+                    new { IdPublicacion = idPublicacion },
+                    tran);
+
+                if (tieneVinculoActivo == 0)
+                {
+                    idModeloProducto = await ResolverModeloProductoParaPublicacionAsync(
+                        conn,
+                        tran,
+                        null,
+                        request.Categoria,
+                        request.Titulo,
+                        request.Descripcion);
+                }
+            }
+
+            if (idModeloProducto.HasValue)
+            {
+                // Valida el modelo explícito o el resuelto antes de sincronizar.
+                var modeloValidado = await ResolverModeloProductoParaPublicacionAsync(
+                    conn,
+                    tran,
+                    idModeloProducto,
+                    request.Categoria,
+                    request.Titulo,
+                    request.Descripcion);
+
+                if (modeloValidado.HasValue)
+                {
+                    await SincronizarModeloPrincipalPublicacionAsync(
+                        conn,
+                        tran,
+                        idPublicacion,
+                        modeloValidado.Value);
+                }
+            }
+
             await conn.ExecuteAsync(
                 "DELETE FROM PlanesCredito WHERE IdPublicacion = @IdPublicacion;",
                 new { IdPublicacion = idPublicacion },
@@ -1332,6 +1441,11 @@ public class PublicacionRepository : IPublicacionRepository
                 idUsuario);
 
             return filas;
+        }
+        catch (ReglasdeNegocioException)
+        {
+            tran.Rollback();
+            throw;
         }
         catch (Exception ex)
         {
@@ -1535,4 +1649,286 @@ public class PublicacionRepository : IPublicacionRepository
         }
     }
 
+
+
+    // =========================================================
+    // VINCULO PUBLICACION -> MODELO DE PRODUCTO
+    // =========================================================
+
+    private async Task<int?> ResolverModeloProductoParaPublicacionAsync(
+        IDbConnection conn,
+        IDbTransaction tran,
+        int? idModeloProductoSolicitado,
+        string? categoria,
+        string? titulo,
+        string? descripcion)
+    {
+        if (!EsCategoriaMoto(categoria) && !idModeloProductoSolicitado.HasValue)
+        {
+            return null;
+        }
+
+        if (idModeloProductoSolicitado.HasValue)
+        {
+            const string sqlValidarModelo = @"
+SELECT TOP (1)
+    mp.Id
+FROM dbo.ModelosProducto mp
+INNER JOIN dbo.Marcas m
+    ON m.Id = mp.IdMarca
+WHERE mp.Id = @IdModeloProducto
+  AND mp.Estado = 'Activo'
+  AND m.Estado = 'Activo';";
+
+            var idValido = await conn.QueryFirstOrDefaultAsync<int?>(
+                sqlValidarModelo,
+                new
+                {
+                    IdModeloProducto = idModeloProductoSolicitado.Value
+                },
+                tran);
+
+            if (!idValido.HasValue)
+            {
+                throw new ReglasdeNegocioException(
+                    $"El modelo de producto {idModeloProductoSolicitado.Value} no existe o está inactivo.");
+            }
+
+            return idValido.Value;
+        }
+
+        if (!EsCategoriaMoto(categoria))
+        {
+            return null;
+        }
+
+        const string sqlModelos = @"
+SELECT
+    mp.Id AS IdModeloProducto,
+    m.Nombre AS Marca,
+    mp.NombreModelo AS Modelo
+FROM dbo.ModelosProducto mp
+INNER JOIN dbo.Marcas m
+    ON m.Id = mp.IdMarca
+WHERE mp.Estado = 'Activo'
+  AND m.Estado = 'Activo';";
+
+        var modelos = (
+            await conn.QueryAsync<ModeloVinculoPublicacionData>(
+                sqlModelos,
+                transaction: tran)
+        ).ToList();
+
+        // Primero usamos SOLO el título. Es la fuente más confiable y evita
+        // que una descripción que mencione otros modelos genere un vínculo
+        // incorrecto.
+        var elegido = ElegirModeloUnicoPorTexto(
+            modelos,
+            titulo);
+
+        // Compatibilidad con publicaciones antiguas donde el modelo quedó
+        // únicamente en la descripción.
+        elegido ??= ElegirModeloUnicoPorTexto(
+            modelos,
+            $"{titulo} {descripcion}");
+
+        if (elegido is null)
+        {
+            _logger.LogWarning(
+                "No se pudo resolver un modelo único para publicación de moto. Titulo={Titulo}",
+                titulo);
+
+            return null;
+        }
+
+        _logger.LogInformation(
+            "Modelo resuelto automáticamente para publicación. IdModeloProducto={IdModeloProducto}, Marca={Marca}, Modelo={Modelo}, Titulo={Titulo}",
+            elegido.IdModeloProducto,
+            elegido.Marca,
+            elegido.Modelo,
+            titulo);
+
+        return elegido.IdModeloProducto;
+    }
+
+
+    private static ModeloVinculoPublicacionData? ElegirModeloUnicoPorTexto(
+        IReadOnlyCollection<ModeloVinculoPublicacionData> modelos,
+        string? textoOrigen)
+    {
+        var texto = NormalizarTextoModelo(textoOrigen);
+
+        if (string.IsNullOrWhiteSpace(texto))
+        {
+            return null;
+        }
+
+        var candidatos = modelos
+            .Select(x => new
+            {
+                Modelo = x,
+                MarcaNormalizada = NormalizarTextoModelo(x.Marca),
+                ModeloNormalizado = NormalizarTextoModelo(x.Modelo)
+            })
+            .Where(x =>
+                !string.IsNullOrWhiteSpace(x.ModeloNormalizado)
+                && ContieneFraseModelo(texto, x.ModeloNormalizado))
+            .ToList();
+
+        if (candidatos.Count == 0)
+        {
+            return null;
+        }
+
+        var candidatosConMarca = candidatos
+            .Where(x =>
+                !string.IsNullOrWhiteSpace(x.MarcaNormalizada)
+                && ContieneFraseModelo(texto, x.MarcaNormalizada))
+            .ToList();
+
+        if (candidatosConMarca.Count > 0)
+        {
+            candidatos = candidatosConMarca;
+        }
+
+        // Si hay una variante más específica (por ejemplo black edition),
+        // la coincidencia con el nombre de modelo más largo tiene prioridad.
+        var longitudMaxima = candidatos.Max(x => x.ModeloNormalizado.Length);
+
+        var mejores = candidatos
+            .Where(x => x.ModeloNormalizado.Length == longitudMaxima)
+            .GroupBy(x => x.Modelo.IdModeloProducto)
+            .Select(g => g.First().Modelo)
+            .ToList();
+
+        return mejores.Count == 1
+            ? mejores[0]
+            : null;
+    }
+
+    private async Task SincronizarModeloPrincipalPublicacionAsync(
+        IDbConnection conn,
+        IDbTransaction tran,
+        int idPublicacion,
+        int idModeloProducto)
+    {
+        const string sql = @"
+UPDATE dbo.PublicacionModeloProducto
+SET
+    Estado = 'Inactivo',
+    EsPrincipal = 0
+WHERE IdPublicacion = @IdPublicacion;
+
+DECLARE @IdVinculo INT;
+
+SELECT TOP (1)
+    @IdVinculo = Id
+FROM dbo.PublicacionModeloProducto
+WHERE IdPublicacion = @IdPublicacion
+  AND IdModeloProducto = @IdModeloProducto
+ORDER BY Id ASC;
+
+IF @IdVinculo IS NULL
+BEGIN
+    INSERT INTO dbo.PublicacionModeloProducto
+    (
+        IdPublicacion,
+        IdModeloProducto,
+        EsPrincipal,
+        Estado
+    )
+    VALUES
+    (
+        @IdPublicacion,
+        @IdModeloProducto,
+        1,
+        'Activo'
+    );
+END
+ELSE
+BEGIN
+    UPDATE dbo.PublicacionModeloProducto
+    SET
+        Estado = 'Activo',
+        EsPrincipal = 1
+    WHERE Id = @IdVinculo;
+END;";
+
+        await conn.ExecuteAsync(
+            sql,
+            new
+            {
+                IdPublicacion = idPublicacion,
+                IdModeloProducto = idModeloProducto
+            },
+            tran);
+
+        _logger.LogInformation(
+            "Vínculo publicación-modelo sincronizado. IdPublicacion={IdPublicacion}, IdModeloProducto={IdModeloProducto}",
+            idPublicacion,
+            idModeloProducto);
+    }
+
+    private static bool EsCategoriaMoto(string? categoria)
+    {
+        if (string.IsNullOrWhiteSpace(categoria))
+        {
+            return false;
+        }
+
+        var valor = NormalizarTextoModelo(categoria);
+
+        return valor == "vehiculos motos"
+            || valor == "motos"
+            || valor.EndsWith(" motos", StringComparison.Ordinal)
+            || valor.Contains(" motocicleta", StringComparison.Ordinal)
+            || valor.Contains(" motocicletas", StringComparison.Ordinal);
+    }
+
+    private static string NormalizarTextoModelo(string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor))
+        {
+            return string.Empty;
+        }
+
+        var normalizado = valor
+            .Normalize(NormalizationForm.FormD);
+
+        var sb = new StringBuilder(normalizado.Length);
+
+        foreach (var c in normalizado)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+            {
+                sb.Append(char.ToLowerInvariant(c));
+            }
+        }
+
+        var limpio = Regex.Replace(
+            sb.ToString().Normalize(NormalizationForm.FormC),
+            @"[^a-z0-9]+",
+            " ");
+
+        return Regex.Replace(limpio, @"\s+", " ").Trim();
+    }
+
+    private static bool ContieneFraseModelo(string texto, string frase)
+    {
+        if (string.IsNullOrWhiteSpace(texto) || string.IsNullOrWhiteSpace(frase))
+        {
+            return false;
+        }
+
+        return $" {texto} ".Contains(
+            $" {frase} ",
+            StringComparison.Ordinal);
+    }
+
+    private sealed class ModeloVinculoPublicacionData
+    {
+        public int IdModeloProducto { get; set; }
+        public string Marca { get; set; } = string.Empty;
+        public string Modelo { get; set; } = string.Empty;
+    }
 }
