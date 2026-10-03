@@ -3793,7 +3793,7 @@ public class MotoConversacionService
         sb.AppendLine();
 
         sb.AppendLine(
-            ConstruirGrillaTresColumnas(
+            ConstruirGrillaDosColumnasWhatsApp(
                 nombres));
 
         sb.AppendLine();
@@ -3807,10 +3807,16 @@ public class MotoConversacionService
 
 
     // =========================================================
-    // GRILLA DE 3 COLUMNAS PARA WHATSAPP
+    // GRILLA DE 2 COLUMNAS OPTIMIZADA PARA WHATSAPP MOVIL
+    //
+    // La respuesta enviada por WhatsApp es el mismo texto tanto
+    // en movil como en escritorio. Por eso usamos dos columnas:
+    // en celular queda compacta y legible, y en escritorio sigue
+    // viendose ordenada. El ancho se limita para evitar que una
+    // tercera columna implicita o nombres largos rompan la linea.
     // =========================================================
 
-    private static string ConstruirGrillaTresColumnas(
+    private static string ConstruirGrillaDosColumnasWhatsApp(
         IReadOnlyList<string> valores)
     {
         if (
@@ -3822,26 +3828,47 @@ public class MotoConversacionService
             return string.Empty;
         }
 
-        const int columnas = 3;
+        var modelos =
+            valores
+                .Where(
+                    x =>
+                        !string.IsNullOrWhiteSpace(
+                            x))
+                .Select(
+                    x => x.Trim())
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        if (
+            modelos.Count == 0
+        )
+        {
+            return string.Empty;
+        }
+
+        const int columnas = 2;
 
         var filas =
             (int)Math.Ceiling(
-                valores.Count
+                modelos.Count
                 /
                 (double)columnas);
 
+        /*
+         * 19 caracteres por columna deja una linea maxima cercana
+         * a 38 caracteres, que entra mucho mejor en WhatsApp movil.
+         * Si aparece un nombre excepcionalmente largo, lo acortamos
+         * solo visualmente dentro del catalogo para no romper la grilla.
+         */
         var ancho =
             Math.Min(
-                22,
+                19,
                 Math.Max(
                     14,
-                    valores
-                        .Where(
-                            x =>
-                                !string.IsNullOrWhiteSpace(
-                                    x))
+                    modelos
                         .Select(
-                            x => x.Trim().Length)
+                            x => x.Length)
                         .DefaultIfEmpty(14)
                         .Max()
                     +
@@ -3870,17 +3897,14 @@ public class MotoConversacionService
                     columna * filas;
 
                 if (
-                    indice >= valores.Count
+                    indice >= modelos.Count
                 )
                 {
                     continue;
                 }
 
                 var valor =
-                    valores[indice]
-                        ?.Trim()
-                    ??
-                    string.Empty;
+                    modelos[indice];
 
                 if (
                     valor.Length >= ancho
@@ -3892,9 +3916,26 @@ public class MotoConversacionService
                         "…";
                 }
 
-                sb.Append(
-                    valor.PadRight(
-                        ancho));
+                /*
+                 * No agregamos relleno al final de la ultima columna.
+                 * Asi evitamos espacios innecesarios que algunos clientes
+                 * de WhatsApp pueden usar al calcular el salto de linea.
+                 */
+                if (
+                    columna < columnas - 1
+                    &&
+                    indice + filas < modelos.Count
+                )
+                {
+                    sb.Append(
+                        valor.PadRight(
+                            ancho));
+                }
+                else
+                {
+                    sb.Append(
+                        valor);
+                }
             }
 
             sb.AppendLine();
@@ -4081,7 +4122,7 @@ public class MotoConversacionService
             else
             {
                 sb.AppendLine(
-                    ConstruirGrillaTresColumnas(
+                    ConstruirListaModelosWhatsApp(
                         nombres));
             }
 
@@ -4601,7 +4642,7 @@ public class MotoConversacionService
                 $"🏍️ *{grupo.Key}*");
 
             sb.AppendLine(
-                ConstruirGrillaTresColumnas(
+                ConstruirListaModelosWhatsApp(
                     nombres));
 
             sb.AppendLine();
