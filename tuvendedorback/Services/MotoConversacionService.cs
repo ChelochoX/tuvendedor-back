@@ -4226,6 +4226,21 @@ public class MotoConversacionService
             return true;
         }
 
+        /*
+         * Una consulta que viene desde una publicación de TuVendedor
+         * ya tiene el producto identificado por [TV_PRODUCTO:id].
+         * El título puede contener palabras comerciales como MOTOR,
+         * POTENCIA, FRENO, etc. y NO deben interpretarse como una
+         * pregunta técnica del cliente.
+         *
+         * En este caso respondemos siempre con los datos comerciales
+         * reales de BBDD (contado / crédito) sin cargar Ollama.
+         */
+        if (EsConsultaInicialTuVendedor(mensaje))
+        {
+            return true;
+        }
+
         var consultaTecnica =
             texto.Contains("VELOCIDAD")
             ||
@@ -4265,6 +4280,39 @@ public class MotoConversacionService
             ||
             EsInteresModeloSimple(
                 mensaje);
+    }
+
+
+    private static bool EsConsultaInicialTuVendedor(
+        string mensaje)
+    {
+        if (string.IsNullOrWhiteSpace(mensaje))
+        {
+            return false;
+        }
+
+        /*
+         * Preferimos el marcador técnico porque es inequívoco.
+         * También contemplamos el texto estándar del front como respaldo.
+         */
+        if (
+            Regex.IsMatch(
+                mensaje,
+                @"\[?\s*TV_PRODUCTO\s*:\s*\d+\s*\]?",
+                RegexOptions.IgnoreCase)
+        )
+        {
+            return true;
+        }
+
+        var texto =
+            NormalizarTexto(
+                mensaje);
+
+        return
+            texto.Contains(
+                "ESTOY CONSULTANDO DESDE TUVENDEDOR",
+                StringComparison.OrdinalIgnoreCase);
     }
 
 
@@ -4566,14 +4614,24 @@ public class MotoConversacionService
 
 
     // =========================================================
-    // FALLBACK SEGURO SI QWEN DEVUELVE VACIO
+    // FALLBACK AMIGABLE SI QWEN DEVUELVE VACIO O TARDA
     // =========================================================
 
     private static string ConstruirRespuestaComercialSegura(
         MotoOfertaDto oferta)
     {
+        var informacionConfirmada =
+            ConstruirRespuestaDirectaModelo(
+                oferta,
+                string.Empty);
+
         return
-            "¡Hola! 😊 Soy Panambí, de TuVendedor. Ya estoy revisando tu consulta y en breve te doy retorno. Gracias por aguardarme un momentito 🙌";
+            "¡Hola! 😊 Soy Panambí, de TuVendedor. Ya estoy revisando tu consulta y en breve te doy retorno. Gracias por aguardarme un momentito 🙌"
+            + Environment.NewLine
+            + Environment.NewLine
+            + "Mientras tanto, te paso la información comercial que ya tengo confirmada 😊"
+            + Environment.NewLine
+            + informacionConfirmada;
     }
 
 
