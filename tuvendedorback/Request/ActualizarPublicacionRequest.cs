@@ -21,10 +21,8 @@ public class ActualizarPublicacionRequest
         string.Empty;
 
     /*
-     * Si viene informado, actualiza el vínculo principal con
-     * ModelosProducto. Si viene null se conserva el vínculo actual;
-     * si la publicación todavía no tiene vínculo, el repository
-     * intenta resolverlo de forma segura por título/descripción.
+     * Para publicaciones de motos este valor es OBLIGATORIO.
+     * Debe ser el Id real de ModelosProducto seleccionado por el usuario.
      */
     public int? IdModeloProducto { get; set; }
 
@@ -76,6 +74,7 @@ public class ActualizarPublicacionRequest
         get;
         set;
     }
+
 }
 
 public class ActualizarPublicacionRequestValidator
@@ -103,9 +102,15 @@ public class ActualizarPublicacionRequestValidator
             .MaximumLength(250);
 
         RuleFor(x => x.IdModeloProducto)
-            .GreaterThan(0)
-            .When(x => x.IdModeloProducto.HasValue)
-            .WithMessage("IdModeloProducto debe ser mayor a cero.");
+            .Must(id => id.HasValue && id.Value > 0)
+            .WithMessage(
+                "Para guardar una publicación de moto debe seleccionar el modelo exacto.")
+            .When(x =>
+                !string.IsNullOrWhiteSpace(x.Categoria)
+                &&
+                x.Categoria.Contains(
+                    "moto",
+                    StringComparison.OrdinalIgnoreCase));
 
         RuleFor(x => x.CanalPublicacion)
             .Must(canal =>

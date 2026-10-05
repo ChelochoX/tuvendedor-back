@@ -17,8 +17,11 @@ public class Publicacion
     public string Categoria { get; set; } =
         "";
 
-    // Modelo de producto principal asociado a la publicación (motos).
+    // Identificación exacta del modelo para publicaciones de motos.
     public int? IdModeloProducto { get; set; }
+    public string? CodigoReferenciaModelo { get; set; }
+    public string? NombreModelo { get; set; }
+    public string? MarcaModelo { get; set; }
 
     public string Ubicacion { get; set; } =
         "";

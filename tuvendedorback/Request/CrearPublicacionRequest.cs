@@ -21,10 +21,9 @@ public class CrearPublicacionRequest
         string.Empty;
 
     /*
-     * Para publicaciones de motos, vincula la publicación con
-     * ModelosProducto. Es opcional para mantener compatibilidad
-     * con clientes anteriores; si no viene, el repository intenta
-     * resolverlo de forma segura por título/descripción.
+     * Para publicaciones de motos este valor es OBLIGATORIO.
+     * Debe ser el Id real de ModelosProducto seleccionado por el usuario.
+     * Nunca se infiere por título, descripción ni imagen.
      */
     public int? IdModeloProducto { get; set; }
 
@@ -60,6 +59,7 @@ public class CrearPublicacionRequest
         get;
         set;
     }
+
 }
 
 public class PlanCreditoDto
@@ -94,9 +94,15 @@ public class CrearPublicacionRequestValidator
             .MaximumLength(250);
 
         RuleFor(x => x.IdModeloProducto)
-            .GreaterThan(0)
-            .When(x => x.IdModeloProducto.HasValue)
-            .WithMessage("IdModeloProducto debe ser mayor a cero.");
+            .Must(id => id.HasValue && id.Value > 0)
+            .WithMessage(
+                "Para publicar una moto debe seleccionar el modelo exacto.")
+            .When(x =>
+                !string.IsNullOrWhiteSpace(x.Categoria)
+                &&
+                x.Categoria.Contains(
+                    "moto",
+                    StringComparison.OrdinalIgnoreCase));
 
         RuleFor(x => x.CanalPublicacion)
             .Must(canal =>

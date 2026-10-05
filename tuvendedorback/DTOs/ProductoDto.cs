@@ -12,6 +12,12 @@ public class ProductoDto
 
     public string Categoria { get; set; }
 
+    // Modelo exacto asociado a la publicación de moto.
+    public int? IdModeloProducto { get; set; }
+    public string? CodigoReferenciaModelo { get; set; }
+    public string? NombreModelo { get; set; }
+    public string? MarcaModelo { get; set; }
+
     public string Ubicacion { get; set; }
 
     public string Estado { get; set; }
