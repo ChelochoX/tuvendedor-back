@@ -857,6 +857,53 @@ public class MotoConversacionService
             };
         }
 
+        // =====================================================
+        // 7C. CONSULTA DE CATALOGO / FAMILIA DE MODELOS
+        //
+        // IMPORTANTE:
+        // Una pregunta como "¿cuáles son los modelos de GTR?" NO es
+        // una consulta sobre la última moto del contexto. Primero
+        // resolvemos el catálogo/familia directamente desde BBDD.
+        // Así GTR, SHARK, BLITZ, etc. nunca quedan pegados al modelo
+        // anterior de la conversación.
+        // =====================================================
+
+        if (
+            EsConsultaOtrosModelos(
+                request.Mensaje)
+        )
+        {
+            await _repository
+                .LimpiarProductoContexto(
+                    idConversacion);
+
+            var modelosCatalogo =
+                ResolverModelosCatalogoDesdeTexto(
+                    request.Mensaje,
+                    modelos);
+
+            var respuestaCatalogo =
+                ConstruirRespuestaOtrosModelos(
+                    modelosCatalogo,
+                    null);
+
+            await _repository
+                .RegistrarMensaje(
+                    idConversacion,
+                    "IA",
+                    respuestaCatalogo);
+
+            return new MotoConversacionResponseDto
+            {
+                IdConversacion = idConversacion,
+                IdPublicacion = null,
+                Marca = null,
+                Modelo = null,
+                Respuesta = respuestaCatalogo,
+                RequierePublicacion = false
+            };
+        }
+
         if (
             coincidencias.Count == 1
         )
@@ -2020,6 +2067,27 @@ public class MotoConversacionService
                     texto,
                     nombreModelo);
 
+            /*
+             * También aceptamos la forma compacta:
+             * "GTR200" == "GTR 200".
+             */
+            var textoCompacto =
+                texto.Replace(
+                    " ",
+                    string.Empty);
+
+            var modeloCompacto =
+                nombreModelo.Replace(
+                    " ",
+                    string.Empty);
+
+            var modeloCompactoCoincide =
+                modeloCompacto.Length >= 4
+                &&
+                textoCompacto.Contains(
+                    modeloCompacto,
+                    StringComparison.OrdinalIgnoreCase);
+
 
             var codigoCoincide =
                 !string.IsNullOrWhiteSpace(
@@ -2037,13 +2105,26 @@ public class MotoConversacionService
                     modelo.Cilindrada.Value.ToString());
 
 
+            /*
+             * Los números forman parte REAL del nombre comercial del modelo.
+             * Ej.: GTR 150, GTR 200, DKR 200. Antes los excluíamos y eso
+             * podía dejar empatados modelos distintos de una misma familia.
+             *
+             * También conservamos variantes cortas como SE/V1/V5 porque
+             * ayudan a distinguir versiones. Lo único que excluimos del
+             * nombre del modelo son los tokens que pertenecen a la MARCA.
+             */
+            var tokensMarca =
+                ObtenerTokens(
+                    marca);
+
             var tokensDistintivosModelo =
                 tokensModelo
                     .Where(
                         token =>
-                            token.Length >= 3
+                            token.Length >= 2
                             &&
-                            !EsTokenSoloNumerico(
+                            !tokensMarca.Contains(
                                 token))
                     .ToList();
 
@@ -2067,6 +2148,9 @@ public class MotoConversacionService
                     .Where(
                         token =>
                             token.Length >= 4
+                            &&
+                            !EsTokenSoloNumerico(
+                                token)
                             &&
                             !tokensTexto.Contains(
                                 token))
@@ -2095,6 +2179,10 @@ public class MotoConversacionService
              */
             var esCandidato =
                 modeloCompletoCoincide
+
+                ||
+
+                modeloCompactoCoincide
 
                 ||
 
@@ -2136,6 +2224,15 @@ public class MotoConversacionService
             if (modeloCompletoCoincide)
             {
                 puntaje += 120;
+            }
+
+            if (
+                modeloCompactoCoincide
+                &&
+                !modeloCompletoCoincide
+            )
+            {
+                puntaje += 110;
             }
 
 
@@ -3437,40 +3534,36 @@ public class MotoConversacionService
             return false;
         }
 
+        /*
+         * Catálogo/familia se reconoce por intención PLURAL o de opciones.
+         * No usamos la palabra singular "MODELO" por sí sola porque una
+         * frase como "precio del modelo Viva 110" es una consulta de un
+         * producto concreto, no del catálogo.
+         */
         var hablaDeCatalogo =
-            texto.Contains("MODELO")
-            ||
             texto.Contains("MODELOS")
-            ||
-            texto.Contains("MOTO")
             ||
             texto.Contains("MOTOS")
             ||
             texto.Contains("CATALOGO")
             ||
-            texto.Contains("OPCIONES");
+            texto.Contains("OPCIONES")
+            ||
+            texto.Contains("OTRO MODELO")
+            ||
+            texto.Contains("OTRA MOTO")
+            ||
+            texto.Contains("OTROS MODELOS")
+            ||
+            texto.Contains("OTRAS MOTOS");
 
         if (!hablaDeCatalogo)
         {
             return false;
         }
 
-        /*
-         * Frases naturales:
-         *
-         * "que modelos tenes"
-         * "me pasas los modelos"
-         * "que motos hay"
-         * "mostrame las opciones"
-         * "que otras motos tenes"
-         *
-         * Los nombres reales de los modelos NO estan aca.
-         * Siempre salen de la BBDD.
-         */
         return
-            texto.Contains("QUE ")
-            ||
-            texto.StartsWith("QUE")
+            texto.Contains("QUE")
             ||
             texto.Contains("CUALES")
             ||
@@ -3499,6 +3592,164 @@ public class MotoConversacionService
             texto.Contains("CATALOGO")
             ||
             texto.Contains("OPCIONES");
+    }
+
+
+    // =========================================================
+    // FILTRAR CATALOGO POR MARCA / FAMILIA MENCIONADA
+    // =========================================================
+
+    private static IReadOnlyList<MotoModeloCandidatoDto>
+        ResolverModelosCatalogoDesdeTexto(
+            string mensaje,
+            IReadOnlyList<MotoModeloCandidatoDto> modelos)
+    {
+        if (modelos.Count == 0)
+        {
+            return modelos;
+        }
+
+        var texto =
+            NormalizarTexto(
+                mensaje);
+
+        var tokensTexto =
+            ObtenerTokens(
+                texto);
+
+        var marca =
+            ResolverMarcaDesdeTexto(
+                mensaje,
+                modelos);
+
+        IEnumerable<MotoModeloCandidatoDto> baseModelos =
+            modelos;
+
+        if (
+            !string.IsNullOrWhiteSpace(
+                marca)
+        )
+        {
+            baseModelos =
+                baseModelos.Where(
+                    x =>
+                        string.Equals(
+                            x.Marca,
+                            marca,
+                            StringComparison.OrdinalIgnoreCase));
+        }
+
+        var palabrasGenericas =
+            new HashSet<string>(
+                new[]
+                {
+                    "QUE", "CUAL", "CUALES", "SON", "TIENE", "TIENEN",
+                    "TENES", "TIENES", "HAY", "DE", "DEL", "LA", "LAS",
+                    "EL", "LOS", "UN", "UNA", "MODELO", "MODELOS",
+                    "MOTO", "MOTOS", "CATALOGO", "OPCION", "OPCIONES",
+                    "MOSTRAME", "MOSTRAR", "PASAME", "PASAS", "OTRO",
+                    "OTRA", "OTROS", "OTRAS", "DISPONIBLE", "DISPONIBLES"
+                },
+                StringComparer.OrdinalIgnoreCase);
+
+        if (
+            !string.IsNullOrWhiteSpace(
+                marca)
+        )
+        {
+            foreach (
+                var tokenMarca
+                in ObtenerTokens(
+                    NormalizarTexto(
+                        marca))
+            )
+            {
+                palabrasGenericas.Add(
+                    tokenMarca);
+            }
+        }
+
+        var tokensFiltro =
+            tokensTexto
+                .Where(
+                    token =>
+                        token.Length >= 2
+                        &&
+                        !palabrasGenericas.Contains(
+                            token))
+                .ToHashSet(
+                    StringComparer.OrdinalIgnoreCase);
+
+        var listaBase =
+            baseModelos
+                .ToList();
+
+        if (tokensFiltro.Count == 0)
+        {
+            return listaBase;
+        }
+
+        var puntuados =
+            listaBase
+                .Select(
+                    modelo =>
+                    {
+                        var tokensMarcaModelo =
+                            ObtenerTokens(
+                                NormalizarTexto(
+                                    modelo.Marca));
+
+                        var tokensModelo =
+                            ObtenerTokens(
+                                NormalizarTexto(
+                                    modelo.Modelo))
+                                .Where(
+                                    token =>
+                                        token.Length >= 2
+                                        &&
+                                        !tokensMarcaModelo.Contains(
+                                            token))
+                                .ToHashSet(
+                                    StringComparer.OrdinalIgnoreCase);
+
+                        var puntaje =
+                            tokensFiltro.Count(
+                                token =>
+                                    tokensModelo.Contains(
+                                        token));
+
+                        return new
+                        {
+                            Modelo = modelo,
+                            Puntaje = puntaje
+                        };
+                    })
+                .Where(
+                    x => x.Puntaje > 0)
+                .ToList();
+
+        if (puntuados.Count == 0)
+        {
+            return listaBase;
+        }
+
+        var mejorPuntaje =
+            puntuados.Max(
+                x => x.Puntaje);
+
+        return puntuados
+            .Where(
+                x =>
+                    x.Puntaje == mejorPuntaje)
+            .Select(
+                x => x.Modelo)
+            .DistinctBy(
+                x => x.IdModeloProducto)
+            .OrderBy(
+                x => x.Marca)
+            .ThenBy(
+                x => x.Modelo)
+            .ToList();
     }
 
 
