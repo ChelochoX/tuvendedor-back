@@ -4572,15 +4572,8 @@ public class MotoConversacionService
     private static string ConstruirRespuestaComercialSegura(
         MotoOfertaDto oferta)
     {
-        /*
-         * Si Ollama está ocupado, tarda o falla,
-         * seguimos conversando con información real de BBDD.
-         * Nunca devolvemos al cliente un error técnico.
-         */
         return
-            ConstruirRespuestaDirectaModelo(
-                oferta,
-                string.Empty);
+            "¡Hola! 😊 Soy Panambí, de TuVendedor. Ya estoy revisando tu consulta y en breve te doy retorno. Gracias por aguardarme un momentito 🙌";
     }
 
 
