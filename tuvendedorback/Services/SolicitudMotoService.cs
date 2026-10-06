@@ -172,7 +172,47 @@ public class SolicitudMotoService : ISolicitudMotoService
         SolicitudMotoProcesoDto solicitud,
         MotoConversacionRequest request)
     {
-        return solicitud.PasoActual.ToUpperInvariant() switch
+        // Compatibilidad / autocorrección de solicitudes creadas con el flujo anterior:
+        // antes, cuando el cliente NO tenía IPS, algunas solicitudes avanzaban por error
+        // a NOMBRE_COMPLETO/CEDULA antes de validar la referencia comercial.
+        // Si la preevaluación todavía está pendiente por referencia comercial, SIEMPRE
+        // volvemos primero a esa validación. No pedimos datos personales antes.
+        var resultadoPreEvaluacion =
+            (solicitud.ResultadoPreEvaluacion ?? string.Empty).Trim().ToUpperInvariant();
+
+        var referenciaPendiente =
+            resultadoPreEvaluacion == "PENDIENTE_REFERENCIA_COMERCIAL"
+            || resultadoPreEvaluacion == "PENDIENTE_REFERENCIAS_COMERCIALES";
+
+        var pasoActual =
+            (solicitud.PasoActual ?? string.Empty).Trim().ToUpperInvariant();
+
+        var yaEstaEnFlujoReferenciaOGarante =
+            pasoActual.StartsWith("REF_COMERCIAL_")
+            || pasoActual.StartsWith("GARANTE_")
+            || pasoActual == "PRECALIFICACION_GARANTE"
+            || pasoActual == "ESPERANDO_GARANTE"
+            || pasoActual == "PENDIENTE_CREDITOS";
+
+        if (referenciaPendiente && !yaEstaEnFlujoReferenciaOGarante)
+        {
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                solicitud.IdSolicitud,
+                "REF_COMERCIAL_EXISTE");
+
+            var mensajeReferencia = await ObtenerMensajeFlujo(
+                "CREDITO_PREGUNTA_REFERENCIA_COMERCIAL",
+                "¿Tenés alguna referencia comercial verificable donde hayas pagado cuotas? 😊");
+
+            return Resultado(
+                solicitud,
+                mensajeReferencia,
+                "PRE_EVALUACION",
+                "REF_COMERCIAL_EXISTE");
+        }
+
+        return pasoActual switch
         {
             "PRECALIFICACION_IPS" => await ProcesarAportaIps(solicitud, request),
             "PRECALIFICACION_APORTES" => await ProcesarCantidadAportesIps(solicitud, request),
@@ -541,81 +581,6 @@ public class SolicitudMotoService : ISolicitudMotoService
             respuesta,
             "PRE_EVALUACION",
             "REF_COMERCIAL_EXISTE");
-    }
-
-    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarPrecalificacionLaboral(
-        SolicitudMotoProcesoDto solicitud,
-        MotoConversacionRequest request)
-    {
-        if (!TryParsePrecalificacionLaboral(
-                request.Mensaje,
-                out var empresa,
-                out var antiguedad,
-                out var aportaIps,
-                out var aportesIps))
-        {
-            return Resultado(
-                solicitud,
-                "Necesito esos datos así 😊: Empresa | Antigüedad en meses | SI/NO aporta IPS | Cantidad de aportes. Ejemplo: Empresa ABC | 8 | SI | 5");
-        }
-
-        var regla = await _repository.ObtenerReglaCreditoActiva();
-
-        await _repository.GuardarPrecalificacionLaboral(
-            solicitud.IdSolicitud,
-            empresa,
-            antiguedad,
-            aportaIps,
-            aportesIps);
-
-        if (antiguedad < regla.AntiguedadLaboralMinMeses)
-        {
-            var motivo =
-                $"Antigüedad laboral {antiguedad} meses. Mínimo requerido {regla.AntiguedadLaboralMinMeses} meses.";
-
-            await _repository.GuardarResultadoPreEvaluacion(
-                solicitud.IdSolicitud,
-                "NO_VIABLE",
-                motivo,
-                null,
-                "NO_VIABLE");
-
-            return Resultado(
-                solicitud,
-                $"Gracias. Para que la solicitud pueda avanzar necesitás al menos {regla.AntiguedadLaboralMinMeses} meses de antigüedad laboral. Con los datos actuales no puede continuar por ahora.",
-                "NO_VIABLE",
-                "NO_VIABLE");
-        }
-
-        if (aportaIps && aportesIps >= regla.AportesIPSMinimos)
-        {
-            await _repository.GuardarResultadoPreEvaluacion(
-                solicitud.IdSolicitud,
-                "VIABLE",
-                null,
-                "IPS",
-                "IDENTIDAD");
-
-            return Resultado(
-                solicitud,
-                $"La preevaluación puede continuar ✅. Cumplís la antigüedad laboral y el mínimo de {regla.AportesIPSMinimos} aportes IPS.\n\n" +
-                "Ahora enviame: Nombre completo | N.º de cédula.",
-                "DOCUMENTACION",
-                "IDENTIDAD");
-        }
-
-        await _repository.GuardarResultadoPreEvaluacion(
-            solicitud.IdSolicitud,
-            "PENDIENTE_REFERENCIAS_COMERCIALES",
-            "No aporta IPS o no alcanza el mínimo requerido.",
-            "REFERENCIAS_COMERCIALES",
-            "NOMBRE_COMPLETO");
-
-        return Resultado(
-            solicitud,
-            $"La antigüedad laboral está bien ✅. Como no contás con al menos {regla.AportesIPSMinimos} aportes IPS, igualmente podemos continuar. Más adelante te voy a consultar si tenés alguna referencia comercial; si no tenés, no bloquea la solicitud. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
-            "DOCUMENTACION",
-            "NOMBRE_COMPLETO");
     }
 
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarReferenciaComercialExiste(
