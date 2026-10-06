@@ -38,7 +38,7 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
                         sc.IdPublicacion,
                         sc.IdContacto,
                         sc.Estado,
-                        ISNULL(sc.PasoActual, 'PRECALIFICACION_EDAD') AS PasoActual,
+                        ISNULL(sc.PasoActual, 'PRECALIFICACION_IPS') AS PasoActual,
                         sc.ResultadoPreEvaluacion,
                         sc.MotivoPreEvaluacion,
                         sc.ViaEvaluacion,
@@ -59,12 +59,24 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
                         dl.TelefonoEmpresa,
                         dl.TelefonoEmpresaEsMovil,
                         dl.NombreJefeEncargado,
+                        pa.RefComercialNombre,
+                        pa.RefComercialAntiguedadMeses,
+                        pa.RefComercialMontoCuota,
+                        pa.RequiereGarante,
+                        pa.GaranteAportaIPS,
+                        pa.GaranteCantidadAportesIPS,
+                        pa.GaranteRefComercialNombre,
+                        pa.GaranteRefComercialAntiguedadMeses,
+                        pa.GaranteRefComercialMontoCuota,
+                        pa.EstadoGarante,
                         ISNULL(sc.FechaActualizacion, sc.FechaCreacion) AS FechaOrden
                     FROM dbo.SolicitudesCredito sc
                     INNER JOIN dbo.Contactos c
                         ON c.Id = sc.IdContacto
                     LEFT JOIN dbo.SolicitudDatosLaborales dl
                         ON dl.IdSolicitud = sc.Id
+                    LEFT JOIN dbo.SolicitudPrecalificacionAlternativa pa
+                        ON pa.IdSolicitudCredito = sc.Id
                     WHERE sc.IdConversacion = @IdConversacion
                       AND sc.Estado IN ('EN_PROCESO','PRE_EVALUACION','DOCUMENTACION')
 
@@ -99,6 +111,16 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
                         CAST(NULL AS NVARCHAR(30)) AS TelefonoEmpresa,
                         CAST(NULL AS BIT) AS TelefonoEmpresaEsMovil,
                         CAST(NULL AS NVARCHAR(150)) AS NombreJefeEncargado,
+                        CAST(NULL AS NVARCHAR(200)) AS RefComercialNombre,
+                        CAST(NULL AS INT) AS RefComercialAntiguedadMeses,
+                        CAST(NULL AS DECIMAL(18,2)) AS RefComercialMontoCuota,
+                        CAST(NULL AS BIT) AS RequiereGarante,
+                        CAST(NULL AS BIT) AS GaranteAportaIPS,
+                        CAST(NULL AS INT) AS GaranteCantidadAportesIPS,
+                        CAST(NULL AS NVARCHAR(200)) AS GaranteRefComercialNombre,
+                        CAST(NULL AS INT) AS GaranteRefComercialAntiguedadMeses,
+                        CAST(NULL AS DECIMAL(18,2)) AS GaranteRefComercialMontoCuota,
+                        CAST(NULL AS VARCHAR(30)) AS EstadoGarante,
                         ISNULL(sc.FechaActualizacion, sc.FechaCreacion) AS FechaOrden
                     FROM dbo.SolicitudesContadoMoto sc
                     INNER JOIN dbo.Contactos c
@@ -134,7 +156,9 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
                     AportesIPSMinimos,
                     ReferenciasFamiliaresMinimas,
                     ReferenciasAmigosMinimas,
-                    ReferenciasComercialesMinimasSinIps
+                    ReferenciasComercialesMinimasSinIps,
+                    ISNULL(ReferenciaComercialMinMeses, 12) AS ReferenciaComercialMinMeses,
+                    ISNULL(ReferenciaComercialCuotaMinPorcentaje, 80) AS ReferenciaComercialCuotaMinPorcentaje
                 FROM dbo.ReglasCreditoMoto
                 WHERE Estado = 'Activo'
                   AND FechaDesde <= CAST(GETDATE() AS DATE)
@@ -235,7 +259,7 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
                     @IdModeloProducto,
                     @IdContacto,
                     'PRE_EVALUACION',
-                    'PRECALIFICACION_EDAD',
+                    'PRECALIFICACION_IPS',
                     'PENDIENTE',
                     GETDATE(),
                     GETDATE()
@@ -851,6 +875,196 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
         }
     }
 
+    public async Task<string?> ObtenerPromptFlujo(
+        string codigo)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+SELECT TOP (1)
+    PromptBase
+FROM dbo.PromptsIA
+WHERE Codigo = @Codigo
+  AND Activo = 1
+ORDER BY Id DESC;";
+
+            return await conn.QueryFirstOrDefaultAsync<string?>(
+                sql,
+                new { Codigo = codigo });
+        }
+        catch (Exception ex)
+        {
+            throw Error(ex, "Error obteniendo mensaje configurable del flujo de crédito. Codigo={Codigo}", codigo);
+        }
+    }
+
+    public async Task<decimal?> ObtenerCuotaReferenciaModelo(
+        int idModeloProducto)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+SELECT TOP (1)
+    pf.ImporteCuota
+FROM dbo.ListasPreciosProducto lp
+INNER JOIN dbo.PlanesFinanciacionProducto pf
+    ON pf.IdListaPrecio = lp.Id
+   AND pf.Estado = 'Activo'
+WHERE lp.IdModeloProducto = @IdModeloProducto
+  AND lp.Estado = 'Activo'
+  AND lp.FechaDesde <= CAST(GETDATE() AS DATE)
+  AND (lp.FechaHasta IS NULL OR lp.FechaHasta >= CAST(GETDATE() AS DATE))
+ORDER BY
+    CASE WHEN ISNULL(lp.EsPromo, 0) = 1 THEN 0 ELSE 1 END,
+    lp.FechaDesde DESC,
+    lp.Id DESC,
+    pf.CantidadCuotas ASC,
+    pf.Id DESC;";
+
+            return await conn.QueryFirstOrDefaultAsync<decimal?>(
+                sql,
+                new { IdModeloProducto = idModeloProducto });
+        }
+        catch (Exception ex)
+        {
+            throw Error(ex, "Error obteniendo cuota de referencia del modelo. IdModeloProducto={IdModeloProducto}", idModeloProducto);
+        }
+    }
+
+    public async Task GuardarReferenciaComercialPrecalificacion(
+        int idSolicitudCredito,
+        bool esGarante,
+        string? nombre = null,
+        int? antiguedadMeses = null,
+        decimal? montoCuota = null)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string asegurar = @"
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM dbo.SolicitudPrecalificacionAlternativa
+    WHERE IdSolicitudCredito = @IdSolicitud
+)
+BEGIN
+    INSERT INTO dbo.SolicitudPrecalificacionAlternativa
+    (
+        IdSolicitudCredito,
+        FechaCreacion,
+        FechaActualizacion
+    )
+    VALUES
+    (
+        @IdSolicitud,
+        GETDATE(),
+        GETDATE()
+    );
+END;";
+
+            await conn.ExecuteAsync(
+                asegurar,
+                new { IdSolicitud = idSolicitudCredito });
+
+            var sql = esGarante
+                ? @"
+UPDATE dbo.SolicitudPrecalificacionAlternativa
+SET
+    GaranteRefComercialNombre = COALESCE(@Nombre, GaranteRefComercialNombre),
+    GaranteRefComercialAntiguedadMeses = COALESCE(@AntiguedadMeses, GaranteRefComercialAntiguedadMeses),
+    GaranteRefComercialMontoCuota = COALESCE(@MontoCuota, GaranteRefComercialMontoCuota),
+    FechaActualizacion = GETDATE()
+WHERE IdSolicitudCredito = @IdSolicitud;"
+                : @"
+UPDATE dbo.SolicitudPrecalificacionAlternativa
+SET
+    RefComercialNombre = COALESCE(@Nombre, RefComercialNombre),
+    RefComercialAntiguedadMeses = COALESCE(@AntiguedadMeses, RefComercialAntiguedadMeses),
+    RefComercialMontoCuota = COALESCE(@MontoCuota, RefComercialMontoCuota),
+    FechaActualizacion = GETDATE()
+WHERE IdSolicitudCredito = @IdSolicitud;";
+
+            await conn.ExecuteAsync(
+                sql,
+                new
+                {
+                    IdSolicitud = idSolicitudCredito,
+                    Nombre = nombre,
+                    AntiguedadMeses = antiguedadMeses,
+                    MontoCuota = montoCuota
+                });
+        }
+        catch (Exception ex)
+        {
+            throw Error(ex, "Error guardando referencia comercial de preevaluación.");
+        }
+    }
+
+    public async Task GuardarDatosGarantePrecalificacion(
+        int idSolicitudCredito,
+        bool? requiereGarante = null,
+        bool? aportaIps = null,
+        int? cantidadAportesIps = null,
+        string? estado = null)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM dbo.SolicitudPrecalificacionAlternativa
+    WHERE IdSolicitudCredito = @IdSolicitud
+)
+BEGIN
+    INSERT INTO dbo.SolicitudPrecalificacionAlternativa
+    (
+        IdSolicitudCredito,
+        FechaCreacion,
+        FechaActualizacion
+    )
+    VALUES
+    (
+        @IdSolicitud,
+        GETDATE(),
+        GETDATE()
+    );
+END;
+
+UPDATE dbo.SolicitudPrecalificacionAlternativa
+SET
+    RequiereGarante = COALESCE(@RequiereGarante, RequiereGarante),
+    GaranteAportaIPS = COALESCE(@AportaIPS, GaranteAportaIPS),
+    GaranteCantidadAportesIPS = COALESCE(@CantidadAportesIPS, GaranteCantidadAportesIPS),
+    EstadoGarante = COALESCE(@Estado, EstadoGarante),
+    FechaActualizacion = GETDATE()
+WHERE IdSolicitudCredito = @IdSolicitud;";
+
+            await conn.ExecuteAsync(
+                sql,
+                new
+                {
+                    IdSolicitud = idSolicitudCredito,
+                    RequiereGarante = requiereGarante,
+                    AportaIPS = aportaIps,
+                    CantidadAportesIPS = cantidadAportesIps,
+                    Estado = estado
+                });
+        }
+        catch (Exception ex)
+        {
+            throw Error(ex, "Error guardando preevaluación del garante.");
+        }
+    }
+
     public async Task<string?> ObtenerTextoAutorizacion()
     {
         using var conn = _conexion.CreateSqlConnection();
@@ -1046,16 +1260,16 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
                     END;
                     ";
 
-                    await conn.ExecuteAsync(
-                        sql,
-                        new
-                        {
-                            IdSolicitud = idSolicitud
-                        },
-                        transaction);
+                await conn.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        IdSolicitud = idSolicitud
+                    },
+                    transaction);
 
-                    transaction.Commit();
-                    return;
+                transaction.Commit();
+                return;
             }
 
             const string sqlContado = @"

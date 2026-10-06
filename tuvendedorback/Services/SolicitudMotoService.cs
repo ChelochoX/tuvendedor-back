@@ -62,13 +62,15 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         if (tipo == "CREDITO")
         {
-            var regla = await _repository.ObtenerReglaCreditoActiva();
-
             var id = await _repository.CrearCredito(
                 idConversacion,
                 idModeloProducto,
                 idPublicacion,
                 idContacto);
+
+            var respuestaInicio = await ObtenerMensajeFlujo(
+                "CREDITO_INICIO_IPS",
+                "¿Actualmente aportás a IPS? 😊");
 
             return new SolicitudMotoProcesoResultadoDto
             {
@@ -76,20 +78,8 @@ public class SolicitudMotoService : ISolicitudMotoService
                 IdSolicitud = id,
                 TipoOperacion = "CREDITO",
                 Estado = "PRE_EVALUACION",
-                PasoActual = "PRECALIFICACION_EDAD",
-                Respuesta =
-                    "¡Claro! 😊 Para solicitar la moto a crédito voy a necesitar algunos datos y documentos.\n\n" +
-                    "Vamos a completar todo paso a paso:\n" +
-                    $"• Tener al menos {regla.EdadMinima} años cumplidos.\n" +
-                    "• Cédula de Identidad paraguaya (CI) vigente, no vencida, con foto o copia clara del frente y dorso.\n" +
-                    "• Dirección particular del titular: dirección, barrio y ciudad donde vive.\n" +
-                    $"• Datos laborales del titular: lugar de trabajo, al menos {regla.AntiguedadLaboralMinMeses} meses de antigüedad, teléfono laboral y dirección de la empresa.\n" +
-                    $"• Aportes de IPS: si aporta, verificamos la cantidad de aportes. Si no aporta o no alcanza {regla.AportesIPSMinimos}, la solicitud igualmente puede continuar a evaluación.\n" +
-                    $"• 3 referencias personales de otras personas: {regla.ReferenciasFamiliaresMinimas} familiares/parientes y {regla.ReferenciasAmigosMinimas} amistad. De cada persona te pediré nombre, teléfono y parentesco cuando corresponda.\n" +
-                    "• Referencias comerciales: si tenés una o más, podés indicarme el nombre del negocio o casa comercial. Si no tenés ninguna, no bloquea la solicitud y continuamos normalmente.\n" +
-                    "• Al final te voy a enviar la autorización de evaluación de crédito completa para que la leas y la aceptes.\n\n" +
-                    "Te voy a pedir un dato por vez para hacerlo sencillo 😊\n\n" +
-                    "Empecemos: ¿cuál es tu fecha de nacimiento? Enviamela en formato DD/MM/AAAA."
+                PasoActual = "PRECALIFICACION_IPS",
+                Respuesta = respuestaInicio
             };
         }
 
@@ -184,11 +174,24 @@ public class SolicitudMotoService : ISolicitudMotoService
     {
         return solicitud.PasoActual.ToUpperInvariant() switch
         {
-            "PRECALIFICACION_EDAD" => await ProcesarEdad(solicitud, request),
-            "PRECALIFICACION_ANTIGUEDAD" => await ProcesarAntiguedadLaboral(solicitud, request),
             "PRECALIFICACION_IPS" => await ProcesarAportaIps(solicitud, request),
             "PRECALIFICACION_APORTES" => await ProcesarCantidadAportesIps(solicitud, request),
-            "REF_COMERCIAL_PRECALIFICACION" => await ProcesarReferenciaComercialPrecalificacion(solicitud, request),
+            "REF_COMERCIAL_PRECALIFICACION" => await ProcesarReferenciaComercialExiste(solicitud, request, false),
+            "REF_COMERCIAL_EXISTE" => await ProcesarReferenciaComercialExiste(solicitud, request, false),
+            "REF_COMERCIAL_NOMBRE" => await ProcesarReferenciaComercialNombre(solicitud, request, false),
+            "REF_COMERCIAL_ANTIGUEDAD" => await ProcesarReferenciaComercialAntiguedad(solicitud, request, false),
+            "REF_COMERCIAL_CUOTA" => await ProcesarReferenciaComercialCuota(solicitud, request, false),
+            "PRECALIFICACION_GARANTE" => await ProcesarGarante(solicitud, request),
+            "ESPERANDO_GARANTE" => await ProcesarEsperaGarante(solicitud, request),
+            "GARANTE_IPS" => await ProcesarGaranteIps(solicitud, request),
+            "GARANTE_APORTES" => await ProcesarGaranteAportes(solicitud, request),
+            "GARANTE_REF_EXISTE" => await ProcesarReferenciaComercialExiste(solicitud, request, true),
+            "GARANTE_REF_NOMBRE" => await ProcesarReferenciaComercialNombre(solicitud, request, true),
+            "GARANTE_REF_ANTIGUEDAD" => await ProcesarReferenciaComercialAntiguedad(solicitud, request, true),
+            "GARANTE_REF_CUOTA" => await ProcesarReferenciaComercialCuota(solicitud, request, true),
+            "PENDIENTE_CREDITOS" => await ProcesarPendienteCreditos(solicitud),
+            "PRECALIFICACION_EDAD" => await ProcesarEdad(solicitud, request),
+            "PRECALIFICACION_ANTIGUEDAD" => await ProcesarAntiguedadLaboral(solicitud, request),
             "NOMBRE_COMPLETO" => await ProcesarNombreCompleto(solicitud, request),
             "CORREGIR_NOMBRE_TITULAR" => await ProcesarCorreccionNombreTitular(solicitud, request),
             "CEDULA_NUMERO" => await ProcesarNumeroCedula(solicitud, request),
@@ -226,9 +229,12 @@ public class SolicitudMotoService : ISolicitudMotoService
                 "AMIGO",
                 "REF_COMERCIAL_CONTROL",
                 "Perfecto ✅ Ya tenemos las 3 referencias personales requeridas."),
+            // Compatibilidad con solicitudes que quedaron en pasos antiguos:
+            // la referencia comercial ya se valida al inicio de la preevaluación,
+            // por lo tanto no la volvemos a pedir al final.
             "REF_COMERCIAL_CONTROL" => await PrepararReferenciasComerciales(solicitud),
-            "REF_COMERCIAL_DATOS" => await ProcesarReferenciaComercialDatos(solicitud, request),
-            "REF_COMERCIAL_MAS" => await ProcesarReferenciaComercialMas(solicitud, request),
+            "REF_COMERCIAL_DATOS" => await PrepararReferenciasComerciales(solicitud),
+            "REF_COMERCIAL_MAS" => await PrepararReferenciasComerciales(solicitud),
             "AUTORIZACION" => await ProcesarAutorizacion(solicitud, request),
             _ => Resultado(
                 solicitud,
@@ -265,9 +271,13 @@ public class SolicitudMotoService : ISolicitudMotoService
     {
         if (!TryParseFechaNacimiento(request.Mensaje, out var fechaNacimiento))
         {
+            var msg = await ObtenerMensajeFlujo(
+                "CREDITO_EDAD_INVALIDA",
+                "No llegué a interpretar la fecha 😊 Enviame tu fecha de nacimiento en formato DD/MM/AAAA.");
+
             return Resultado(
                 solicitud,
-                "Necesito tu fecha de nacimiento para validar la edad. Enviamela así: DD/MM/AAAA. Ejemplo: 15/08/1998.");
+                msg);
         }
 
         var regla = await _repository.ObtenerReglaCreditoActiva();
@@ -301,9 +311,13 @@ public class SolicitudMotoService : ISolicitudMotoService
             solicitud.IdSolicitud,
             "PRECALIFICACION_ANTIGUEDAD");
 
+        var mensajeAntiguedad = await ObtenerMensajeFlujo(
+            "CREDITO_PREGUNTA_ANTIGUEDAD",
+            "Edad validada ✅. ¿Cuánto tiempo de antigüedad tenés en tu trabajo actual? Podés responder, por ejemplo: 9 meses, 1 año o 3 años.");
+
         return Resultado(
             solicitud,
-            $"Edad validada ✅. Ahora decime cuántos meses de antigüedad tenés en tu trabajo actual. El mínimo requerido es {regla.AntiguedadLaboralMinMeses} meses. Podés responder, por ejemplo: 8 meses.",
+            mensajeAntiguedad,
             "PRE_EVALUACION",
             "PRECALIFICACION_ANTIGUEDAD");
     }
@@ -312,11 +326,13 @@ public class SolicitudMotoService : ISolicitudMotoService
         SolicitudMotoProcesoDto solicitud,
         MotoConversacionRequest request)
     {
-        if (!TryParseEntero(request.Mensaje, out var antiguedadMeses) || antiguedadMeses < 0)
+        if (!TryParseDuracionMeses(request.Mensaje, out var antiguedadMeses) || antiguedadMeses < 0)
         {
-            return Resultado(
-                solicitud,
-                "Decime tu antigüedad laboral en meses. Por ejemplo: 8 meses.");
+            var msg = await ObtenerMensajeFlujo(
+                "CREDITO_ANTIGUEDAD_INVALIDA",
+                "No llegué a interpretar el tiempo 😊 Podés responder, por ejemplo: 9 meses, 1 año, 1 año y 6 meses o 3 años.");
+
+            return Resultado(solicitud, msg);
         }
 
         var regla = await _repository.ObtenerReglaCreditoActiva();
@@ -330,30 +346,85 @@ public class SolicitudMotoService : ISolicitudMotoService
             var motivo =
                 $"Antigüedad laboral {antiguedadMeses} meses. Mínimo requerido {regla.AntiguedadLaboralMinMeses} meses.";
 
+            if (EsViaGarante(solicitud.ViaEvaluacion))
+            {
+                await _repository.GuardarResultadoPreEvaluacion(
+                    solicitud.IdSolicitud,
+                    "PENDIENTE_CREDITOS",
+                    motivo,
+                    solicitud.ViaEvaluacion,
+                    "PENDIENTE_CREDITOS");
+
+                var pendiente = await ObtenerMensajeFlujo(
+                    "CREDITO_PENDIENTE_CREDITOS",
+                    "Gracias por los datos 😊. Voy a dejar tu caso para consultar con el equipo de Créditos y te daremos un retorno en la brevedad para confirmar si podemos avanzar.");
+
+                return Resultado(
+                    solicitud,
+                    pendiente,
+                    "PRE_EVALUACION",
+                    "PENDIENTE_CREDITOS");
+            }
+
             await _repository.GuardarResultadoPreEvaluacion(
                 solicitud.IdSolicitud,
-                "NO_VIABLE",
+                "REQUIERE_GARANTE",
                 motivo,
-                null,
-                "NO_VIABLE");
+                solicitud.ViaEvaluacion,
+                "PRECALIFICACION_GARANTE");
+
+            var msgGarante = await ObtenerMensajeFlujo(
+                "CREDITO_PREGUNTA_GARANTE",
+                "Con estos datos todavía no calificamos para avanzar a sola firma. Si tenés un garante, podemos hacer una evaluación rápida del garante. ¿Tenés una persona que pueda salirte de garante? Respondeme SI o NO.");
 
             return Resultado(
                 solicitud,
-                $"Gracias. Para que la solicitud pueda continuar necesitás al menos {regla.AntiguedadLaboralMinMeses} meses de antigüedad laboral. Con los datos actuales no puede continuar por ahora.",
-                "NO_VIABLE",
-                "NO_VIABLE");
+                msgGarante,
+                "PRE_EVALUACION",
+                "PRECALIFICACION_GARANTE");
         }
+
+        // Las solicitudes nuevas ya llegan a este punto con una vía de evaluación
+        // definida (IPS, referencia comercial o garante). Para solicitudes antiguas
+        // que quedaron a mitad del flujo anterior, conservamos compatibilidad y
+        // seguimos preguntando IPS si todavía no existe ViaEvaluacion.
+        if (string.IsNullOrWhiteSpace(solicitud.ViaEvaluacion))
+        {
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                solicitud.IdSolicitud,
+                "PRECALIFICACION_IPS");
+
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    "CREDITO_INICIO_IPS",
+                    "¿Actualmente aportás a IPS? 😊"),
+                "PRE_EVALUACION",
+                "PRECALIFICACION_IPS");
+        }
+
+        await _repository.GuardarResultadoPreEvaluacion(
+            solicitud.IdSolicitud,
+            "VIABLE",
+            null,
+            solicitud.ViaEvaluacion,
+            "NOMBRE_COMPLETO");
 
         await _repository.ActualizarPaso(
             "CREDITO",
             solicitud.IdSolicitud,
-            "PRECALIFICACION_IPS");
+            "NOMBRE_COMPLETO");
+
+        var mensajeDatos = await ObtenerMensajeFlujo(
+            "CREDITO_PRECALIFICACION_OK_NOMBRE",
+            "Perfecto ✅ La evaluación inicial está bien. Ahora sí vamos a completar tus datos. ¿Cuál es tu nombre y apellido?");
 
         return Resultado(
             solicitud,
-            "Antigüedad laboral validada ✅. ¿Actualmente aportás a IPS? Respondeme SI o NO.",
-            "PRE_EVALUACION",
-            "PRECALIFICACION_IPS");
+            mensajeDatos,
+            "DOCUMENTACION",
+            "NOMBRE_COMPLETO");
     }
 
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarAportaIps(
@@ -364,9 +435,11 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         if (!EsSi(texto) && !EsNo(texto))
         {
-            return Resultado(
-                solicitud,
-                "¿Actualmente aportás a IPS? Respondeme SI o NO.");
+            var msg = await ObtenerMensajeFlujo(
+                "CREDITO_IPS_NO_ENTENDIDO",
+                "No llegué a entenderte 😊 ¿Actualmente aportás a IPS?");
+
+            return Resultado(solicitud, msg);
         }
 
         var aporta = EsSi(texto);
@@ -383,25 +456,33 @@ public class SolicitudMotoService : ISolicitudMotoService
                 solicitud.IdSolicitud,
                 "PRECALIFICACION_APORTES");
 
+            var msg = await ObtenerMensajeFlujo(
+                "CREDITO_PREGUNTA_APORTES_IPS",
+                "Perfecto 😊 ¿Cuántos aportes de IPS tenés actualmente? Podés responder, por ejemplo: 8 aportes.");
+
             return Resultado(
                 solicitud,
-                "Perfecto 😊 ¿Cuántos aportes de IPS tenés actualmente? Respondeme solo la cantidad, por ejemplo: 5.",
+                msg,
                 "PRE_EVALUACION",
                 "PRECALIFICACION_APORTES");
         }
 
         await _repository.GuardarResultadoPreEvaluacion(
             solicitud.IdSolicitud,
-            "PENDIENTE_REFERENCIAS_COMERCIALES",
+            "PENDIENTE_REFERENCIA_COMERCIAL",
             "No aporta IPS.",
-            "REFERENCIAS_COMERCIALES",
-            "NOMBRE_COMPLETO");
+            "REFERENCIA_COMERCIAL",
+            "REF_COMERCIAL_EXISTE");
+
+        var respuesta = await ObtenerMensajeFlujo(
+            "CREDITO_PREGUNTA_REFERENCIA_COMERCIAL",
+            "Está bien 😊 Si no tenés IPS, podemos hacer una evaluación rápida con una referencia comercial verificable. ¿Tenés alguna casa comercial o negocio donde hayas pagado cuotas? Respondeme SI o NO.");
 
         return Resultado(
             solicitud,
-            "Está bien 😊 Podemos continuar con la solicitud. Más adelante te voy a consultar si tenés alguna referencia comercial; si no tenés, no hay problema y seguimos normalmente. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
-            "DOCUMENTACION",
-            "NOMBRE_COMPLETO");
+            respuesta,
+            "PRE_EVALUACION",
+            "REF_COMERCIAL_EXISTE");
     }
 
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarCantidadAportesIps(
@@ -410,9 +491,11 @@ public class SolicitudMotoService : ISolicitudMotoService
     {
         if (!TryParseEntero(request.Mensaje, out var aportes) || aportes < 0)
         {
-            return Resultado(
-                solicitud,
-                "Decime cuántos aportes de IPS tenés. Por ejemplo: 5.");
+            var msg = await ObtenerMensajeFlujo(
+                "CREDITO_APORTES_INVALIDOS",
+                "No llegué a identificar la cantidad 😊 ¿Cuántos aportes de IPS tenés actualmente?");
+
+            return Resultado(solicitud, msg);
         }
 
         var regla = await _repository.ObtenerReglaCreditoActiva();
@@ -426,30 +509,38 @@ public class SolicitudMotoService : ISolicitudMotoService
         {
             await _repository.GuardarResultadoPreEvaluacion(
                 solicitud.IdSolicitud,
-                "VIABLE",
+                "PREEVALUACION_INICIAL_OK",
                 null,
                 "IPS",
-                "NOMBRE_COMPLETO");
+                "PRECALIFICACION_EDAD");
+
+            var msgEdad = await ObtenerMensajeFlujo(
+                "CREDITO_PREGUNTA_EDAD",
+                "Perfecto ✅ Por IPS podemos continuar con la evaluación. ¿Cuál es tu fecha de nacimiento? Enviamela en formato DD/MM/AAAA.");
 
             return Resultado(
                 solicitud,
-                "Perfecto ✅ Cumplís los requisitos básicos para continuar. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
-                "DOCUMENTACION",
-                "NOMBRE_COMPLETO");
+                msgEdad,
+                "PRE_EVALUACION",
+                "PRECALIFICACION_EDAD");
         }
 
         await _repository.GuardarResultadoPreEvaluacion(
             solicitud.IdSolicitud,
-            "PENDIENTE_REFERENCIAS_COMERCIALES",
+            "PENDIENTE_REFERENCIA_COMERCIAL",
             $"Cantidad de aportes IPS: {aportes}. Mínimo requerido: {regla.AportesIPSMinimos}.",
-            "REFERENCIAS_COMERCIALES",
-            "NOMBRE_COMPLETO");
+            "REFERENCIA_COMERCIAL",
+            "REF_COMERCIAL_EXISTE");
+
+        var respuesta = await ObtenerMensajeFlujo(
+            "CREDITO_PREGUNTA_REFERENCIA_COMERCIAL",
+            "Todavía no alcanzás el mínimo de aportes IPS, pero podemos evaluar una referencia comercial verificable. ¿Tenés alguna casa comercial o negocio donde hayas pagado cuotas? Respondeme SI o NO.");
 
         return Resultado(
             solicitud,
-            $"La antigüedad laboral está bien ✅. Como todavía no llegás al mínimo de {regla.AportesIPSMinimos} aportes de IPS, igualmente podemos continuar. Más adelante te voy a consultar si tenés alguna referencia comercial; si no tenés, no bloquea la solicitud. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
-            "DOCUMENTACION",
-            "NOMBRE_COMPLETO");
+            respuesta,
+            "PRE_EVALUACION",
+            "REF_COMERCIAL_EXISTE");
     }
 
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarPrecalificacionLaboral(
@@ -527,54 +618,575 @@ public class SolicitudMotoService : ISolicitudMotoService
             "NOMBRE_COMPLETO");
     }
 
-    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarReferenciaComercialPrecalificacion(
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarReferenciaComercialExiste(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request,
+        bool esGarante)
+    {
+        var texto = NormalizarTexto(request.Mensaje);
+
+        if (!EsSi(texto) && !EsNo(texto))
+        {
+            var codigo = esGarante
+                ? "CREDITO_GREF_RESP_INVALIDA"
+                : "CREDITO_REF_RESP_INVALIDA";
+
+            var fallback = esGarante
+                ? "No llegué a entenderte 😊 ¿El garante tiene alguna referencia comercial verificable?"
+                : "No llegué a entenderte 😊 ¿Tenés alguna referencia comercial verificable?";
+
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(codigo, fallback));
+        }
+
+        if (EsNo(texto))
+        {
+            if (esGarante)
+            {
+                return await PasarAPendienteCreditos(
+                    solicitud,
+                    "El garante no tiene IPS suficiente ni referencia comercial verificable.");
+            }
+
+            await _repository.GuardarDatosGarantePrecalificacion(
+                solicitud.IdSolicitud,
+                requiereGarante: true,
+                estado: "PENDIENTE");
+
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                solicitud.IdSolicitud,
+                "PRECALIFICACION_GARANTE");
+
+            var msg = await ObtenerMensajeFlujo(
+                "CREDITO_PREGUNTA_GARANTE",
+                "Con estos datos todavía no calificamos para avanzar a sola firma. Si tenés un garante, podemos evaluarlo. ¿Tenés una persona que pueda salirte de garante? Respondeme SI o NO.");
+
+            return Resultado(
+                solicitud,
+                msg,
+                "PRE_EVALUACION",
+                "PRECALIFICACION_GARANTE");
+        }
+
+        var siguiente = esGarante
+            ? "GARANTE_REF_NOMBRE"
+            : "REF_COMERCIAL_NOMBRE";
+
+        await _repository.ActualizarPaso(
+            "CREDITO",
+            solicitud.IdSolicitud,
+            siguiente);
+
+        var codigoNombre = esGarante
+            ? "CREDITO_PREGUNTA_GARANTE_REFERENCIA_NOMBRE"
+            : "CREDITO_PREGUNTA_REFERENCIA_NOMBRE";
+
+        var fallbackNombre = esGarante
+            ? "Perfecto. ¿Cuál es el nombre del negocio o casa comercial donde el garante tiene esa referencia?"
+            : "Perfecto. ¿Cuál es el nombre del negocio o casa comercial donde tenés esa referencia?";
+
+        return Resultado(
+            solicitud,
+            await ObtenerMensajeFlujo(codigoNombre, fallbackNombre),
+            "PRE_EVALUACION",
+            siguiente);
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarReferenciaComercialNombre(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request,
+        bool esGarante)
+    {
+        var nombre = (request.Mensaje ?? string.Empty).Trim();
+
+        if (nombre.Length < 2 || EsSi(nombre) || EsNo(nombre))
+        {
+            var codigoNombreInvalido = esGarante
+                ? "CREDITO_GREF_NOMBRE_INVALIDO"
+                : "CREDITO_REF_NOMBRE_INVALIDO";
+
+            var fallbackNombreInvalido = esGarante
+                ? "¿Cuál es el nombre del negocio o casa comercial donde el garante tiene la referencia?"
+                : "¿Cuál es el nombre del negocio o casa comercial donde tenés la referencia?";
+
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    codigoNombreInvalido,
+                    fallbackNombreInvalido));
+        }
+
+        await _repository.GuardarReferenciaComercialPrecalificacion(
+            solicitud.IdSolicitud,
+            esGarante,
+            nombre: nombre);
+
+        var siguiente = esGarante
+            ? "GARANTE_REF_ANTIGUEDAD"
+            : "REF_COMERCIAL_ANTIGUEDAD";
+
+        await _repository.ActualizarPaso(
+            "CREDITO",
+            solicitud.IdSolicitud,
+            siguiente);
+
+        var codigoPreguntaAntiguedad = esGarante
+            ? "CREDITO_PREGUNTA_GARANTE_REFERENCIA_ANTIGUEDAD"
+            : "CREDITO_PREGUNTA_REFERENCIA_ANTIGUEDAD";
+
+        var fallbackPreguntaAntiguedad = esGarante
+            ? "¿Durante cuánto tiempo el garante pagó o viene pagando esa referencia? Podés responder: 1 año, 18 meses, 3 años, etc."
+            : "¿Durante cuánto tiempo pagaste o venís pagando esa referencia? Podés responder: 1 año, 18 meses, 3 años, etc.";
+
+        return Resultado(
+            solicitud,
+            await ObtenerMensajeFlujo(
+                codigoPreguntaAntiguedad,
+                fallbackPreguntaAntiguedad),
+            "PRE_EVALUACION",
+            siguiente);
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarReferenciaComercialAntiguedad(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request,
+        bool esGarante)
+    {
+        if (!TryParseDuracionMeses(request.Mensaje, out var meses) || meses < 0)
+        {
+            var codigoTiempoInvalido = esGarante
+                ? "CREDITO_GREF_TIEMPO_INVALIDO"
+                : "CREDITO_REF_TIEMPO_INVALIDO";
+
+            var fallbackTiempoInvalido =
+                "No llegué a interpretar el tiempo 😊 Podés responder: 12 meses, 1 año, 1 año y 6 meses o 3 años.";
+
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    codigoTiempoInvalido,
+                    fallbackTiempoInvalido));
+        }
+
+        await _repository.GuardarReferenciaComercialPrecalificacion(
+            solicitud.IdSolicitud,
+            esGarante,
+            antiguedadMeses: meses);
+
+        var siguiente = esGarante
+            ? "GARANTE_REF_CUOTA"
+            : "REF_COMERCIAL_CUOTA";
+
+        await _repository.ActualizarPaso(
+            "CREDITO",
+            solicitud.IdSolicitud,
+            siguiente);
+
+        var codigoPreguntaCuota = esGarante
+            ? "CREDITO_PREGUNTA_GARANTE_REFERENCIA_CUOTA"
+            : "CREDITO_PREGUNTA_REFERENCIA_CUOTA";
+
+        var fallbackPreguntaCuota = esGarante
+            ? "¿De cuánto era aproximadamente la cuota mensual que pagaba el garante en esa referencia comercial? Podés responder, por ejemplo: 450.000."
+            : "¿De cuánto era aproximadamente la cuota mensual que pagabas en esa referencia comercial? Podés responder, por ejemplo: 450.000.";
+
+        return Resultado(
+            solicitud,
+            await ObtenerMensajeFlujo(
+                codigoPreguntaCuota,
+                fallbackPreguntaCuota),
+            "PRE_EVALUACION",
+            siguiente);
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarReferenciaComercialCuota(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request,
+        bool esGarante)
+    {
+        if (!TryParseMontoGuaranies(request.Mensaje, out var monto) || monto <= 0)
+        {
+            var codigoCuotaInvalida = esGarante
+                ? "CREDITO_GREF_CUOTA_INVALIDA"
+                : "CREDITO_REF_CUOTA_INVALIDA";
+
+            var fallbackCuotaInvalida =
+                "No llegué a interpretar el monto 😊 Decime aproximadamente cuánto era la cuota, por ejemplo: 450.000.";
+
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    codigoCuotaInvalida,
+                    fallbackCuotaInvalida));
+        }
+
+        await _repository.GuardarReferenciaComercialPrecalificacion(
+            solicitud.IdSolicitud,
+            esGarante,
+            montoCuota: monto);
+
+        var actual = await _repository.ObtenerActivaPorConversacion(solicitud.IdConversacion)
+                     ?? solicitud;
+
+        var regla = await _repository.ObtenerReglaCreditoActiva();
+        var cuotaMoto = actual.IdModeloProducto.HasValue
+            ? await _repository.ObtenerCuotaReferenciaModelo(actual.IdModeloProducto.Value)
+            : null;
+
+        var meses = esGarante
+            ? actual.GaranteRefComercialAntiguedadMeses
+            : actual.RefComercialAntiguedadMeses;
+
+        var comercio = esGarante
+            ? actual.GaranteRefComercialNombre
+            : actual.RefComercialNombre;
+
+        if (!meses.HasValue || string.IsNullOrWhiteSpace(comercio))
+        {
+            return await PasarAPendienteCreditos(
+                solicitud,
+                "No se pudo reconstruir la referencia comercial informada.");
+        }
+
+        if (!cuotaMoto.HasValue || cuotaMoto.Value <= 0)
+        {
+            return await PasarAPendienteCreditos(
+                solicitud,
+                "No existe una cuota activa del modelo para comparar la referencia comercial.");
+        }
+
+        var montoMinimo = cuotaMoto.Value * (regla.ReferenciaComercialCuotaMinPorcentaje / 100m);
+        var cumpleTiempo = meses.Value >= regla.ReferenciaComercialMinMeses;
+        var cumpleMonto = monto >= montoMinimo;
+
+        if (cumpleTiempo && cumpleMonto)
+        {
+            await _repository.AgregarReferencia(
+                solicitud.IdSolicitud,
+                esGarante ? "GARANTE_COMERCIAL" : "COMERCIAL",
+                comercio!,
+                string.Empty,
+                null,
+                $"Referencia de preevaluación: {meses.Value} meses; cuota aprox. Gs. {monto:N0}; cuota moto de referencia Gs. {cuotaMoto.Value:N0}.");
+
+            var via = esGarante
+                ? "GARANTE_REFERENCIA_COMERCIAL"
+                : "REFERENCIA_COMERCIAL";
+
+            if (esGarante)
+            {
+                await _repository.GuardarDatosGarantePrecalificacion(
+                    solicitud.IdSolicitud,
+                    requiereGarante: true,
+                    estado: "VIABLE");
+            }
+
+            await _repository.GuardarResultadoPreEvaluacion(
+                solicitud.IdSolicitud,
+                "PREEVALUACION_INICIAL_OK",
+                null,
+                via,
+                "PRECALIFICACION_EDAD");
+
+            var msgEdad = await ObtenerMensajeFlujo(
+                "CREDITO_PREGUNTA_EDAD",
+                "Perfecto ✅ Con esos datos podemos continuar con la evaluación. ¿Cuál es tu fecha de nacimiento? Enviamela en formato DD/MM/AAAA.");
+
+            return Resultado(
+                solicitud,
+                msgEdad,
+                "PRE_EVALUACION",
+                "PRECALIFICACION_EDAD");
+        }
+
+        var motivo =
+            $"Referencia comercial no alcanza la preevaluación. Tiempo={meses.Value} meses (mínimo {regla.ReferenciaComercialMinMeses}); " +
+            $"Cuota referencia={monto:N0}; cuota moto={cuotaMoto.Value:N0}; porcentaje mínimo={regla.ReferenciaComercialCuotaMinPorcentaje:N0}%.";
+
+        if (esGarante)
+        {
+            return await PasarAPendienteCreditos(solicitud, motivo);
+        }
+
+        await _repository.GuardarResultadoPreEvaluacion(
+            solicitud.IdSolicitud,
+            "REQUIERE_GARANTE",
+            motivo,
+            "REFERENCIA_COMERCIAL",
+            "PRECALIFICACION_GARANTE");
+
+        await _repository.GuardarDatosGarantePrecalificacion(
+            solicitud.IdSolicitud,
+            requiereGarante: true,
+            estado: "PENDIENTE");
+
+        var msg = await ObtenerMensajeFlujo(
+            "CREDITO_PREGUNTA_GARANTE",
+            "Con la referencia informada todavía no alcanzamos la condición para avanzar a sola firma. Si tenés un garante, podemos evaluarlo. ¿Tenés una persona que pueda salirte de garante? Respondeme SI o NO.");
+
+        return Resultado(
+            solicitud,
+            msg,
+            "PRE_EVALUACION",
+            "PRECALIFICACION_GARANTE");
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarGarante(
         SolicitudMotoProcesoDto solicitud,
         MotoConversacionRequest request)
     {
-        // La referencia comercial aporta información para la evaluación, pero NO es
-        // un requisito bloqueante. Si el cliente no tiene, continuamos normalmente.
-        if (EsSinReferenciaComercial(request.Mensaje))
+        var texto = NormalizarTexto(request.Mensaje);
+
+        if (EsMensajeEsperaGarante(texto))
+        {
+            await _repository.GuardarDatosGarantePrecalificacion(
+                solicitud.IdSolicitud,
+                requiereGarante: true,
+                estado: "ESPERANDO_CLIENTE");
+
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                solicitud.IdSolicitud,
+                "ESPERANDO_GARANTE");
+
+            var espera = await ObtenerMensajeFlujo(
+                "CREDITO_ESPERANDO_GARANTE",
+                "Perfecto 😊 Hablá tranquilo con tu posible garante. Quedamos pendientes de tu retorno y cuando me confirmes seguimos desde acá, sin empezar de nuevo.");
+
+            return Resultado(
+                solicitud,
+                espera,
+                "PRE_EVALUACION",
+                "ESPERANDO_GARANTE");
+        }
+
+        if (EsNo(texto))
+        {
+            return await PasarAPendienteCreditos(
+                solicitud,
+                "El titular no califica a sola firma y no cuenta con garante por ahora.");
+        }
+
+        if (!EsSi(texto))
+        {
+            var msg = await ObtenerMensajeFlujo(
+                "CREDITO_GARANTE_RESP_INVALIDA",
+                "No llegué a entenderte 😊 ¿Contás con un garante? Si primero necesitás hablar con alguien, decímelo.");
+
+            return Resultado(solicitud, msg);
+        }
+
+        await _repository.GuardarDatosGarantePrecalificacion(
+            solicitud.IdSolicitud,
+            requiereGarante: true,
+            estado: "EVALUANDO");
+
+        await _repository.ActualizarPaso(
+            "CREDITO",
+            solicitud.IdSolicitud,
+            "GARANTE_IPS");
+
+        var preguntaIps = await ObtenerMensajeFlujo(
+            "CREDITO_PREGUNTA_GARANTE_IPS",
+            "Perfecto 😊 Hagamos una evaluación rápida del garante. ¿El garante aporta actualmente a IPS? Respondeme SI o NO.");
+
+        return Resultado(
+            solicitud,
+            preguntaIps,
+            "PRE_EVALUACION",
+            "GARANTE_IPS");
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarEsperaGarante(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request)
+    {
+        var texto = NormalizarTexto(request.Mensaje);
+
+        if (EsMensajeEsperaGarante(texto))
+        {
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    "CREDITO_ESPERANDO_GARANTE",
+                    "Perfecto 😊 Quedamos pendientes de tu retorno. Cuando tengas la confirmación del garante, escribime y seguimos desde acá."));
+        }
+
+        if (texto.Contains("YA TENGO")
+            || texto.Contains("CONSEGUI")
+            || texto.Contains("YA CONSEGUI")
+            || texto.Contains("ME SALE")
+            || texto.Contains("YA HABLE")
+            || texto.Contains("ME CONFIRMO")
+            || texto.Contains("ACEPTO")
+            || EsSi(texto))
+        {
+            await _repository.GuardarDatosGarantePrecalificacion(
+                solicitud.IdSolicitud,
+                requiereGarante: true,
+                estado: "EVALUANDO");
+
+            await _repository.ActualizarPaso(
+                "CREDITO",
+                solicitud.IdSolicitud,
+                "GARANTE_IPS");
+
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    "CREDITO_PREGUNTA_GARANTE_IPS",
+                    "Buenísimo 😊 ¿El garante aporta actualmente a IPS? Respondeme SI o NO."),
+                "PRE_EVALUACION",
+                "GARANTE_IPS");
+        }
+
+        if (EsNo(texto))
+        {
+            return await PasarAPendienteCreditos(
+                solicitud,
+                "El cliente volvió sin un garante disponible.");
+        }
+
+        return Resultado(
+            solicitud,
+            await ObtenerMensajeFlujo(
+                "CREDITO_ESPERANDO_GARANTE",
+                "Seguimos pendientes del garante 😊. Cuando tengas su confirmación, avisame y retomamos desde acá."));
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarGaranteIps(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request)
+    {
+        var texto = NormalizarTexto(request.Mensaje);
+
+        if (!EsSi(texto) && !EsNo(texto))
+        {
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    "CREDITO_GARANTE_IPS_INVALIDO",
+                    "No llegué a entenderte 😊 ¿El garante aporta actualmente a IPS?"));
+        }
+
+        var aporta = EsSi(texto);
+
+        await _repository.GuardarDatosGarantePrecalificacion(
+            solicitud.IdSolicitud,
+            aportaIps: aporta,
+            cantidadAportesIps: aporta ? null : 0,
+            estado: "EVALUANDO");
+
+        if (aporta)
         {
             await _repository.ActualizarPaso(
                 "CREDITO",
                 solicitud.IdSolicitud,
-                "NOMBRE_COMPLETO");
+                "GARANTE_APORTES");
 
             return Resultado(
                 solicitud,
-                "Está bien 😊 Si no tenés referencia comercial, no hay problema. Continuamos con tu solicitud. ¿Cuál es tu nombre y apellido?",
-                "DOCUMENTACION",
-                "NOMBRE_COMPLETO");
+                await ObtenerMensajeFlujo(
+                    "CREDITO_PREGUNTA_GARANTE_APORTES",
+                    "¿Cuántos aportes de IPS tiene actualmente el garante? Podés responder, por ejemplo: 8 aportes."),
+                "PRE_EVALUACION",
+                "GARANTE_APORTES");
         }
 
-        var comercio = (request.Mensaje ?? string.Empty).Trim();
-        if (comercio.Length < 2 || EsSi(comercio))
-        {
-            return Resultado(
-                solicitud,
-                "Si tenés una referencia comercial, indicame el nombre del negocio o casa comercial. Si no tenés ninguna, escribime NO TENGO y continuamos.");
-        }
-
-        await _repository.AgregarReferencia(
+        await _repository.ActualizarPaso(
+            "CREDITO",
             solicitud.IdSolicitud,
-            "COMERCIAL",
-            comercio,
-            string.Empty,
-            null,
-            "Referencia comercial informada por el cliente.");
-
-        await _repository.GuardarResultadoPreEvaluacion(
-            solicitud.IdSolicitud,
-            "VIABLE",
-            null,
-            "REFERENCIAS_COMERCIALES",
-            "NOMBRE_COMPLETO");
+            "GARANTE_REF_EXISTE");
 
         return Resultado(
             solicitud,
-            "Perfecto ✅ Guardé tu referencia comercial. Ahora necesito registrar tus datos como titular de la solicitud. ¿Cuál es tu nombre y apellido?",
-            "DOCUMENTACION",
-            "NOMBRE_COMPLETO");
+            await ObtenerMensajeFlujo(
+                "CREDITO_PREGUNTA_GARANTE_REFERENCIA",
+                "Si el garante no tiene IPS, podemos evaluarlo por referencia comercial. ¿Tiene alguna referencia comercial verificable donde haya pagado cuotas? Respondeme SI o NO."),
+            "PRE_EVALUACION",
+            "GARANTE_REF_EXISTE");
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarGaranteAportes(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request)
+    {
+        if (!TryParseEntero(request.Mensaje, out var aportes) || aportes < 0)
+        {
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    "CREDITO_GARANTE_APORTES_INVALIDOS",
+                    "No llegué a identificar la cantidad 😊 ¿Cuántos aportes de IPS tiene el garante?"));
+        }
+
+        var regla = await _repository.ObtenerReglaCreditoActiva();
+
+        await _repository.GuardarDatosGarantePrecalificacion(
+            solicitud.IdSolicitud,
+            requiereGarante: true,
+            aportaIps: true,
+            cantidadAportesIps: aportes,
+            estado: aportes >= regla.AportesIPSMinimos ? "VIABLE" : "EVALUANDO");
+
+        if (aportes >= regla.AportesIPSMinimos)
+        {
+            await _repository.GuardarResultadoPreEvaluacion(
+                solicitud.IdSolicitud,
+                "PREEVALUACION_INICIAL_OK",
+                null,
+                "GARANTE_IPS",
+                "PRECALIFICACION_EDAD");
+
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    "CREDITO_PREGUNTA_EDAD",
+                    "Perfecto ✅ El garante cumple la validación inicial por IPS. Ahora seguimos con los datos del titular. ¿Cuál es tu fecha de nacimiento? Enviamela DD/MM/AAAA."),
+                "PRE_EVALUACION",
+                "PRECALIFICACION_EDAD");
+        }
+
+        await _repository.ActualizarPaso(
+            "CREDITO",
+            solicitud.IdSolicitud,
+            "GARANTE_REF_EXISTE");
+
+        return Resultado(
+            solicitud,
+            await ObtenerMensajeFlujo(
+                "CREDITO_PREGUNTA_GARANTE_REFERENCIA",
+                "El garante todavía no alcanza el mínimo de aportes IPS. Podemos evaluarlo por referencia comercial. ¿Tiene alguna referencia comercial verificable donde haya pagado cuotas? Respondeme SI o NO."),
+            "PRE_EVALUACION",
+            "GARANTE_REF_EXISTE");
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarPendienteCreditos(
+        SolicitudMotoProcesoDto solicitud)
+    {
+        return Resultado(
+            solicitud,
+            await ObtenerMensajeFlujo(
+                "CREDITO_PENDIENTE_CREDITOS",
+                "Gracias por los datos 😊. Voy a dejar tu caso para consultar con el equipo de Créditos y te daremos un retorno en la brevedad para confirmar si podemos avanzar."),
+            "PRE_EVALUACION",
+            "PENDIENTE_CREDITOS");
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> PasarAPendienteCreditos(
+        SolicitudMotoProcesoDto solicitud,
+        string motivo)
+    {
+        await _repository.GuardarResultadoPreEvaluacion(
+            solicitud.IdSolicitud,
+            "PENDIENTE_CREDITOS",
+            motivo,
+            solicitud.ViaEvaluacion,
+            "PENDIENTE_CREDITOS");
+
+        return await ProcesarPendienteCreditos(solicitud);
     }
 
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarNombreCompleto(
@@ -1413,43 +2025,12 @@ public class SolicitudMotoService : ISolicitudMotoService
         SolicitudMotoProcesoDto solicitud,
         string? mensajeAnterior = null)
     {
-        var referencias = await _repository.ObtenerReferencias(solicitud.IdSolicitud);
-        var comerciales = referencias.Count(x => EsTipo(x.Tipo, "COMERCIAL"));
-
-        if (comerciales < 1)
-        {
-            await _repository.ActualizarPaso(
-                "CREDITO",
-                solicitud.IdSolicitud,
-                "REF_COMERCIAL_DATOS");
-
-            var prefijo = string.IsNullOrWhiteSpace(mensajeAnterior)
-                ? string.Empty
-                : mensajeAnterior.Trim() + "\n\n";
-
-            return Resultado(
-                solicitud,
-                prefijo +
-                "Ahora, si tenés alguna referencia comercial verificable, indicame el nombre del negocio o casa comercial. Si no tenés ninguna, escribime NO TENGO y continuamos; esto no bloquea tu solicitud.",
-                "DOCUMENTACION",
-                "REF_COMERCIAL_DATOS");
-        }
-
-        await _repository.ActualizarPaso(
-            "CREDITO",
-            solicitud.IdSolicitud,
-            "REF_COMERCIAL_MAS");
-
-        var prefijoExistente = string.IsNullOrWhiteSpace(mensajeAnterior)
-            ? string.Empty
-            : mensajeAnterior.Trim() + "\n\n";
-
-        return Resultado(
+        // La referencia comercial ya se utiliza solamente en la PRECALIFICACION
+        // cuando no alcanza/no existe IPS. No la volvemos a pedir al final porque
+        // eso genera preguntas repetidas y fricción innecesaria.
+        return await PrepararAutorizacion(
             solicitud,
-            prefijoExistente +
-            $"Ya tenemos {comerciales} referencia(s) comercial(es) registrada(s) ✅. Si tenés otra, también la podemos registrar. ¿Querés agregar otra referencia comercial? Respondé SI o NO.",
-            "DOCUMENTACION",
-            "REF_COMERCIAL_MAS");
+            mensajeAnterior);
     }
 
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarReferenciaComercialDatos(
@@ -2255,24 +2836,195 @@ public class SolicitudMotoService : ISolicitudMotoService
             .Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 
     private static bool TryParseEntero(
-      string texto,
-      out int valor)
+        string texto,
+        out int valor)
     {
         valor = 0;
 
-        var match =
-            Regex.Match(
-                texto ?? string.Empty,
-                @"\d+");
+        var match = Regex.Match(
+            texto ?? string.Empty,
+            @"\d+");
 
         if (!match.Success)
-        {
             return false;
+
+        return int.TryParse(match.Value, out valor);
+    }
+
+    private static bool TryParseDuracionMeses(
+        string? texto,
+        out int meses)
+    {
+        meses = 0;
+
+        if (string.IsNullOrWhiteSpace(texto))
+            return false;
+
+        var t = NormalizarTexto(texto);
+        const string numero =
+            @"(?:\d+|UN|UNA|UNO|DOS|TRES|CUATRO|CINCO|SEIS|SIETE|OCHO|NUEVE|DIEZ|ONCE|DOCE)";
+
+        var anos = 0;
+        var mesesAdicionales = 0;
+        var encontroUnidad = false;
+
+        var matchAnos = Regex.Match(
+            t,
+            $@"(?<n>{numero})\s*(ANO|ANOS)",
+            RegexOptions.IgnoreCase);
+
+        if (matchAnos.Success
+            && TryParseNumeroDuracion(matchAnos.Groups["n"].Value, out var nAnos))
+        {
+            anos = nAnos;
+            encontroUnidad = true;
         }
 
-        return int.TryParse(
-            match.Value,
-            out valor);
+        var matchMeses = Regex.Match(
+            t,
+            $@"(?<n>{numero})\s*(MES|MESES)",
+            RegexOptions.IgnoreCase);
+
+        if (matchMeses.Success
+            && TryParseNumeroDuracion(matchMeses.Groups["n"].Value, out var nMeses))
+        {
+            mesesAdicionales = nMeses;
+            encontroUnidad = true;
+        }
+
+        // Expresiones naturales como "un año y medio" o "año y medio".
+        if (Regex.IsMatch(t, @"(ANO|ANOS)\s+Y\s+MEDIO\b", RegexOptions.IgnoreCase))
+        {
+            if (anos == 0)
+                anos = 1;
+
+            mesesAdicionales += 6;
+            encontroUnidad = true;
+        }
+        else if (Regex.IsMatch(t, @"\bMEDIO\s+(ANO|AÑO)\b", RegexOptions.IgnoreCase))
+        {
+            mesesAdicionales += 6;
+            encontroUnidad = true;
+        }
+
+        if (encontroUnidad)
+        {
+            meses = checked(anos * 12 + mesesAdicionales);
+            return meses >= 0;
+        }
+
+        // Compatibilidad: si manda solo "9", en un paso de antigüedad
+        // se interpreta como 9 meses.
+        return TryParseEntero(t, out meses);
+    }
+
+    private static bool TryParseNumeroDuracion(
+        string texto,
+        out int valor)
+    {
+        valor = 0;
+
+        if (int.TryParse(texto, out valor))
+            return true;
+
+        valor = NormalizarTexto(texto) switch
+        {
+            "UN" or "UNA" or "UNO" => 1,
+            "DOS" => 2,
+            "TRES" => 3,
+            "CUATRO" => 4,
+            "CINCO" => 5,
+            "SEIS" => 6,
+            "SIETE" => 7,
+            "OCHO" => 8,
+            "NUEVE" => 9,
+            "DIEZ" => 10,
+            "ONCE" => 11,
+            "DOCE" => 12,
+            _ => -1
+        };
+
+        return valor >= 0;
+    }
+
+    private static bool TryParseMontoGuaranies(
+        string? texto,
+        out decimal monto)
+    {
+        monto = 0m;
+
+        if (string.IsNullOrWhiteSpace(texto))
+            return false;
+
+        var t = NormalizarTexto(texto)
+            .Replace("GS.", string.Empty)
+            .Replace("GS", string.Empty)
+            .Replace("G.", string.Empty)
+            .Trim();
+
+        var esMil = Regex.IsMatch(t, @"MIL\b", RegexOptions.IgnoreCase);
+        var match = Regex.Match(t, @"\d[\d\.\,\s]*");
+        if (!match.Success)
+            return false;
+
+        var digitos = new string(match.Value.Where(char.IsDigit).ToArray());
+        if (!decimal.TryParse(digitos, NumberStyles.None, CultureInfo.InvariantCulture, out monto))
+            return false;
+
+        if (esMil && monto < 10000m)
+            monto *= 1000m;
+
+        return monto > 0;
+    }
+
+    private static bool EsViaGarante(string? via)
+    {
+        var t = NormalizarTexto(via);
+        return t.StartsWith("GARANTE");
+    }
+
+    private static bool EsMensajeEsperaGarante(string? texto)
+    {
+        var t = NormalizarTexto(texto);
+        if (!t.Contains("GARANTE"))
+            return false;
+
+        return t.Contains("HABLAR")
+               || t.Contains("HABLARE")
+               || t.Contains("VOY A HABLAR")
+               || t.Contains("CONSULTAR")
+               || t.Contains("VOY A CONSULTAR")
+               || t.Contains("PREGUNTAR")
+               || t.Contains("LE VOY A PREGUNTAR")
+               || t.Contains("VER SI")
+               || t.Contains("VOY A VER")
+               || t.Contains("VER CON")
+               || t.Contains("CONSULTO Y TE AVISO")
+               || t.Contains("DESPUES TE AVISO")
+               || t.Contains("TE AVISO")
+               || t.Contains("TE CONFIRMO");
+    }
+
+    private async Task<string> ObtenerMensajeFlujo(
+        string codigo,
+        string fallback)
+    {
+        try
+        {
+            var mensaje = await _repository.ObtenerPromptFlujo(codigo);
+            return string.IsNullOrWhiteSpace(mensaje)
+                ? fallback
+                : mensaje.Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "No se pudo obtener mensaje configurable de flujo. Codigo={Codigo}",
+                codigo);
+
+            return fallback;
+        }
     }
 
     private static bool TryParseAutorizacion(
@@ -2558,18 +3310,10 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         if (!autorizacion)
         {
-            // Si el cliente ya indicó que no tiene referencia comercial y el paso
-            // avanzó a AUTORIZACION, NO lo hacemos volver atrás.
-            if (paso == "AUTORIZACION")
-                return "AUTORIZACION";
-
-            // Si todavía estamos en la sección comercial y no hay ninguna guardada,
-            // se la consultamos una sola vez. Puede responder NO TENGO para seguir.
-            if (comerciales < 1)
-                return "REF_COMERCIAL_DATOS";
-
-            // Si ya hay una, puede agregar otra o responder NO para continuar.
-            return "REF_COMERCIAL_MAS";
+            // La referencia comercial ya forma parte de la preevaluación inicial
+            // cuando corresponde. Después de completar las referencias personales
+            // pasamos directamente a la autorización y no preguntamos dos veces.
+            return "AUTORIZACION";
         }
 
         return pasoActual;
@@ -2579,14 +3323,40 @@ public class SolicitudMotoService : ISolicitudMotoService
     {
         return (pasoActual ?? string.Empty).Trim().ToUpperInvariant() switch
         {
-            "PRECALIFICACION_EDAD" =>
-                "necesito tu fecha de nacimiento. Enviamela en formato DD/MM/AAAA.",
-            "PRECALIFICACION_ANTIGUEDAD" =>
-                "necesito saber cuántos meses de antigüedad tenés en tu trabajo actual.",
             "PRECALIFICACION_IPS" =>
                 "necesito confirmar si actualmente aportás a IPS. Respondeme SI o NO.",
             "PRECALIFICACION_APORTES" =>
                 "necesito saber cuántos aportes de IPS tenés actualmente.",
+            "REF_COMERCIAL_PRECALIFICACION" or "REF_COMERCIAL_EXISTE" =>
+                "necesito confirmar si tenés una referencia comercial verificable donde hayas pagado cuotas. Respondeme SI o NO.",
+            "REF_COMERCIAL_NOMBRE" =>
+                "necesito el nombre del negocio o casa comercial de tu referencia.",
+            "REF_COMERCIAL_ANTIGUEDAD" =>
+                "necesito saber durante cuánto tiempo pagaste esa referencia. Podés responder en meses o años.",
+            "REF_COMERCIAL_CUOTA" =>
+                "necesito saber de cuánto era aproximadamente la cuota mensual de esa referencia.",
+            "PRECALIFICACION_GARANTE" =>
+                "necesito saber si contás con una persona que pueda salirte de garante. Si todavía tenés que hablar con alguien, decímelo y esperamos tu retorno.",
+            "ESPERANDO_GARANTE" =>
+                "quedamos esperando tu confirmación del garante. Cuando tengas respuesta, escribime y seguimos desde acá.",
+            "GARANTE_IPS" =>
+                "necesito confirmar si el garante aporta actualmente a IPS.",
+            "GARANTE_APORTES" =>
+                "necesito saber cuántos aportes de IPS tiene actualmente el garante.",
+            "GARANTE_REF_EXISTE" =>
+                "necesito confirmar si el garante tiene una referencia comercial verificable donde haya pagado cuotas.",
+            "GARANTE_REF_NOMBRE" =>
+                "necesito el nombre del negocio o casa comercial de la referencia del garante.",
+            "GARANTE_REF_ANTIGUEDAD" =>
+                "necesito saber durante cuánto tiempo el garante pagó esa referencia. Podés responder en meses o años.",
+            "GARANTE_REF_CUOTA" =>
+                "necesito saber de cuánto era aproximadamente la cuota mensual de la referencia del garante.",
+            "PENDIENTE_CREDITOS" =>
+                "tu caso quedó pendiente de consulta con el equipo de Créditos. Te daremos retorno cuando tengamos una respuesta.",
+            "PRECALIFICACION_EDAD" =>
+                "necesito tu fecha de nacimiento. Enviamela en formato DD/MM/AAAA.",
+            "PRECALIFICACION_ANTIGUEDAD" =>
+                "necesito saber cuánto tiempo de antigüedad tenés en tu trabajo actual. Podés responder en meses o años.",
             "NOMBRE_COMPLETO" =>
                 "necesito tu nombre y apellido.",
             "CORREGIR_NOMBRE_TITULAR" =>
@@ -2879,13 +3649,36 @@ public class SolicitudMotoService : ISolicitudMotoService
     private static bool EsSi(string texto)
     {
         var t = NormalizarTexto(texto);
-        return t == "SI" || t.StartsWith("SI ") || t.Contains("CLARO") || (t.Contains("TENGO") && !t.Contains("NO TENGO"));
+
+        if (string.IsNullOrWhiteSpace(t) || EsNo(t))
+            return false;
+
+        return t == "SI"
+               || t.StartsWith("SI ")
+               || t.Contains("CLARO")
+               || t.Contains("CORRECTO")
+               || t.Contains("ASI ES")
+               || t.Contains("EFECTIVAMENTE")
+               || t.Contains("APORTO")
+               || t.Contains("TENGO IPS")
+               || t.Contains("TENGO SEGURO")
+               || t.Contains("CUENTO CON IPS")
+               || t.Contains("POSEO IPS")
+               || (t.Contains("TENGO") && !t.Contains("NO TENGO"));
     }
 
     private static bool EsNo(string texto)
     {
         var t = NormalizarTexto(texto);
-        return t == "NO" || t.StartsWith("NO ") || t.Contains("NO TENGO");
+
+        return t == "NO"
+               || t.StartsWith("NO ")
+               || t.Contains("NO TENGO")
+               || t.Contains("NO APORTO")
+               || t.Contains("NO CUENTO")
+               || t.Contains("NO POSEO")
+               || t.Contains("SIN IPS")
+               || t.Contains("NO DISPONGO");
     }
 
     private static string SoloDigitos(string texto)

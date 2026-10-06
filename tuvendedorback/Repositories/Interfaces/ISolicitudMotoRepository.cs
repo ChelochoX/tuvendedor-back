@@ -116,6 +116,27 @@ public interface ISolicitudMotoRepository
         int idSolicitud,
         string tipoDocumento);
 
+
+    Task<string?> ObtenerPromptFlujo(
+        string codigo);
+
+    Task<decimal?> ObtenerCuotaReferenciaModelo(
+        int idModeloProducto);
+
+    Task GuardarReferenciaComercialPrecalificacion(
+        int idSolicitudCredito,
+        bool esGarante,
+        string? nombre = null,
+        int? antiguedadMeses = null,
+        decimal? montoCuota = null);
+
+    Task GuardarDatosGarantePrecalificacion(
+        int idSolicitudCredito,
+        bool? requiereGarante = null,
+        bool? aportaIps = null,
+        int? cantidadAportesIps = null,
+        string? estado = null);
+
     Task<string?> ObtenerTextoAutorizacion();
 
     Task GuardarAutorizacion(

@@ -32,6 +32,19 @@ public class SolicitudMotoProcesoDto
     public string? TelefonoEmpresa { get; set; }
     public bool? TelefonoEmpresaEsMovil { get; set; }
     public string? NombreJefeEncargado { get; set; }
+
+    // Preevaluación alternativa cuando no alcanza/no existe IPS.
+    public string? RefComercialNombre { get; set; }
+    public int? RefComercialAntiguedadMeses { get; set; }
+    public decimal? RefComercialMontoCuota { get; set; }
+
+    public bool? RequiereGarante { get; set; }
+    public bool? GaranteAportaIPS { get; set; }
+    public int? GaranteCantidadAportesIPS { get; set; }
+    public string? GaranteRefComercialNombre { get; set; }
+    public int? GaranteRefComercialAntiguedadMeses { get; set; }
+    public decimal? GaranteRefComercialMontoCuota { get; set; }
+    public string? EstadoGarante { get; set; }
 }
 
 public class ReglaCreditoMotoDto
@@ -43,6 +56,8 @@ public class ReglaCreditoMotoDto
     public int ReferenciasFamiliaresMinimas { get; set; }
     public int ReferenciasAmigosMinimas { get; set; }
     public int ReferenciasComercialesMinimasSinIps { get; set; }
+    public int ReferenciaComercialMinMeses { get; set; } = 12;
+    public decimal ReferenciaComercialCuotaMinPorcentaje { get; set; } = 80m;
 }
 
 public class SolicitudMotoReferenciaDto
