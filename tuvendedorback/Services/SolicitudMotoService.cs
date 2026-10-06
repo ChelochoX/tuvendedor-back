@@ -191,7 +191,9 @@ public class SolicitudMotoService : ISolicitudMotoService
             pasoActual.StartsWith("REF_COMERCIAL_")
             || pasoActual.StartsWith("GARANTE_")
             || pasoActual == "PRECALIFICACION_GARANTE"
+            || pasoActual == "PENDIENTE_GARANTE_NOMBRE"
             || pasoActual == "ESPERANDO_GARANTE"
+            || pasoActual == "PENDIENTE_CREDITOS_NOMBRE"
             || pasoActual == "PENDIENTE_CREDITOS";
 
         if (referenciaPendiente && !yaEstaEnFlujoReferenciaOGarante)
@@ -222,6 +224,7 @@ public class SolicitudMotoService : ISolicitudMotoService
             "REF_COMERCIAL_ANTIGUEDAD" => await ProcesarReferenciaComercialAntiguedad(solicitud, request, false),
             "REF_COMERCIAL_CUOTA" => await ProcesarReferenciaComercialCuota(solicitud, request, false),
             "PRECALIFICACION_GARANTE" => await ProcesarGarante(solicitud, request),
+            "PENDIENTE_GARANTE_NOMBRE" => await ProcesarNombrePendienteGarante(solicitud, request),
             "ESPERANDO_GARANTE" => await ProcesarEsperaGarante(solicitud, request),
             "GARANTE_IPS" => await ProcesarGaranteIps(solicitud, request),
             "GARANTE_APORTES" => await ProcesarGaranteAportes(solicitud, request),
@@ -229,6 +232,7 @@ public class SolicitudMotoService : ISolicitudMotoService
             "GARANTE_REF_NOMBRE" => await ProcesarReferenciaComercialNombre(solicitud, request, true),
             "GARANTE_REF_ANTIGUEDAD" => await ProcesarReferenciaComercialAntiguedad(solicitud, request, true),
             "GARANTE_REF_CUOTA" => await ProcesarReferenciaComercialCuota(solicitud, request, true),
+            "PENDIENTE_CREDITOS_NOMBRE" => await ProcesarNombrePendienteCreditos(solicitud, request),
             "PENDIENTE_CREDITOS" => await ProcesarPendienteCreditos(solicitud),
             "PRECALIFICACION_EDAD" => await ProcesarEdad(solicitud, request),
             "PRECALIFICACION_ANTIGUEDAD" => await ProcesarAntiguedadLaboral(solicitud, request),
@@ -388,22 +392,9 @@ public class SolicitudMotoService : ISolicitudMotoService
 
             if (EsViaGarante(solicitud.ViaEvaluacion))
             {
-                await _repository.GuardarResultadoPreEvaluacion(
-                    solicitud.IdSolicitud,
-                    "PENDIENTE_CREDITOS",
-                    motivo,
-                    solicitud.ViaEvaluacion,
-                    "PENDIENTE_CREDITOS");
-
-                var pendiente = await ObtenerMensajeFlujo(
-                    "CREDITO_PENDIENTE_CREDITOS",
-                    "Gracias por los datos 😊. Voy a dejar tu caso para consultar con el equipo de Créditos y te daremos un retorno en la brevedad para confirmar si podemos avanzar.");
-
-                return Resultado(
+                return await PasarAPendienteCreditos(
                     solicitud,
-                    pendiente,
-                    "PRE_EVALUACION",
-                    "PENDIENTE_CREDITOS");
+                    motivo);
             }
 
             await _repository.GuardarResultadoPreEvaluacion(
@@ -609,9 +600,10 @@ public class SolicitudMotoService : ISolicitudMotoService
         {
             if (esGarante)
             {
-                return await PasarAPendienteCreditos(
+                return await PrepararPendienteGarante(
                     solicitud,
-                    "El garante no tiene IPS suficiente ni referencia comercial verificable.");
+                    "El garante evaluado no tiene IPS suficiente ni referencia comercial verificable.",
+                    garanteEvaluadoNoViable: true);
             }
 
             await _repository.GuardarDatosGarantePrecalificacion(
@@ -872,7 +864,10 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         if (esGarante)
         {
-            return await PasarAPendienteCreditos(solicitud, motivo);
+            return await PrepararPendienteGarante(
+                solicitud,
+                motivo,
+                garanteEvaluadoNoViable: true);
         }
 
         await _repository.GuardarResultadoPreEvaluacion(
@@ -904,34 +899,21 @@ public class SolicitudMotoService : ISolicitudMotoService
     {
         var texto = NormalizarTexto(request.Mensaje);
 
+        // Si todavía tiene que hablar con alguien o directamente hoy no cuenta
+        // con garante, NO cancelamos la oportunidad. Guardamos el caso y,
+        // si todavía no conocemos al titular, pedimos solamente nombre y apellido.
         if (EsMensajeEsperaGarante(texto))
         {
-            await _repository.GuardarDatosGarantePrecalificacion(
-                solicitud.IdSolicitud,
-                requiereGarante: true,
-                estado: "ESPERANDO_CLIENTE");
-
-            await _repository.ActualizarPaso(
-                "CREDITO",
-                solicitud.IdSolicitud,
-                "ESPERANDO_GARANTE");
-
-            var espera = await ObtenerMensajeFlujo(
-                "CREDITO_ESPERANDO_GARANTE",
-                "Perfecto 😊 Hablá tranquilo con tu posible garante. Quedamos pendientes de tu retorno y cuando me confirmes seguimos desde acá, sin empezar de nuevo.");
-
-            return Resultado(
+            return await PrepararPendienteGarante(
                 solicitud,
-                espera,
-                "PRE_EVALUACION",
-                "ESPERANDO_GARANTE");
+                "El titular necesita consultar con un posible garante antes de continuar.");
         }
 
         if (EsNo(texto))
         {
-            return await PasarAPendienteCreditos(
+            return await PrepararPendienteGarante(
                 solicitud,
-                "El titular no califica a sola firma y no cuenta con garante por ahora.");
+                "El titular no cuenta con garante por ahora.");
         }
 
         if (!EsSi(texto))
@@ -948,14 +930,16 @@ public class SolicitudMotoService : ISolicitudMotoService
             requiereGarante: true,
             estado: "EVALUANDO");
 
-        await _repository.ActualizarPaso(
-            "CREDITO",
+        await _repository.GuardarResultadoPreEvaluacion(
             solicitud.IdSolicitud,
+            "EVALUANDO_GARANTE",
+            solicitud.MotivoPreEvaluacion,
+            "GARANTE",
             "GARANTE_IPS");
 
         var preguntaIps = await ObtenerMensajeFlujo(
             "CREDITO_PREGUNTA_GARANTE_IPS",
-            "Perfecto 😊 Hagamos una evaluación rápida del garante. ¿El garante aporta actualmente a IPS? Respondeme SI o NO.");
+            "Perfecto 😊 ¿El garante aporta actualmente a IPS?");
 
         return Resultado(
             solicitud,
@@ -964,62 +948,56 @@ public class SolicitudMotoService : ISolicitudMotoService
             "GARANTE_IPS");
     }
 
+
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarEsperaGarante(
         SolicitudMotoProcesoDto solicitud,
         MotoConversacionRequest request)
     {
         var texto = NormalizarTexto(request.Mensaje);
 
-        if (EsMensajeEsperaGarante(texto))
+        // El cliente todavía no consiguió garante: conservamos la solicitud
+        // exactamente en este punto. No lo mandamos a CANCELADA ni a NO_VIABLE.
+        if (EsGaranteAunNoDisponible(texto) || EsMensajeEsperaGarante(texto))
         {
             return Resultado(
                 solicitud,
                 await ObtenerMensajeFlujo(
                     "CREDITO_ESPERANDO_GARANTE",
-                    "Perfecto 😊 Quedamos pendientes de tu retorno. Cuando tengas la confirmación del garante, escribime y seguimos desde acá."));
+                    "Está bien 😊 Tu solicitud queda pendiente. Cuando consigas un garante escribime por acá y seguimos desde este mismo punto."));
         }
 
-        if (texto.Contains("YA TENGO")
-            || texto.Contains("CONSEGUI")
-            || texto.Contains("YA CONSEGUI")
-            || texto.Contains("ME SALE")
-            || texto.Contains("YA HABLE")
-            || texto.Contains("ME CONFIRMO")
-            || texto.Contains("ACEPTO")
-            || EsSi(texto))
+        // Volvió después de horas o días y ya consiguió garante.
+        // Retomamos la MISMA solicitud; no le preguntamos nuevamente todo.
+        if (EsGaranteConfirmado(texto))
         {
             await _repository.GuardarDatosGarantePrecalificacion(
                 solicitud.IdSolicitud,
                 requiereGarante: true,
                 estado: "EVALUANDO");
 
-            await _repository.ActualizarPaso(
-                "CREDITO",
+            await _repository.GuardarResultadoPreEvaluacion(
                 solicitud.IdSolicitud,
+                "EVALUANDO_GARANTE",
+                solicitud.MotivoPreEvaluacion,
+                "GARANTE",
                 "GARANTE_IPS");
 
             return Resultado(
                 solicitud,
                 await ObtenerMensajeFlujo(
                     "CREDITO_PREGUNTA_GARANTE_IPS",
-                    "Buenísimo 😊 ¿El garante aporta actualmente a IPS? Respondeme SI o NO."),
+                    "Buenísimo 😊 ¿El garante aporta actualmente a IPS?"),
                 "PRE_EVALUACION",
                 "GARANTE_IPS");
-        }
-
-        if (EsNo(texto))
-        {
-            return await PasarAPendienteCreditos(
-                solicitud,
-                "El cliente volvió sin un garante disponible.");
         }
 
         return Resultado(
             solicitud,
             await ObtenerMensajeFlujo(
                 "CREDITO_ESPERANDO_GARANTE",
-                "Seguimos pendientes del garante 😊. Cuando tengas su confirmación, avisame y retomamos desde acá."));
+                "Tu solicitud sigue pendiente 😊 Cuando consigas un garante escribime y retomamos desde acá."));
     }
+
 
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarGaranteIps(
         SolicitudMotoProcesoDto solicitud,
@@ -1128,6 +1106,110 @@ public class SolicitudMotoService : ISolicitudMotoService
             "GARANTE_REF_EXISTE");
     }
 
+    private async Task<SolicitudMotoProcesoResultadoDto> PrepararPendienteGarante(
+        SolicitudMotoProcesoDto solicitud,
+        string motivo,
+        bool garanteEvaluadoNoViable = false)
+    {
+        await _repository.GuardarDatosGarantePrecalificacion(
+            solicitud.IdSolicitud,
+            requiereGarante: true,
+            estado: "ESPERANDO_CLIENTE");
+
+        var tieneNombre =
+            !string.IsNullOrWhiteSpace(solicitud.Nombre)
+            && !string.IsNullOrWhiteSpace(solicitud.Apellido);
+
+        var siguientePaso =
+            tieneNombre
+                ? "ESPERANDO_GARANTE"
+                : "PENDIENTE_GARANTE_NOMBRE";
+
+        await _repository.GuardarResultadoPreEvaluacion(
+            solicitud.IdSolicitud,
+            "PENDIENTE_GARANTE",
+            motivo,
+            "GARANTE",
+            siguientePaso);
+
+        if (!tieneNombre)
+        {
+            var codigo =
+                garanteEvaluadoNoViable
+                    ? "CREDITO_GARANTE_NO_CALIFICA_PEDIR_NOMBRE"
+                    : "CREDITO_PENDIENTE_GARANTE_PEDIR_NOMBRE";
+
+            var fallback =
+                garanteEvaluadoNoViable
+                    ? "Con los datos de este garante todavía no podemos avanzar. ¿Me decís tu nombre y apellido? Así dejo registrada tu solicitud por si conseguís otro garante."
+                    : "Por ahora necesitaríamos un garante para poder avanzar 😊 ¿Me decís tu nombre y apellido? Así dejo registrada tu solicitud y seguimos cuando consigas uno.";
+
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(codigo, fallback),
+                "PRE_EVALUACION",
+                "PENDIENTE_GARANTE_NOMBRE");
+        }
+
+        var codigoEspera =
+            garanteEvaluadoNoViable
+                ? "CREDITO_GARANTE_NO_CALIFICA_ESPERA"
+                : "CREDITO_ESPERANDO_GARANTE";
+
+        var fallbackEspera =
+            garanteEvaluadoNoViable
+                ? "Con este garante todavía no alcanzamos la condición para avanzar. Tu solicitud queda registrada 😊 Si conseguís otro garante, escribime por acá y seguimos desde este mismo punto."
+                : "Tu solicitud queda registrada 😊 Si conseguís un garante, escribime por acá y seguimos desde este mismo punto.";
+
+        return Resultado(
+            solicitud,
+            await ObtenerMensajeFlujo(codigoEspera, fallbackEspera),
+            "PRE_EVALUACION",
+            "ESPERANDO_GARANTE");
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarNombrePendienteGarante(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request)
+    {
+        var nombre = (request.Mensaje ?? string.Empty).Trim();
+
+        if (!EsNombrePersonaValido(nombre))
+        {
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    "CREDITO_PENDIENTE_GARANTE_NOMBRE_INVALIDO",
+                    "Necesito solamente tu nombre y apellido completo 😊 Ejemplo: Juan Pérez."),
+                "PRE_EVALUACION",
+                "PENDIENTE_GARANTE_NOMBRE");
+        }
+
+        await _repository.GuardarDatosContactoParciales(
+            solicitud.IdContacto,
+            nombreCompleto: nombre);
+
+        await _repository.GuardarDatosGarantePrecalificacion(
+            solicitud.IdSolicitud,
+            requiereGarante: true,
+            estado: "ESPERANDO_CLIENTE");
+
+        await _repository.GuardarResultadoPreEvaluacion(
+            solicitud.IdSolicitud,
+            "PENDIENTE_GARANTE",
+            solicitud.MotivoPreEvaluacion,
+            "GARANTE",
+            "ESPERANDO_GARANTE");
+
+        return Resultado(
+            solicitud,
+            await ObtenerMensajeFlujo(
+                "CREDITO_PENDIENTE_GARANTE_REGISTRADO",
+                "Gracias 😊 Dejo tu solicitud registrada y pendiente. Si conseguís un garante, escribime por acá y seguimos desde este mismo punto."),
+            "PRE_EVALUACION",
+            "ESPERANDO_GARANTE");
+    }
+
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarPendienteCreditos(
         SolicitudMotoProcesoDto solicitud)
     {
@@ -1135,7 +1217,7 @@ public class SolicitudMotoService : ISolicitudMotoService
             solicitud,
             await ObtenerMensajeFlujo(
                 "CREDITO_PENDIENTE_CREDITOS",
-                "Gracias por los datos 😊. Voy a dejar tu caso para consultar con el equipo de Créditos y te daremos un retorno en la brevedad para confirmar si podemos avanzar."),
+                "Gracias por los datos 😊 Tu caso queda registrado para revisión con el equipo de Créditos. Cuando tengamos una definición podremos continuar desde acá."),
             "PRE_EVALUACION",
             "PENDIENTE_CREDITOS");
     }
@@ -1144,15 +1226,67 @@ public class SolicitudMotoService : ISolicitudMotoService
         SolicitudMotoProcesoDto solicitud,
         string motivo)
     {
+        var tieneNombre =
+            !string.IsNullOrWhiteSpace(solicitud.Nombre)
+            && !string.IsNullOrWhiteSpace(solicitud.Apellido);
+
+        var siguientePaso =
+            tieneNombre
+                ? "PENDIENTE_CREDITOS"
+                : "PENDIENTE_CREDITOS_NOMBRE";
+
         await _repository.GuardarResultadoPreEvaluacion(
             solicitud.IdSolicitud,
             "PENDIENTE_CREDITOS",
             motivo,
             solicitud.ViaEvaluacion,
+            siguientePaso);
+
+        if (!tieneNombre)
+        {
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    "CREDITO_PENDIENTE_CREDITOS_PEDIR_NOMBRE",
+                    "Antes de dejar tu caso pendiente de revisión, ¿me decís tu nombre y apellido? 😊"),
+                "PRE_EVALUACION",
+                "PENDIENTE_CREDITOS_NOMBRE");
+        }
+
+        return await ProcesarPendienteCreditos(solicitud);
+    }
+
+    private async Task<SolicitudMotoProcesoResultadoDto> ProcesarNombrePendienteCreditos(
+        SolicitudMotoProcesoDto solicitud,
+        MotoConversacionRequest request)
+    {
+        var nombre = (request.Mensaje ?? string.Empty).Trim();
+
+        if (!EsNombrePersonaValido(nombre))
+        {
+            return Resultado(
+                solicitud,
+                await ObtenerMensajeFlujo(
+                    "CREDITO_PENDIENTE_CREDITOS_NOMBRE_INVALIDO",
+                    "Necesito solamente tu nombre y apellido completo 😊 Ejemplo: Juan Pérez."),
+                "PRE_EVALUACION",
+                "PENDIENTE_CREDITOS_NOMBRE");
+        }
+
+        await _repository.GuardarDatosContactoParciales(
+            solicitud.IdContacto,
+            nombreCompleto: nombre);
+
+        await _repository.GuardarResultadoPreEvaluacion(
+            solicitud.IdSolicitud,
+            "PENDIENTE_CREDITOS",
+            solicitud.MotivoPreEvaluacion,
+            solicitud.ViaEvaluacion,
             "PENDIENTE_CREDITOS");
 
         return await ProcesarPendienteCreditos(solicitud);
     }
+
 
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarNombreCompleto(
         SolicitudMotoProcesoDto solicitud,
@@ -2948,6 +3082,38 @@ public class SolicitudMotoService : ISolicitudMotoService
         return t.StartsWith("GARANTE");
     }
 
+    private static bool EsGaranteAunNoDisponible(string? texto)
+    {
+        var t = NormalizarTexto(texto);
+
+        return t.Contains("TODAVIA NO")
+               || t.Contains("AUN NO")
+               || t.Contains("NO CONSEGUI")
+               || t.Contains("NO HE CONSEGUIDO")
+               || t.Contains("NO TENGO GARANTE")
+               || t.Contains("NO ENCONTRE")
+               || t.Contains("SIGO BUSCANDO");
+    }
+
+    private static bool EsGaranteConfirmado(string? texto)
+    {
+        var t = NormalizarTexto(texto);
+
+        if (EsGaranteAunNoDisponible(t))
+            return false;
+
+        return t == "SI"
+               || t.StartsWith("SI ")
+               || t.Contains("YA TENGO GARANTE")
+               || t.Contains("CONSEGUI GARANTE")
+               || t.Contains("YA CONSEGUI GARANTE")
+               || t.Contains("ME SALE DE GARANTE")
+               || t.Contains("YA HABLE")
+               || t.Contains("ME CONFIRMO")
+               || t.Contains("ACEPTO SER GARANTE")
+               || (t.Contains("GARANTE") && t.Contains("ACEPTO"));
+    }
+
     private static bool EsMensajeEsperaGarante(string? texto)
     {
         var t = NormalizarTexto(texto);
@@ -3302,8 +3468,10 @@ public class SolicitudMotoService : ISolicitudMotoService
                 "necesito saber de cuánto era aproximadamente la cuota mensual de esa referencia.",
             "PRECALIFICACION_GARANTE" =>
                 "necesito saber si contás con una persona que pueda salirte de garante. Si todavía tenés que hablar con alguien, decímelo y esperamos tu retorno.",
+            "PENDIENTE_GARANTE_NOMBRE" =>
+                "quiero dejar tu solicitud registrada antes de quedar pendientes del garante. Necesito solamente tu nombre y apellido.",
             "ESPERANDO_GARANTE" =>
-                "quedamos esperando tu confirmación del garante. Cuando tengas respuesta, escribime y seguimos desde acá.",
+                "tu solicitud está registrada y pendiente de garante. Cuando consigas uno, escribime y seguimos desde acá.",
             "GARANTE_IPS" =>
                 "necesito confirmar si el garante aporta actualmente a IPS.",
             "GARANTE_APORTES" =>
@@ -3316,8 +3484,10 @@ public class SolicitudMotoService : ISolicitudMotoService
                 "necesito saber durante cuánto tiempo el garante pagó esa referencia. Podés responder en meses o años.",
             "GARANTE_REF_CUOTA" =>
                 "necesito saber de cuánto era aproximadamente la cuota mensual de la referencia del garante.",
+            "PENDIENTE_CREDITOS_NOMBRE" =>
+                "quiero dejar tu caso registrado para revisión. Necesito solamente tu nombre y apellido.",
             "PENDIENTE_CREDITOS" =>
-                "tu caso quedó pendiente de consulta con el equipo de Créditos. Te daremos retorno cuando tengamos una respuesta.",
+                "tu caso quedó registrado y pendiente de revisión con el equipo de Créditos.",
             "PRECALIFICACION_EDAD" =>
                 "necesito tu fecha de nacimiento. Enviamela en formato DD/MM/AAAA.",
             "PRECALIFICACION_ANTIGUEDAD" =>

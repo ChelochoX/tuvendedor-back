@@ -338,7 +338,36 @@ public class MotoConversacionService
                             : true
                 );
 
-            if (cambiaProductoDeSolicitudActiva)
+            var tipoOperacionPublicacion =
+                DetectarInicioOperacion(
+                    request.Mensaje);
+
+            /*
+             * Si la solicitud está esperando garante/seguimiento y el cliente
+             * solamente abrió otra publicación para consultar precio/opciones,
+             * NO cancelamos la oportunidad pendiente.
+             *
+             * Si explícitamente inicia una NUEVA compra/crédito sobre otro
+             * producto, ahí sí conservamos el comportamiento anterior:
+             * cancelamos la solicitud previa y arrancamos la nueva.
+             */
+            var solicitudEnEsperaSeguimiento =
+                EsSolicitudEnEsperaSeguimiento(
+                    solicitudActiva);
+
+            var iniciaNuevaOperacionExplicita =
+                !string.IsNullOrWhiteSpace(
+                    tipoOperacionPublicacion);
+
+            if (
+                cambiaProductoDeSolicitudActiva
+                &&
+                (
+                    !solicitudEnEsperaSeguimiento
+                    ||
+                    iniciaNuevaOperacionExplicita
+                )
+            )
             {
                 await _solicitudMotoService
                     .CancelarActivaPorCambioDeProducto(
@@ -348,10 +377,6 @@ public class MotoConversacionService
                 solicitudActiva =
                     null;
             }
-
-            var tipoOperacionPublicacion =
-                DetectarInicioOperacion(
-                    request.Mensaje);
 
             if (
                 !string.IsNullOrWhiteSpace(
@@ -409,28 +434,74 @@ public class MotoConversacionService
 
         if (solicitudActiva is not null)
         {
-            var proceso =
-                await _solicitudMotoService
-                    .ProcesarActiva(
-                        solicitudActiva,
-                        request,
-                        cancellationToken);
+            var dejarPasarConsultaComercial =
+                false;
 
-            await _repository
-                .RegistrarMensaje(
-                    idConversacion,
-                    "IA",
-                    proceso.Respuesta);
-
-            return new MotoConversacionResponseDto
+            if (
+                EsSolicitudEnEsperaSeguimiento(
+                    solicitudActiva)
+                &&
+                !EsMensajeSobreSeguimientoPendiente(
+                    request.Mensaje)
+            )
             {
-                IdConversacion = idConversacion,
-                IdPublicacion = solicitudActiva.IdPublicacion,
-                Marca = null,
-                Modelo = null,
-                Respuesta = proceso.Respuesta,
-                RequierePublicacion = false
-            };
+                /*
+                 * Mientras el crédito está esperando garante/revisión, el
+                 * cliente puede seguir preguntando por motos sin perder la
+                 * oportunidad guardada.
+                 *
+                 * Ejemplos:
+                 * - "precio hunter 230"
+                 * - "qué modelos tenés"
+                 * - "qué motos están en promo"
+                 */
+                var modelosMientrasEspera =
+                    await _repository
+                        .ObtenerModelosMotoActivos();
+
+                var coincidenciasMientrasEspera =
+                    ResolverModelosDesdeTexto(
+                        request.Mensaje,
+                        modelosMientrasEspera);
+
+                dejarPasarConsultaComercial =
+                    coincidenciasMientrasEspera.Count > 0
+                    ||
+                    EsConsultaOtrosModelos(
+                        request.Mensaje)
+                    ||
+                    EsConsultaPromociones(
+                        request.Mensaje)
+                    ||
+                    PareceCambioDeModelo(
+                        request.Mensaje);
+            }
+
+            if (!dejarPasarConsultaComercial)
+            {
+                var proceso =
+                    await _solicitudMotoService
+                        .ProcesarActiva(
+                            solicitudActiva,
+                            request,
+                            cancellationToken);
+
+                await _repository
+                    .RegistrarMensaje(
+                        idConversacion,
+                        "IA",
+                        proceso.Respuesta);
+
+                return new MotoConversacionResponseDto
+                {
+                    IdConversacion = idConversacion,
+                    IdPublicacion = solicitudActiva.IdPublicacion,
+                    Marca = null,
+                    Modelo = null,
+                    Respuesta = proceso.Respuesta,
+                    RequierePublicacion = false
+                };
+            }
         }
 
         // =====================================================
@@ -853,53 +924,6 @@ public class MotoConversacionService
                 Marca = modeloSolicitud.Marca,
                 Modelo = $"{modeloSolicitud.Marca} {modeloSolicitud.Modelo}",
                 Respuesta = proceso.Respuesta,
-                RequierePublicacion = false
-            };
-        }
-
-        // =====================================================
-        // 7C. CONSULTA DE CATALOGO / FAMILIA DE MODELOS
-        //
-        // IMPORTANTE:
-        // Una pregunta como "¿cuáles son los modelos de GTR?" NO es
-        // una consulta sobre la última moto del contexto. Primero
-        // resolvemos el catálogo/familia directamente desde BBDD.
-        // Así GTR, SHARK, BLITZ, etc. nunca quedan pegados al modelo
-        // anterior de la conversación.
-        // =====================================================
-
-        if (
-            EsConsultaOtrosModelos(
-                request.Mensaje)
-        )
-        {
-            await _repository
-                .LimpiarProductoContexto(
-                    idConversacion);
-
-            var modelosCatalogo =
-                ResolverModelosCatalogoDesdeTexto(
-                    request.Mensaje,
-                    modelos);
-
-            var respuestaCatalogo =
-                ConstruirRespuestaOtrosModelos(
-                    modelosCatalogo,
-                    null);
-
-            await _repository
-                .RegistrarMensaje(
-                    idConversacion,
-                    "IA",
-                    respuestaCatalogo);
-
-            return new MotoConversacionResponseDto
-            {
-                IdConversacion = idConversacion,
-                IdPublicacion = null,
-                Marca = null,
-                Modelo = null,
-                Respuesta = respuestaCatalogo,
                 RequierePublicacion = false
             };
         }
@@ -2067,27 +2091,6 @@ public class MotoConversacionService
                     texto,
                     nombreModelo);
 
-            /*
-             * También aceptamos la forma compacta:
-             * "GTR200" == "GTR 200".
-             */
-            var textoCompacto =
-                texto.Replace(
-                    " ",
-                    string.Empty);
-
-            var modeloCompacto =
-                nombreModelo.Replace(
-                    " ",
-                    string.Empty);
-
-            var modeloCompactoCoincide =
-                modeloCompacto.Length >= 4
-                &&
-                textoCompacto.Contains(
-                    modeloCompacto,
-                    StringComparison.OrdinalIgnoreCase);
-
 
             var codigoCoincide =
                 !string.IsNullOrWhiteSpace(
@@ -2105,26 +2108,13 @@ public class MotoConversacionService
                     modelo.Cilindrada.Value.ToString());
 
 
-            /*
-             * Los números forman parte REAL del nombre comercial del modelo.
-             * Ej.: GTR 150, GTR 200, DKR 200. Antes los excluíamos y eso
-             * podía dejar empatados modelos distintos de una misma familia.
-             *
-             * También conservamos variantes cortas como SE/V1/V5 porque
-             * ayudan a distinguir versiones. Lo único que excluimos del
-             * nombre del modelo son los tokens que pertenecen a la MARCA.
-             */
-            var tokensMarca =
-                ObtenerTokens(
-                    marca);
-
             var tokensDistintivosModelo =
                 tokensModelo
                     .Where(
                         token =>
-                            token.Length >= 2
+                            token.Length >= 3
                             &&
-                            !tokensMarca.Contains(
+                            !EsTokenSoloNumerico(
                                 token))
                     .ToList();
 
@@ -2148,9 +2138,6 @@ public class MotoConversacionService
                     .Where(
                         token =>
                             token.Length >= 4
-                            &&
-                            !EsTokenSoloNumerico(
-                                token)
                             &&
                             !tokensTexto.Contains(
                                 token))
@@ -2179,10 +2166,6 @@ public class MotoConversacionService
              */
             var esCandidato =
                 modeloCompletoCoincide
-
-                ||
-
-                modeloCompactoCoincide
 
                 ||
 
@@ -2224,15 +2207,6 @@ public class MotoConversacionService
             if (modeloCompletoCoincide)
             {
                 puntaje += 120;
-            }
-
-            if (
-                modeloCompactoCoincide
-                &&
-                !modeloCompletoCoincide
-            )
-            {
-                puntaje += 110;
             }
 
 
@@ -3534,36 +3508,40 @@ public class MotoConversacionService
             return false;
         }
 
-        /*
-         * Catálogo/familia se reconoce por intención PLURAL o de opciones.
-         * No usamos la palabra singular "MODELO" por sí sola porque una
-         * frase como "precio del modelo Viva 110" es una consulta de un
-         * producto concreto, no del catálogo.
-         */
         var hablaDeCatalogo =
+            texto.Contains("MODELO")
+            ||
             texto.Contains("MODELOS")
+            ||
+            texto.Contains("MOTO")
             ||
             texto.Contains("MOTOS")
             ||
             texto.Contains("CATALOGO")
             ||
-            texto.Contains("OPCIONES")
-            ||
-            texto.Contains("OTRO MODELO")
-            ||
-            texto.Contains("OTRA MOTO")
-            ||
-            texto.Contains("OTROS MODELOS")
-            ||
-            texto.Contains("OTRAS MOTOS");
+            texto.Contains("OPCIONES");
 
         if (!hablaDeCatalogo)
         {
             return false;
         }
 
+        /*
+         * Frases naturales:
+         *
+         * "que modelos tenes"
+         * "me pasas los modelos"
+         * "que motos hay"
+         * "mostrame las opciones"
+         * "que otras motos tenes"
+         *
+         * Los nombres reales de los modelos NO estan aca.
+         * Siempre salen de la BBDD.
+         */
         return
-            texto.Contains("QUE")
+            texto.Contains("QUE ")
+            ||
+            texto.StartsWith("QUE")
             ||
             texto.Contains("CUALES")
             ||
@@ -3592,164 +3570,6 @@ public class MotoConversacionService
             texto.Contains("CATALOGO")
             ||
             texto.Contains("OPCIONES");
-    }
-
-
-    // =========================================================
-    // FILTRAR CATALOGO POR MARCA / FAMILIA MENCIONADA
-    // =========================================================
-
-    private static IReadOnlyList<MotoModeloCandidatoDto>
-        ResolverModelosCatalogoDesdeTexto(
-            string mensaje,
-            IReadOnlyList<MotoModeloCandidatoDto> modelos)
-    {
-        if (modelos.Count == 0)
-        {
-            return modelos;
-        }
-
-        var texto =
-            NormalizarTexto(
-                mensaje);
-
-        var tokensTexto =
-            ObtenerTokens(
-                texto);
-
-        var marca =
-            ResolverMarcaDesdeTexto(
-                mensaje,
-                modelos);
-
-        IEnumerable<MotoModeloCandidatoDto> baseModelos =
-            modelos;
-
-        if (
-            !string.IsNullOrWhiteSpace(
-                marca)
-        )
-        {
-            baseModelos =
-                baseModelos.Where(
-                    x =>
-                        string.Equals(
-                            x.Marca,
-                            marca,
-                            StringComparison.OrdinalIgnoreCase));
-        }
-
-        var palabrasGenericas =
-            new HashSet<string>(
-                new[]
-                {
-                    "QUE", "CUAL", "CUALES", "SON", "TIENE", "TIENEN",
-                    "TENES", "TIENES", "HAY", "DE", "DEL", "LA", "LAS",
-                    "EL", "LOS", "UN", "UNA", "MODELO", "MODELOS",
-                    "MOTO", "MOTOS", "CATALOGO", "OPCION", "OPCIONES",
-                    "MOSTRAME", "MOSTRAR", "PASAME", "PASAS", "OTRO",
-                    "OTRA", "OTROS", "OTRAS", "DISPONIBLE", "DISPONIBLES"
-                },
-                StringComparer.OrdinalIgnoreCase);
-
-        if (
-            !string.IsNullOrWhiteSpace(
-                marca)
-        )
-        {
-            foreach (
-                var tokenMarca
-                in ObtenerTokens(
-                    NormalizarTexto(
-                        marca))
-            )
-            {
-                palabrasGenericas.Add(
-                    tokenMarca);
-            }
-        }
-
-        var tokensFiltro =
-            tokensTexto
-                .Where(
-                    token =>
-                        token.Length >= 2
-                        &&
-                        !palabrasGenericas.Contains(
-                            token))
-                .ToHashSet(
-                    StringComparer.OrdinalIgnoreCase);
-
-        var listaBase =
-            baseModelos
-                .ToList();
-
-        if (tokensFiltro.Count == 0)
-        {
-            return listaBase;
-        }
-
-        var puntuados =
-            listaBase
-                .Select(
-                    modelo =>
-                    {
-                        var tokensMarcaModelo =
-                            ObtenerTokens(
-                                NormalizarTexto(
-                                    modelo.Marca));
-
-                        var tokensModelo =
-                            ObtenerTokens(
-                                NormalizarTexto(
-                                    modelo.Modelo))
-                                .Where(
-                                    token =>
-                                        token.Length >= 2
-                                        &&
-                                        !tokensMarcaModelo.Contains(
-                                            token))
-                                .ToHashSet(
-                                    StringComparer.OrdinalIgnoreCase);
-
-                        var puntaje =
-                            tokensFiltro.Count(
-                                token =>
-                                    tokensModelo.Contains(
-                                        token));
-
-                        return new
-                        {
-                            Modelo = modelo,
-                            Puntaje = puntaje
-                        };
-                    })
-                .Where(
-                    x => x.Puntaje > 0)
-                .ToList();
-
-        if (puntuados.Count == 0)
-        {
-            return listaBase;
-        }
-
-        var mejorPuntaje =
-            puntuados.Max(
-                x => x.Puntaje);
-
-        return puntuados
-            .Where(
-                x =>
-                    x.Puntaje == mejorPuntaje)
-            .Select(
-                x => x.Modelo)
-            .DistinctBy(
-                x => x.IdModeloProducto)
-            .OrderBy(
-                x => x.Marca)
-            .ThenBy(
-                x => x.Modelo)
-            .ToList();
     }
 
 
@@ -4477,21 +4297,6 @@ public class MotoConversacionService
             return true;
         }
 
-        /*
-         * Una consulta que viene desde una publicación de TuVendedor
-         * ya tiene el producto identificado por [TV_PRODUCTO:id].
-         * El título puede contener palabras comerciales como MOTOR,
-         * POTENCIA, FRENO, etc. y NO deben interpretarse como una
-         * pregunta técnica del cliente.
-         *
-         * En este caso respondemos siempre con los datos comerciales
-         * reales de BBDD (contado / crédito) sin cargar Ollama.
-         */
-        if (EsConsultaInicialTuVendedor(mensaje))
-        {
-            return true;
-        }
-
         var consultaTecnica =
             texto.Contains("VELOCIDAD")
             ||
@@ -4531,39 +4336,6 @@ public class MotoConversacionService
             ||
             EsInteresModeloSimple(
                 mensaje);
-    }
-
-
-    private static bool EsConsultaInicialTuVendedor(
-        string mensaje)
-    {
-        if (string.IsNullOrWhiteSpace(mensaje))
-        {
-            return false;
-        }
-
-        /*
-         * Preferimos el marcador técnico porque es inequívoco.
-         * También contemplamos el texto estándar del front como respaldo.
-         */
-        if (
-            Regex.IsMatch(
-                mensaje,
-                @"\[?\s*TV_PRODUCTO\s*:\s*\d+\s*\]?",
-                RegexOptions.IgnoreCase)
-        )
-        {
-            return true;
-        }
-
-        var texto =
-            NormalizarTexto(
-                mensaje);
-
-        return
-            texto.Contains(
-                "ESTOY CONSULTANDO DESDE TUVENDEDOR",
-                StringComparison.OrdinalIgnoreCase);
     }
 
 
@@ -4871,18 +4643,8 @@ public class MotoConversacionService
     private static string ConstruirRespuestaComercialSegura(
         MotoOfertaDto oferta)
     {
-        var informacionConfirmada =
-            ConstruirRespuestaDirectaModelo(
-                oferta,
-                string.Empty);
-
         return
-            "¡Hola! 😊 Soy Panambí, de TuVendedor. Ya estoy revisando tu consulta y en breve te doy retorno. Gracias por aguardarme un momentito 🙌"
-            + Environment.NewLine
-            + Environment.NewLine
-            + "Mientras tanto, te paso la información comercial que ya tengo confirmada 😊"
-            + Environment.NewLine
-            + informacionConfirmada;
+            "¡Hola! 😊 Soy Panambí, de TuVendedor. Ya estoy revisando tu consulta y en breve te doy retorno. Gracias por aguardarme un momentito 🙌";
     }
 
 
@@ -5212,6 +4974,59 @@ public class MotoConversacionService
                     "PERSONALMENTE",
                     StringComparison.OrdinalIgnoreCase)
             );
+    }
+
+
+    private static bool EsSolicitudEnEsperaSeguimiento(
+        SolicitudMotoProcesoDto? solicitud)
+    {
+        if (solicitud is null)
+            return false;
+
+        if (!string.Equals(
+                solicitud.TipoOperacion,
+                "CREDITO",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var paso =
+            (solicitud.PasoActual ?? string.Empty)
+                .Trim()
+                .ToUpperInvariant();
+
+        return paso == "PENDIENTE_GARANTE_NOMBRE"
+               || paso == "ESPERANDO_GARANTE"
+               || paso == "PENDIENTE_CREDITOS_NOMBRE"
+               || paso == "PENDIENTE_CREDITOS";
+    }
+
+    private static bool EsMensajeSobreSeguimientoPendiente(
+        string? mensaje)
+    {
+        var texto =
+            NormalizarTexto(
+                mensaje);
+
+        if (string.IsNullOrWhiteSpace(texto))
+            return true;
+
+        /*
+         * Cualquier mención clara al garante o a la solicitud debe volver
+         * a la máquina de estados y no tratarse como consulta de catálogo.
+         */
+        return texto.Contains("GARANTE")
+               || texto.Contains("SOLICITUD")
+               || texto.Contains("MI CREDITO")
+               || texto.Contains("MI CRÉDITO")
+               || texto.Contains("CONSEGUI")
+               || texto.Contains("CONSEGUÍ")
+               || texto.Contains("YA TENGO")
+               || texto.Contains("ME SALE")
+               || texto.Contains("ME CONFIRMO")
+               || texto == "SI"
+               || texto == "NO";
     }
 
 
