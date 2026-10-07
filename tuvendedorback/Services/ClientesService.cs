@@ -16,7 +16,12 @@ public class ClientesService : IClientesService
     private readonly IImageStorageService _imageStorage;
     private readonly IServiceProvider _serviceProvider;
 
-    public ClientesService(IServiceProvider serviceProvider, IImageStorageService imageStorage, ILogger<ClientesService> logger, IMapper mapper, IClientesRepository repository)
+    public ClientesService(
+        IServiceProvider serviceProvider,
+        IImageStorageService imageStorage,
+        ILogger<ClientesService> logger,
+        IMapper mapper,
+        IClientesRepository repository)
     {
         _serviceProvider = serviceProvider;
         _imageStorage = imageStorage;
@@ -25,115 +30,326 @@ public class ClientesService : IClientesService
         _repository = repository;
     }
 
-    public async Task<int> RegistrarInteresado(InteresadoRequest request, int idUsuario)
+
+    public async Task<int> RegistrarInteresado(
+        InteresadoRequest request,
+        int idUsuario)
     {
-        // 🔹 Validación con FluentValidation
-        await ValidationHelper.ValidarAsync(request, _serviceProvider);
+        await ValidationHelper.ValidarAsync(
+            request,
+            _serviceProvider);
 
-        var dto = _mapper.Map<InteresadoDto>(request);
-        dto.FechaRegistro = DateTime.Now;
-        dto.Estado = "Activo";
-        dto.UsuarioResponsable = idUsuario.ToString();
+        var dto =
+            _mapper.Map<InteresadoDto>(
+                request);
 
-        // 📎 Subir archivo de conversación si lo envió
+        dto.FechaRegistro =
+            DateTime.Now;
+
+        dto.Estado =
+            "Activo";
+
+        dto.UsuarioResponsable =
+            idUsuario.ToString();
+
+        dto.Origen =
+            "MANUAL";
+
+        dto.EstadoConsulta =
+            "REGISTRADO";
+
+        dto.RequiereSeguimiento =
+            true;
+
+        dto.MotivoSeguimiento =
+            "Seguimiento comercial manual.";
+
+        dto.FechaUltimaInteraccion =
+            DateTime.Now;
+
+        dto.CantidadInteracciones =
+            0;
+
         if (request.ArchivoConversacion != null)
         {
-            var uploadResult = await _imageStorage.SubirArchivo(request.ArchivoConversacion, "interesados");
-            dto.ArchivoUrl = uploadResult.MainUrl;
+            var uploadResult =
+                await _imageStorage.SubirArchivo(
+                    request.ArchivoConversacion,
+                    "interesados");
+
+            dto.ArchivoUrl =
+                uploadResult.MainUrl;
         }
 
-        var id = await _repository.InsertarInteresado(dto);
-        _logger.LogInformation("Interesado {Nombre} creado por usuario {IdUsuario}", dto.Nombre, idUsuario);
+        var id =
+            await _repository.InsertarInteresado(
+                dto);
+
+        _logger.LogInformation(
+            "Interesado {Nombre} creado por usuario {IdUsuario}",
+            dto.Nombre,
+            idUsuario);
+
         return id;
     }
 
-    public async Task<int> AgregarSeguimiento(SeguimientoRequest request, int idUsuario)
+
+    public async Task<int> RegistrarInteraccionWhatsApp(
+        InteresadoWhatsAppEventoRequest request)
     {
-        await ValidationHelper.ValidarAsync(request, _serviceProvider);
+        if (request.IdConversacion <= 0)
+        {
+            throw new ReglasdeNegocioException(
+                "No se pudo identificar la conversación de WhatsApp.");
+        }
 
-        var dto = _mapper.Map<SeguimientoDto>(request);
-        dto.Usuario = idUsuario.ToString();
-        dto.Fecha = DateTime.Now;
+        return await _repository
+            .RegistrarInteraccionWhatsApp(
+                request);
+    }
 
-        var id = await _repository.InsertarSeguimiento(dto);
-        _logger.LogInformation("Seguimiento agregado por {IdUsuario} al interesado {IdInteresado}", idUsuario, dto.IdInteresado);
+
+    public async Task<int> AgregarSeguimiento(
+        SeguimientoRequest request,
+        int idUsuario)
+    {
+        await ValidationHelper.ValidarAsync(
+            request,
+            _serviceProvider);
+
+        var dto =
+            _mapper.Map<SeguimientoDto>(
+                request);
+
+        dto.Usuario =
+            idUsuario.ToString();
+
+        dto.Fecha =
+            DateTime.Now;
+
+        var id =
+            await _repository.InsertarSeguimiento(
+                dto);
+
+        _logger.LogInformation(
+            "Seguimiento agregado por {IdUsuario} al interesado {IdInteresado}",
+            idUsuario,
+            dto.IdInteresado);
+
         return id;
     }
 
-    public async Task<(List<InteresadoDto> Items, int Total)> ObtenerInteresados(FiltroInteresadosRequest filtro)
+
+    public async Task<(List<InteresadoDto> Items, int Total)>
+        ObtenerInteresados(
+            FiltroInteresadosRequest filtro)
     {
-        var (items, total) = await _repository.ObtenerInteresados(filtro);
-        _logger.LogInformation("Se obtuvieron {Count} interesados (total: {Total})", items.Count, total);
-        return (items, total);
+        if (filtro.NumeroPagina <= 0)
+        {
+            filtro.NumeroPagina = 1;
+        }
+
+        if (filtro.RegistrosPorPagina <= 0)
+        {
+            filtro.RegistrosPorPagina = 10;
+        }
+
+        var (items, total) =
+            await _repository.ObtenerInteresados(
+                filtro);
+
+        return (
+            items,
+            total
+        );
     }
 
-    public async Task<List<SeguimientoDto>> ObtenerSeguimientosPorInteresado(int idInteresado)
+
+    public async Task<List<SeguimientoDto>>
+        ObtenerSeguimientosPorInteresado(
+            int idInteresado)
     {
-        return await _repository.ObtenerSeguimientosPorInteresado(idInteresado);
+        return await _repository
+            .ObtenerSeguimientosPorInteresado(
+                idInteresado);
     }
 
-    public async Task ActualizarInteresado(int id, InteresadoRequest request, int idUsuario)
-    {
-        await ValidationHelper.ValidarAsync(request, _serviceProvider);
 
-        // 🔹 Obtener datos actuales
-        var actual = await _repository.ObtenerInteresadoPorId(id);
+    public async Task<InteresadoDetalleDto>
+        ObtenerDetalleInteresado(
+            int idInteresado)
+    {
+        if (idInteresado <= 0)
+        {
+            throw new ReglasdeNegocioException(
+                "El identificador del interesado no es válido.");
+        }
+
+        var detalle =
+            await _repository.ObtenerDetalleInteresado(
+                idInteresado);
+
+        if (detalle is null)
+        {
+            throw new ReglasdeNegocioException(
+                $"No se encontró el interesado con Id {idInteresado}");
+        }
+
+        return detalle;
+    }
+
+
+    public Task<InteresadosResumenDto>
+        ObtenerResumenInteresados(
+            DateTime? fecha)
+    {
+        return _repository
+            .ObtenerResumenInteresados(
+                fecha?.Date);
+    }
+
+
+    public async Task ActualizarSeguimientoInteresado(
+        int idInteresado,
+        ActualizarSeguimientoInteresadoRequest request,
+        int idUsuario)
+    {
+        if (idInteresado <= 0)
+        {
+            throw new ReglasdeNegocioException(
+                "El identificador del interesado no es válido.");
+        }
+
+        if (request is null)
+        {
+            throw new ReglasdeNegocioException(
+                "Debe indicar los datos del seguimiento.");
+        }
+
+        await _repository
+            .ActualizarSeguimientoInteresado(
+                idInteresado,
+                request);
+
+        if (!string.IsNullOrWhiteSpace(
+            request.Comentario))
+        {
+            await _repository.InsertarSeguimiento(
+                new SeguimientoDto
+                {
+                    IdInteresado =
+                        idInteresado,
+
+                    Fecha =
+                        DateTime.Now,
+
+                    Comentario =
+                        request.Comentario.Trim(),
+
+                    Usuario =
+                        idUsuario.ToString()
+                });
+        }
+    }
+
+
+    public async Task ActualizarInteresado(
+        int id,
+        InteresadoRequest request,
+        int idUsuario)
+    {
+        await ValidationHelper.ValidarAsync(
+            request,
+            _serviceProvider);
+
+        var actual =
+            await _repository.ObtenerInteresadoPorId(
+                id);
+
         if (actual is null)
-            throw new ReglasdeNegocioException($"No se encontró el interesado con Id {id}");
+        {
+            throw new ReglasdeNegocioException(
+                $"No se encontró el interesado con Id {id}");
+        }
 
-        var estadoAnterior = actual.Estado ?? "Activo";
+        var estadoAnterior =
+            actual.Estado
+            ??
+            "Activo";
 
-        // 🔹 Mapear nuevos datos
-        var dto = _mapper.Map<InteresadoDto>(request);
-        dto.Id = id;
+        var dto =
+            _mapper.Map<InteresadoDto>(
+                request);
 
-        // 🔹 Subir nuevo archivo (y eliminar el anterior si existe)
+        dto.Id =
+            id;
+
         if (request.ArchivoConversacion != null)
         {
             try
             {
-                if (!string.IsNullOrWhiteSpace(actual.ArchivoUrl))
+                if (!string.IsNullOrWhiteSpace(
+                    actual.ArchivoUrl))
                 {
-                    await _imageStorage.EliminarArchivo(actual.ArchivoUrl);
-                    _logger.LogInformation("Archivo anterior eliminado: {Url}", actual.ArchivoUrl);
+                    await _imageStorage.EliminarArchivo(
+                        actual.ArchivoUrl);
                 }
 
-                var upload = await _imageStorage.SubirArchivo(request.ArchivoConversacion, "interesados");
-                dto.ArchivoUrl = upload.MainUrl;
+                var upload =
+                    await _imageStorage.SubirArchivo(
+                        request.ArchivoConversacion,
+                        "interesados");
+
+                dto.ArchivoUrl =
+                    upload.MainUrl;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al reemplazar archivo para interesado {Id}", id);
-                throw new RepositoryException("Error al reemplazar archivo", ex);
+                _logger.LogError(
+                    ex,
+                    "Error al reemplazar archivo para interesado {Id}",
+                    id);
+
+                throw new RepositoryException(
+                    "Error al reemplazar archivo",
+                    ex);
             }
         }
         else
         {
-            // Si no se sube nada, mantener la URL existente
-            dto.ArchivoUrl = actual.ArchivoUrl;
+            dto.ArchivoUrl =
+                actual.ArchivoUrl;
         }
 
-        // 🔹 Mantener estado si no vino en el request
-        dto.Estado ??= actual.Estado ?? "Activo";
+        dto.Estado ??=
+            actual.Estado
+            ??
+            "Activo";
 
-        // 🔹 Actualizar en base de datos
-        await _repository.ActualizarInteresado(dto);
-        _logger.LogInformation("Interesado {Id} actualizado por usuario {IdUsuario}", id, idUsuario);
+        await _repository.ActualizarInteresado(
+            dto);
 
-        // 🔹 Registrar seguimiento automático si se cierra
-        if (estadoAnterior == "Activo" && dto.Estado == "Inactivo")
+        if (
+            estadoAnterior == "Activo"
+            &&
+            dto.Estado == "Inactivo"
+        )
         {
-            var seguimiento = new SeguimientoDto
-            {
-                IdInteresado = id,
-                Fecha = DateTime.Now,
-                Comentario = "Cierre de interesado (estado cambiado a Inactivo).",
-                Usuario = idUsuario.ToString()
-            };
-            await _repository.InsertarSeguimiento(seguimiento);
+            await _repository.InsertarSeguimiento(
+                new SeguimientoDto
+                {
+                    IdInteresado =
+                        id,
+
+                    Fecha =
+                        DateTime.Now,
+
+                    Comentario =
+                        "Cierre de interesado (estado cambiado a Inactivo).",
+
+                    Usuario =
+                        idUsuario.ToString()
+                });
         }
     }
-
-
-
 }

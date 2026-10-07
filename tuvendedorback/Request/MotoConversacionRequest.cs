@@ -11,6 +11,18 @@ public class MotoConversacionRequest
     public int? IdPublicacion { get; set; }
 
     /// <summary>
+    /// Nombre visible/pushName de WhatsApp.
+    /// Opcional: el bridge actual puede seguir funcionando sin enviarlo.
+    /// </summary>
+    public string? NombreContacto { get; set; }
+
+    /// <summary>
+    /// Número real de WhatsApp cuando el bridge pueda resolverlo.
+    /// Si no viene, el backend usa Telefono como identificador.
+    /// </summary>
+    public string? NumeroWhatsapp { get; set; }
+
+    /// <summary>
     /// TEXTO, AUDIO, IMAGEN o DOCUMENTO.
     /// Para AUDIO el bridge de WhatsApp envía en Mensaje
     /// la transcripción obtenida localmente con Whisper.
@@ -37,6 +49,14 @@ public class MotoConversacionRequestValidator
             .WithMessage("El identificador del contacto es obligatorio.")
             .MaximumLength(100)
             .WithMessage("El identificador del contacto no es válido.");
+
+        RuleFor(x => x.NombreContacto)
+            .MaximumLength(150)
+            .When(x => !string.IsNullOrWhiteSpace(x.NombreContacto));
+
+        RuleFor(x => x.NumeroWhatsapp)
+            .MaximumLength(100)
+            .When(x => !string.IsNullOrWhiteSpace(x.NumeroWhatsapp));
 
         RuleFor(x => x.TipoMensaje)
             .NotEmpty()
@@ -70,27 +90,11 @@ public class MotoConversacionRequestValidator
             {
                 RuleFor(x => x.MediaBase64)
                     .NotEmpty()
-                    .WithMessage("El archivo es obligatorio para este tipo de mensaje.")
-                    .MaximumLength(9_000_000)
-                    .WithMessage("El archivo supera el tamaño permitido para procesamiento automático.");
+                    .WithMessage("El archivo es obligatorio para este tipo de mensaje.");
 
                 RuleFor(x => x.MediaMimeType)
                     .NotEmpty()
                     .WithMessage("El tipo MIME del archivo es obligatorio.");
-            });
-
-        When(
-            x => string.Equals(
-                (x.TipoMensaje ?? string.Empty).Trim(),
-                "IMAGEN",
-                StringComparison.OrdinalIgnoreCase),
-            () =>
-            {
-                RuleFor(x => x.MediaMimeType)
-                    .Must(mime =>
-                        !string.IsNullOrWhiteSpace(mime)
-                        && mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-                    .WithMessage("El archivo recibido no es una imagen válida.");
             });
 
         RuleFor(x => x.Mensaje)
