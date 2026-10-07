@@ -258,7 +258,7 @@ BEGIN
     VALUES
     (
         LEFT(COALESCE(@NombreWhatsapp, N'Cliente WhatsApp'), 100),
-        LEFT(COALESCE(@TelefonoReal, @Identificador), 20),
+        LEFT(@TelefonoReal, 20),
         NULL,
         NULL,
         LEFT(COALESCE(@ProductoInteres, N'Consulta por WhatsApp'), 150),
@@ -319,8 +319,6 @@ BEGIN
             CASE
                 WHEN @TelefonoReal IS NOT NULL
                     THEN LEFT(@TelefonoReal, 20)
-                WHEN NULLIF(Telefono, '') IS NULL
-                    THEN LEFT(@Identificador, 20)
                 ELSE Telefono
             END,
 
