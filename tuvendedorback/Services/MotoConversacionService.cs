@@ -1552,79 +1552,25 @@ public class MotoConversacionService
             var modelo =
                 coincidencias[0];
 
-            if (
-                !string.IsNullOrWhiteSpace(
-                    request.Mensaje)
-                &&
-                EsSeguimientoDelModeloActual(
-                    request.Mensaje)
-            )
-            {
-                return await ProcesarPorModelo(
-                    idConversacion,
-                    modelo,
-                    request.Mensaje,
-                    cancellationToken);
-            }
-
-            await _repository
-                .ActualizarContexto(
-                    idConversacion,
-                    modelo.IdPublicacion,
-                    modelo.IdModeloProducto,
-                    null);
-
-            var respuestaIdentificada =
-                await PrepararRespuestaCliente(
-                    idConversacion,
-                    $"Por la imagen, parece una *{modelo.Marca} {modelo.Modelo}*. Si querés, te paso el precio al contado o las cuotas disponibles. ¿Qué preferís?");
-
-            await _repository
-                .RegistrarMensaje(
-                    idConversacion,
-                    "IA",
-                    respuestaIdentificada);
-
-            await RegistrarInteresadoSeguro(
-                new InteresadoWhatsAppEventoRequest
-                {
-                    IdConversacion =
-                        idConversacion,
-
-                    IdModeloProducto =
-                        modelo.IdModeloProducto,
-
-                    IdPublicacion =
-                        modelo.IdPublicacion,
-
-                    TipoConsulta =
-                        "IMAGEN_MOTO",
-
-                    EstadoConsulta =
-                        "MODELO_IDENTIFICADO",
-
-                    MensajeCliente =
-                        request.Mensaje,
-
-                    Respuesta =
-                        respuestaIdentificada,
-
-                    MotivoSeguimiento =
-                        "Moto del catálogo identificada a partir de una imagen.",
-
-                    EsEntradaCliente =
-                        false
-                });
-
-            return new MotoConversacionResponseDto
-            {
-                IdConversacion = idConversacion,
-                IdPublicacion = modelo.IdPublicacion,
-                Marca = modelo.Marca,
-                Modelo = $"{modelo.Marca} {modelo.Modelo}",
-                Respuesta = respuestaIdentificada,
-                RequierePublicacion = false
-            };
+            /*
+             * La imagen ya identificó con suficiente confianza
+             * un modelo REAL del catálogo.
+             *
+             * No volvemos a preguntar si quiere precio o cuotas:
+             * reutilizamos el flujo comercial determinístico del modelo,
+             * que consulta la BBDD y devuelve directamente el precio
+             * al contado y/o los planes vigentes disponibles.
+             *
+             * request.Mensaje normalmente viene vacío para una imagen.
+             * En ese caso DebeResponderOfertaSinIA(...) devuelve true
+             * y ConstruirRespuestaDirectaModelo(...) arma la cotización
+             * sin depender de Ollama.
+             */
+            return await ProcesarPorModelo(
+                idConversacion,
+                modelo,
+                request.Mensaje,
+                cancellationToken);
         }
 
         await _repository
@@ -3468,6 +3414,49 @@ public class MotoConversacionService
         if (
             respuestasCortas.Contains(
                 texto)
+        )
+        {
+            return true;
+        }
+
+        /*
+         * Respuestas naturales de continuación.
+         *
+         * Ejemplos reales:
+         * "si pasame porfa"
+         * "pasame nomas"
+         * "dale pasame"
+         * "mandame"
+         * "decime"
+         *
+         * Estas frases deben conservar el modelo actual en contexto.
+         * Antes caían al router general, que limpiaba el contexto del
+         * producto y terminaba respondiendo como conversación abierta.
+         */
+        var marcadoresContinuacion =
+            new[]
+            {
+                "PASAME",
+                "MANDAME",
+                "ENVIAME",
+                "DECIME",
+                "MOSTRAME",
+                "CONTAME",
+                "SI PORFA",
+                "SI POR FAVOR",
+                "DALE PASAME",
+                "QUIERO SABER"
+            };
+
+        if (
+            ObtenerTokens(
+                texto)
+                .Count
+            <=
+            8
+            &&
+            marcadoresContinuacion.Any(
+                x => texto.Contains(x))
         )
         {
             return true;
