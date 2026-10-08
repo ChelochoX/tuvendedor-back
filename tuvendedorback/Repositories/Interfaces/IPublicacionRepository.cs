@@ -20,6 +20,18 @@ public interface IPublicacionRepository
         int idPublicacion,
         int idUsuario);
 
+    Task<IReadOnlyList<ProductoSharePreviewDto>>
+        BuscarPublicacionesMarketplaceParaIA(
+            IReadOnlyCollection<string> terminos,
+            int limite = 5);
+
+    Task<ProductoSharePreviewDto?>
+        ObtenerPublicacionMarketplaceParaIA(
+            int idPublicacion);
+
+    Task<IReadOnlyList<string>>
+        ObtenerCategoriasMarketplaceActivasParaIA();
+
     Task<IEnumerable<ImagenDto>>
         ObtenerImagenesPorPublicacion(
             int idPublicacion,

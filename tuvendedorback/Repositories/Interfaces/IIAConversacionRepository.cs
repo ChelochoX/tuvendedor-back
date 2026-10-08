@@ -31,6 +31,11 @@ public interface IIAConversacionRepository
         int idConversacion);
 
 
+    Task ActualizarContextoMarketplace(
+        int idConversacion,
+        int? idPublicacion);
+
+
     Task RegistrarMensaje(
         int idConversacion,
         string emisor,

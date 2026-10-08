@@ -372,6 +372,89 @@ END
     }
 
 
+
+    // =========================================================
+    // CONTEXTO MARKETPLACE (PRODUCTO NO MOTO)
+    // =========================================================
+
+    public async Task ActualizarContextoMarketplace(
+        int idConversacion,
+        int? idPublicacion)
+    {
+        using var conn =
+            _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+DECLARE @IdContexto INT;
+
+SELECT TOP (1)
+    @IdContexto = Id
+FROM dbo.ContextoConversacion
+WHERE IdConversacion = @IdConversacion
+ORDER BY Id DESC;
+
+IF @IdContexto IS NULL
+BEGIN
+    INSERT INTO dbo.ContextoConversacion
+    (
+        IdConversacion,
+        PasoActual,
+        Intencion,
+        IdPublicacion,
+        IdModeloProductoActual,
+        FechaActualizacion,
+        CodigoPrompt
+    )
+    VALUES
+    (
+        @IdConversacion,
+        'MARKETPLACE_PRODUCTO',
+        'CONSULTA_MARKETPLACE',
+        @IdPublicacion,
+        NULL,
+        GETDATE(),
+        NULL
+    );
+END
+ELSE
+BEGIN
+    UPDATE dbo.ContextoConversacion
+    SET
+        PasoActual = 'MARKETPLACE_PRODUCTO',
+        Intencion = 'CONSULTA_MARKETPLACE',
+        IdPublicacion = @IdPublicacion,
+        IdModeloProductoActual = NULL,
+        FechaActualizacion = GETDATE(),
+        CodigoPrompt = NULL
+    WHERE Id = @IdContexto;
+END
+";
+
+            await conn.ExecuteAsync(
+                sql,
+                new
+                {
+                    IdConversacion = idConversacion,
+                    IdPublicacion = idPublicacion
+                });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error actualizando contexto Marketplace. IdConversacion={IdConversacion}, IdPublicacion={IdPublicacion}",
+                idConversacion,
+                idPublicacion);
+
+            throw new RepositoryException(
+                "Error actualizando contexto Marketplace de la conversación.",
+                ex);
+        }
+    }
+
+
     // =========================================================
     // LIMPIAR PRODUCTO DEL CONTEXTO
     // =========================================================

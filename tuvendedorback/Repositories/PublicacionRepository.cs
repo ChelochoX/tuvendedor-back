@@ -411,6 +411,235 @@ public class PublicacionRepository : IPublicacionRepository
             throw new RepositoryException("Error al obtener publicaciones", ex);
         }
     }
+
+    // =========================================================
+    // BUSQUEDA CONTROLADA PARA PANAMBI - MARKETPLACE
+    //
+    // IMPORTANTE:
+    // - Solo publicaciones activas del canal MARKETPLACE.
+    // - No mezcla VITRINA.
+    // - Este método no devuelve motos; las motos siguen usando
+    //   el flujo especializado de MotoConversacionService.
+    // - Los términos llegan parametrizados. No se concatena
+    //   texto del usuario directamente al SQL.
+    // =========================================================
+
+    public async Task<IReadOnlyList<ProductoSharePreviewDto>>
+        BuscarPublicacionesMarketplaceParaIA(
+            IReadOnlyCollection<string> terminos,
+            int limite = 5)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            var tokens =
+                (terminos ?? Array.Empty<string>())
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x.Trim())
+                    .Where(x => x.Length >= 2)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(8)
+                    .ToList();
+
+            if (tokens.Count == 0)
+            {
+                return Array.Empty<ProductoSharePreviewDto>();
+            }
+
+            limite = Math.Clamp(limite, 1, 8);
+
+            var parametros = new DynamicParameters();
+            parametros.Add("Limite", limite);
+
+            var predicados = new List<string>();
+            var puntajes = new List<string>();
+
+            for (var i = 0; i < tokens.Count; i++)
+            {
+                var nombreParametro = $"T{i}";
+                parametros.Add(nombreParametro, $"%{tokens[i]}%");
+
+                var coincidencia = $@"
+                (
+                    ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE @{nombreParametro}
+                    OR ISNULL(p.Descripcion, '') COLLATE Latin1_General_CI_AI LIKE @{nombreParametro}
+                    OR ISNULL(p.Ubicacion, '') COLLATE Latin1_General_CI_AI LIKE @{nombreParametro}
+                    OR ISNULL(p.Categoria, '') COLLATE Latin1_General_CI_AI LIKE @{nombreParametro}
+                )";
+
+                predicados.Add(coincidencia);
+
+                puntajes.Add($@"
+                CASE WHEN ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE @{nombreParametro} THEN 4 ELSE 0 END
+                + CASE WHEN ISNULL(p.Categoria, '') COLLATE Latin1_General_CI_AI LIKE @{nombreParametro} THEN 3 ELSE 0 END
+                + CASE WHEN ISNULL(p.Ubicacion, '') COLLATE Latin1_General_CI_AI LIKE @{nombreParametro} THEN 2 ELSE 0 END
+                + CASE WHEN ISNULL(p.Descripcion, '') COLLATE Latin1_General_CI_AI LIKE @{nombreParametro} THEN 1 ELSE 0 END");
+            }
+
+            var filtroTexto = string.Join(" OR ", predicados);
+            var puntaje = string.Join(" + ", puntajes);
+
+            var sql = $@"
+SELECT TOP (@Limite)
+    p.Id,
+    p.Titulo,
+    p.Descripcion,
+    p.Precio,
+    p.Moneda,
+    p.Categoria,
+    p.Ubicacion,
+    p.CanalPublicacion,
+    img.Url AS ImagenUrl,
+    v.Slug AS SlugVendedor,
+    v.NombreNegocio AS NombreVendedor
+FROM dbo.Publicaciones p
+LEFT JOIN dbo.Vendedores v
+    ON v.IdUsuario = p.IdUsuario
+OUTER APPLY
+(
+    SELECT TOP (1)
+        i.Url
+    FROM dbo.ImagenesPublicacion i
+    WHERE i.IdPublicacion = p.Id
+    ORDER BY i.Id ASC
+) img
+WHERE p.Estado = 'Activo'
+  AND p.CanalPublicacion = 'MARKETPLACE'
+  AND UPPER(ISNULL(p.Categoria, '')) NOT LIKE '%MOTO%'
+  AND NOT EXISTS
+  (
+      SELECT 1
+      FROM dbo.PublicacionModeloProducto pmp
+      INNER JOIN dbo.ModelosProducto mp
+          ON mp.Id = pmp.IdModeloProducto
+      WHERE pmp.IdPublicacion = p.Id
+        AND pmp.Estado = 'Activo'
+        AND mp.Estado = 'Activo'
+        AND UPPER(LTRIM(RTRIM(ISNULL(mp.Rubro, '')))) = 'MOTO'
+  )
+  AND ({filtroTexto})
+ORDER BY
+    ({puntaje}) DESC,
+    p.Fecha DESC,
+    p.Id DESC;";
+
+            var data =
+                await conn.QueryAsync<ProductoSharePreviewDto>(
+                    new CommandDefinition(
+                        sql,
+                        parametros,
+                        commandTimeout: 30));
+
+            return data.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error buscando publicaciones Marketplace para Panambí.");
+
+            throw new RepositoryException(
+                "Error buscando publicaciones del Marketplace para Panambí.",
+                ex);
+        }
+    }
+
+
+    public async Task<ProductoSharePreviewDto?>
+        ObtenerPublicacionMarketplaceParaIA(
+            int idPublicacion)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+SELECT TOP (1)
+    p.Id,
+    p.Titulo,
+    p.Descripcion,
+    p.Precio,
+    p.Moneda,
+    p.Categoria,
+    p.Ubicacion,
+    p.CanalPublicacion,
+    img.Url AS ImagenUrl,
+    v.Slug AS SlugVendedor,
+    v.NombreNegocio AS NombreVendedor
+FROM dbo.Publicaciones p
+LEFT JOIN dbo.Vendedores v
+    ON v.IdUsuario = p.IdUsuario
+OUTER APPLY
+(
+    SELECT TOP (1)
+        i.Url
+    FROM dbo.ImagenesPublicacion i
+    WHERE i.IdPublicacion = p.Id
+    ORDER BY i.Id ASC
+) img
+WHERE p.Id = @IdPublicacion
+  AND p.Estado = 'Activo'
+  AND p.CanalPublicacion = 'MARKETPLACE';";
+
+            return await conn
+                .QueryFirstOrDefaultAsync<ProductoSharePreviewDto>(
+                    sql,
+                    new
+                    {
+                        IdPublicacion = idPublicacion
+                    });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error obteniendo publicación Marketplace para Panambí. IdPublicacion={IdPublicacion}",
+                idPublicacion);
+
+            throw new RepositoryException(
+                "Error obteniendo publicación del Marketplace para Panambí.",
+                ex);
+        }
+    }
+
+
+    public async Task<IReadOnlyList<string>>
+        ObtenerCategoriasMarketplaceActivasParaIA()
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+SELECT DISTINCT
+    LTRIM(RTRIM(p.Categoria)) AS Categoria
+FROM dbo.Publicaciones p
+WHERE p.Estado = 'Activo'
+  AND p.CanalPublicacion = 'MARKETPLACE'
+  AND NULLIF(LTRIM(RTRIM(p.Categoria)), '') IS NOT NULL
+ORDER BY Categoria;";
+
+            var data =
+                await conn.QueryAsync<string>(sql);
+
+            return data
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error obteniendo categorías Marketplace para Panambí.");
+
+            throw new RepositoryException(
+                "Error obteniendo categorías del Marketplace para Panambí.",
+                ex);
+        }
+    }
+
+
     public async Task<bool> EsAdministrador(int? idUsuario)
     {
         using var conn = _conexion.CreateSqlConnection();
