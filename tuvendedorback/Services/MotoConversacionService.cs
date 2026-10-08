@@ -272,7 +272,7 @@ public class MotoConversacionService
                     "HUMANO");
 
             const string respuestaHumano =
-                "Claro 😊 te paso con uno de nuestros asesores para que pueda atenderte personalmente.";
+                "Claro  te paso con uno de nuestros asesores para que pueda atenderte personalmente.";
 
             await _repository
                 .RegistrarMensaje(
@@ -685,7 +685,7 @@ public class MotoConversacionService
             var respuestaSaludo =
                 ConstruirRespuestaMarcasDisponibles(
                     modelos,
-                    "¡Hola! ¿Qué tal? 😊 Soy Panambí, asistente de TuVendedor. Con gusto te ayudo a encontrar tu moto.");
+                    "¡Hola! ¿Qué tal?  Soy Panambí, asistente de TuVendedor. Con gusto te ayudo a encontrar tu moto.");
 
             await _repository
                 .RegistrarMensaje(
@@ -718,7 +718,7 @@ public class MotoConversacionService
             var respuestaGeneral =
                 ConstruirRespuestaMarcasDisponibles(
                     modelos,
-                    "¡Claro! 😊 Contame qué estás buscando y te ayudo. Podemos empezar por la marca:");
+                    "¡Claro!  Contame qué estás buscando y te ayudo. Podemos empezar por la marca:");
 
             await _repository
                 .RegistrarMensaje(
@@ -774,7 +774,7 @@ public class MotoConversacionService
                 var respuestaElegirModelo =
                     ConstruirRespuestaGuiada(
                         modelos,
-                        $"Claro 😊 Para iniciar la compra {tipoOperacionSolicitada.ToLowerInvariant()}, primero decime qué modelo querés:");
+                        $"Claro  Para iniciar la compra {tipoOperacionSolicitada.ToLowerInvariant()}, primero decime qué modelo querés:");
 
                 await _repository
                     .RegistrarMensaje(
@@ -1016,7 +1016,7 @@ public class MotoConversacionService
             var respuestaCambio =
                 ConstruirRespuestaGuiada(
                     modelos,
-                    "Claro 😊 Decime cuál de estos modelos te interesa:");
+                    "Claro  Decime cuál de estos modelos te interesa:");
 
             await _repository
                 .RegistrarMensaje(
@@ -1057,7 +1057,7 @@ public class MotoConversacionService
             var respuestaNoReconocida =
                 ConstruirRespuestaMarcasDisponibles(
                     modelos,
-                    "Quiero asegurarme de entenderte bien 😊. No alcancé a identificar ese modelo. Podemos ubicarlo por la marca:");
+                    "Quiero asegurarme de entenderte bien . No alcancé a identificar ese modelo. Podemos ubicarlo por la marca:");
 
             await _repository
                 .RegistrarMensaje(
@@ -1094,7 +1094,7 @@ public class MotoConversacionService
             var respuestaIncomprensible =
                 ConstruirRespuestaMarcasDisponibles(
                     modelos,
-                    "No alcancé a entenderte bien 😊. No hay problema: decime el nombre de la moto, alguna parte del modelo o podemos empezar por la marca:");
+                    "No alcancé a entenderte bien . No hay problema: decime el nombre de la moto, alguna parte del modelo o podemos empezar por la marca:");
 
             await _repository
                 .RegistrarMensaje(
@@ -1185,7 +1185,7 @@ public class MotoConversacionService
             var respuestaSeleccion =
                 ConstruirRespuestaGuiada(
                     modelos,
-                    "Claro 😊 ¿De cuál modelo querés que te pase el precio o las cuotas?");
+                    "Claro  ¿De cuál modelo querés que te pase el precio o las cuotas?");
 
             await _repository
                 .RegistrarMensaje(
@@ -1236,7 +1236,7 @@ public class MotoConversacionService
         )
         {
             const string respuestaSaludo =
-                "¡Hola! ¿Qué tal? 😊 Soy Panambí, asistente de TuVendedor. ¿Qué modelo de moto tenés en mente?";
+                "¡Hola! ¿Qué tal?  Soy Panambí, asistente de TuVendedor. ¿Qué modelo de moto tenés en mente?";
 
             await _repository
                 .RegistrarMensaje(
@@ -1267,7 +1267,7 @@ public class MotoConversacionService
         var respuestaOrientacion =
             ConstruirRespuestaGuiada(
                 modelos,
-                "Para ayudarte bien 😊 decime cuál de estas opciones te interesa:");
+                "Para ayudarte bien  decime cuál de estas opciones te interesa:");
 
         await _repository
             .RegistrarMensaje(
@@ -1316,9 +1316,11 @@ public class MotoConversacionService
         )
         {
             var respuestaDirecta =
-                ConstruirRespuestaDirectaModelo(
-                    oferta,
-                    mensaje);
+                await PrepararRespuestaCliente(
+                    idConversacion,
+                    ConstruirRespuestaDirectaModelo(
+                        oferta,
+                        mensaje));
 
             await _repository
                 .RegistrarMensaje(
@@ -1430,7 +1432,9 @@ public class MotoConversacionService
                     "HUMANO");
 
             var respuestaSinPrecio =
-                $"Encontré la {modelo.Marca} {modelo.Modelo} 😊, pero necesito confirmar el precio comercial antes de darte un dato incorrecto. Te paso con uno de nuestros asesores para que te ayude.";
+                await PrepararRespuestaCliente(
+                    idConversacion,
+                    $"Encontré la {modelo.Marca} {modelo.Modelo}, pero necesito confirmar el precio comercial antes de darte un dato incorrecto. Te paso con uno de nuestros asesores para que pueda ayudarte personalmente.");
 
             await _repository
                 .RegistrarMensaje(
@@ -1505,9 +1509,11 @@ public class MotoConversacionService
         )
         {
             var respuestaDirecta =
-                ConstruirRespuestaDirectaModelo(
-                    oferta,
-                    mensaje);
+                await PrepararRespuestaCliente(
+                    idConversacion,
+                    ConstruirRespuestaDirectaModelo(
+                        oferta,
+                        mensaje));
 
             await _repository
                 .RegistrarMensaje(
@@ -1710,6 +1716,11 @@ public class MotoConversacionService
         }
 
 
+        respuestaIA =
+            await PrepararRespuestaCliente(
+                idConversacion,
+                respuestaIA);
+
         // =====================================================
         // GUARDAR RESPUESTA
         // =====================================================
@@ -1771,6 +1782,68 @@ public class MotoConversacionService
         };
     }
 
+
+    private async Task<string> PrepararRespuestaCliente(
+        int idConversacion,
+        string respuesta)
+    {
+        var limpia = QuitarEmojisRespuesta(respuesta);
+
+        try
+        {
+            var historial =
+                await _repository.ObtenerUltimosMensajes(
+                    idConversacion,
+                    20);
+
+            var yaRespondioPanambi =
+                historial.Any(
+                    x => string.Equals(
+                        x.Emisor,
+                        "IA",
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (!yaRespondioPanambi)
+            {
+                return
+                    "Hola, soy Panambí, asistente de TuVendedor. Con gusto te ayudo.\n\n"
+                    + limpia;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "No se pudo verificar si Panambí ya se presentó. IdConversacion={IdConversacion}",
+                idConversacion);
+        }
+
+        return limpia;
+    }
+
+    private static string QuitarEmojisRespuesta(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+            return string.Empty;
+
+        return texto
+            .Replace("\U0001F60A", string.Empty)
+            .Replace("\u2705", string.Empty)
+            .Replace("\U0001F449", string.Empty)
+            .Replace("\u23F3", string.Empty)
+            .Replace("\U0001F4F7", string.Empty)
+            .Replace("\U0001F4C4", string.Empty)
+            .Replace("\U0001F44B", string.Empty)
+            .Replace("\U0001F3CD\uFE0F", string.Empty)
+            .Replace("\U0001F3CD", string.Empty)
+            .Replace("\U0001F525", string.Empty)
+            .Replace("\U0001F44D", string.Empty)
+            .Replace("\U0001F609", string.Empty)
+            .Replace("\U0001F642", string.Empty)
+            .Replace("\U0001F600", string.Empty)
+            .Replace("  ", " ")
+            .Trim();
+    }
 
     // =========================================================
     // CRM / INTERESADOS
@@ -2387,7 +2460,7 @@ public class MotoConversacionService
         )
         {
             return
-                "Claro 😊 ¿Qué modelo de moto te interesa?";
+                "Claro  ¿Qué modelo de moto te interesa?";
         }
 
         if (
@@ -2395,14 +2468,14 @@ public class MotoConversacionService
         )
         {
             return
-                $"Creo que te referís a la *{opciones[0].Marca} {opciones[0].Modelo}* 😊. ¿Es esa?";
+                $"Creo que te referís a la *{opciones[0].Marca} {opciones[0].Modelo}* . ¿Es esa?";
         }
 
         var sb =
             new StringBuilder();
 
         sb.AppendLine(
-            "¡Claro! 😊 Encontré varias opciones que coinciden con lo que me dijiste:");
+            "¡Claro!  Encontré varias opciones que coinciden con lo que me dijiste:");
 
         sb.AppendLine();
 
@@ -2416,7 +2489,7 @@ public class MotoConversacionService
 
         sb.AppendLine();
         sb.Append(
-            "¿Cuál de estas te interesa? Podés escribirme el nombre del modelo y seguimos desde ahí 😊");
+            "¿Cuál de estas te interesa? Podés escribirme el nombre del modelo y seguimos desde ahí ");
 
         return sb.ToString();
     }
@@ -3465,7 +3538,7 @@ public class MotoConversacionService
         )
         {
             return
-                $"Por el momento no tengo modelos de {marca} cargados 😊.";
+                $"Por el momento no tengo modelos de {marca} cargados .";
         }
 
         var nombres =
@@ -3478,7 +3551,7 @@ public class MotoConversacionService
             new StringBuilder();
 
         sb.AppendLine(
-            $"¡Claro! 😊 Estos son los modelos *{marca}* que tenemos:");
+            $"¡Claro!  Estos son los modelos *{marca}* que tenemos:");
 
         sb.AppendLine();
 
@@ -3490,7 +3563,7 @@ public class MotoConversacionService
         sb.AppendLine();
 
         sb.Append(
-            "¿Cuál te interesa? Podés escribirme solamente el nombre del modelo 😊");
+            "¿Cuál te interesa? Podés escribirme solamente el nombre del modelo ");
 
         return sb.ToString();
     }
@@ -3623,7 +3696,7 @@ public class MotoConversacionService
         )
         {
             return
-                "Con gusto te ayudo 😊. En este momento no tengo marcas cargadas para mostrarte.";
+                "Con gusto te ayudo . En este momento no tengo marcas cargadas para mostrarte.";
         }
 
         var sb =
@@ -3639,18 +3712,18 @@ public class MotoConversacionService
         )
         {
             sb.AppendLine(
-                $"🏍️ Por ahora tenemos *{marcas[0]}*.");
+                $" Por ahora tenemos *{marcas[0]}*.");
 
             sb.AppendLine();
 
             sb.Append(
-                $"¿Querés que te muestre los modelos {marcas[0]} disponibles? 😊");
+                $"¿Querés que te muestre los modelos {marcas[0]} disponibles? ");
 
             return sb.ToString();
         }
 
         sb.AppendLine(
-            "🏍️ *Marcas disponibles:*");
+            " *Marcas disponibles:*");
 
         sb.AppendLine();
 
@@ -3665,7 +3738,7 @@ public class MotoConversacionService
         sb.AppendLine();
 
         sb.Append(
-            "¿Cuál marca te gustaría ver? 😊");
+            "¿Cuál marca te gustaría ver? ");
 
         return sb.ToString();
     }
@@ -3699,11 +3772,11 @@ public class MotoConversacionService
             )
             {
                 return
-                    $"Por ahora no tengo una promo vigente cargada para *{marca}* 😊. Si querés, te muestro los modelos disponibles de esa marca.";
+                    $"Por ahora no tengo una promo vigente cargada para *{marca}* . Si querés, te muestro los modelos disponibles de esa marca.";
             }
 
             return
-                "Por ahora no tengo promociones vigentes cargadas 😊. Si querés, te muestro los modelos disponibles y vemos cuál te gusta.";
+                "Por ahora no tengo promociones vigentes cargadas . Si querés, te muestro los modelos disponibles y vemos cuál te gusta.";
         }
 
         var sb =
@@ -3715,12 +3788,12 @@ public class MotoConversacionService
         )
         {
             sb.AppendLine(
-                $"¡Sí! 😊 Estos son los modelos *{marca}* que tenemos en promo este mes:");
+                $"¡Sí!  Estos son los modelos *{marca}* que tenemos en promo este mes:");
         }
         else
         {
             sb.AppendLine(
-                "¡Sí! 😊 Estos son los modelos que tenemos en promo este mes:");
+                "¡Sí!  Estos son los modelos que tenemos en promo este mes:");
         }
 
         sb.AppendLine();
@@ -3743,7 +3816,7 @@ public class MotoConversacionService
             )
             {
                 sb.AppendLine(
-                    $"🏍️ *{grupo.Key}*");
+                    $" *{grupo.Key}*");
             }
 
             var nombres =
@@ -3779,7 +3852,7 @@ public class MotoConversacionService
         }
 
         sb.Append(
-            "¿Cuál te interesa? Decime el modelo y te paso la promo que tiene 😊");
+            "¿Cuál te interesa? Decime el modelo y te paso la promo que tiene ");
 
         return sb.ToString();
     }
@@ -3812,7 +3885,7 @@ public class MotoConversacionService
         )
         {
             return
-                "En este momento no tengo modelos cargados para mostrarte 😊.";
+                "En este momento no tengo modelos cargados para mostrarte .";
         }
 
         var marcas =
@@ -4061,9 +4134,6 @@ public class MotoConversacionService
             EsConsultaPromociones(
                 mensaje);
 
-        /*
-         * Si pidió solamente contado.
-         */
         if (
             quiereContado
             &&
@@ -4073,16 +4143,13 @@ public class MotoConversacionService
             if (tieneContado)
             {
                 return
-                    $"¡Claro! 😊 La *{nombre}* al contado te queda en *{oferta.Contado.PrecioFinalFormateado}*. ¿Querés que sigamos con la compra al contado?";
+                    $"Claro. La *{nombre}* al contado te queda en *{oferta.Contado.PrecioFinalFormateado}*. ¿Querés que sigamos con la compra al contado?";
             }
 
             return
-                $"Sí, encontré la *{nombre}* 😊. El precio al contado todavía necesita confirmación. Si querés, te ayudo a revisar otra opción.";
+                $"Encontré la *{nombre}*. El precio al contado todavía necesita confirmación. Si querés, puedo ayudarte a revisar otra opción.";
         }
 
-        /*
-         * Si pidió solamente crédito/cuotas/promoción.
-         */
         if (
             quiereCredito
             &&
@@ -4102,7 +4169,7 @@ public class MotoConversacionService
                             planes);
 
                     return
-                        $"¡Sí! 😊 La *{nombre}* está en promo este mes: {textoPromo}. ¿Querés que sigamos con esta opción a crédito?";
+                        $"Sí. La *{nombre}* está en promoción este mes: {textoPromo}. ¿Querés que sigamos con esta opción a crédito?";
                 }
 
                 if (tieneCredito)
@@ -4112,11 +4179,11 @@ public class MotoConversacionService
                             planes);
 
                     return
-                        $"Por ahora la *{nombre}* no tiene una promo vigente cargada 😊. Sí tenemos financiación: {textoFinanciacion}. ¿Querés que te cuente esa opción o preferís ver los modelos que sí están en promo?";
+                        $"Por ahora la *{nombre}* no tiene una promoción vigente cargada, pero sí tenemos financiación: {textoFinanciacion}. ¿Querés que revisemos esa opción?";
                 }
 
                 return
-                    $"Por ahora la *{nombre}* no tiene una promo de crédito vigente cargada 😊. Si querés, te muestro los modelos que sí están en promo este mes.";
+                    $"Por ahora la *{nombre}* no tiene una promoción de crédito vigente cargada. Si querés, puedo mostrarte otros modelos con financiación disponible.";
             }
 
             if (tieneCredito)
@@ -4127,21 +4194,17 @@ public class MotoConversacionService
 
                 var inicio =
                     oferta.Credito.TienePromo
-                        ? $"¡Claro! 😊 Este mes tenemos una promo para la *{nombre}*"
-                        : $"¡Claro! 😊 Para la *{nombre}* tenemos financiación";
+                        ? $"Este mes tenemos una promoción para la *{nombre}*"
+                        : $"Para la *{nombre}* tenemos financiación";
 
                 return
                     $"{inicio}: {textoPlanes}. ¿Querés que sigamos con la opción a crédito?";
             }
 
             return
-                $"Encontré la *{nombre}* 😊, pero por ahora no tengo un plan de crédito vigente cargado. Si querés, puedo mostrarte otras opciones.";
+                $"Encontré la *{nombre}*, pero por ahora no tengo un plan de crédito vigente cargado. Si querés, puedo mostrarte otras opciones.";
         }
 
-        /*
-         * Interés general / disponibilidad / nombre del modelo.
-         * Mostramos la información útil en una sola respuesta.
-         */
         if (
             tieneContado
             &&
@@ -4154,17 +4217,17 @@ public class MotoConversacionService
 
             var credito =
                 oferta.Credito.TienePromo
-                    ? $"y este mes tenemos promo a crédito: {textoPlanes}"
+                    ? $"y este mes tenemos promoción a crédito: {textoPlanes}"
                     : $"y también tenemos financiación: {textoPlanes}";
 
             return
-                $"¡Sí! 😊 La *{nombre}* la tenemos disponible. Al contado te queda en *{oferta.Contado.PrecioFinalFormateado}* {credito}. ¿Cómo te gustaría adquirirla, al contado o a crédito?";
+                $"Sí, la *{nombre}* está disponible. Al contado te queda en *{oferta.Contado.PrecioFinalFormateado}* {credito}. ¿Cómo te gustaría adquirirla, al contado o a crédito?";
         }
 
         if (tieneContado)
         {
             return
-                $"¡Sí! 😊 La *{nombre}* la tenemos. Al contado te queda en *{oferta.Contado.PrecioFinalFormateado}*. ¿Te interesa esta opción?";
+                $"Sí, la *{nombre}* está disponible. Al contado te queda en *{oferta.Contado.PrecioFinalFormateado}*. ¿Te interesa esta opción?";
         }
 
         if (tieneCredito)
@@ -4174,11 +4237,11 @@ public class MotoConversacionService
                     planes);
 
             return
-                $"¡Sí! 😊 La *{nombre}* la tenemos. A crédito contamos con {textoPlanes}. ¿Querés que sigamos con esta opción?";
+                $"Sí, la *{nombre}* está disponible. A crédito contamos con {textoPlanes}. ¿Querés que sigamos con esta opción?";
         }
 
         return
-            $"Sí 😊 encontré la *{nombre}*. Todavía necesito confirmar las condiciones comerciales antes de darte un dato incorrecto. ¿Querés que te muestre otras opciones mientras tanto?";
+            $"Encontré la *{nombre}*. Necesito confirmar las condiciones comerciales antes de darte un dato incorrecto. Si querés, puedo mostrarte otras opciones mientras tanto.";
     }
 
 
@@ -4256,14 +4319,14 @@ public class MotoConversacionService
         )
         {
             return
-                "En este momento no tengo modelos cargados para mostrarte 😊.";
+                "En este momento no tengo modelos cargados para mostrarte .";
         }
 
         var sb =
             new StringBuilder();
 
         sb.AppendLine(
-            "¡Claro! 😊 Estos son los modelos que tenemos:");
+            "¡Claro!  Estos son los modelos que tenemos:");
 
         sb.AppendLine();
 
@@ -4288,7 +4351,7 @@ public class MotoConversacionService
                     .ToList();
 
             sb.AppendLine(
-                $"🏍️ *{grupo.Key}*");
+                $" *{grupo.Key}*");
 
             sb.AppendLine(
                 ConstruirGrillaTresColumnas(
@@ -4299,7 +4362,7 @@ public class MotoConversacionService
         }
 
         sb.Append(
-            "¿Cuál te interesa? 😊");
+            "¿Cuál te interesa? ");
 
         return sb.ToString();
     }

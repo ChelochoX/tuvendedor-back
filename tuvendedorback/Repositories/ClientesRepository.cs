@@ -1333,11 +1333,29 @@ SELECT
             sqlData.AppendLine(@"
 ORDER BY
     CASE
-        WHEN i.RequiereSeguimiento = 1
-         AND i.FechaProximoContacto IS NOT NULL
-         AND i.FechaProximoContacto <= GETDATE()
+        WHEN i.FechaUltimoMensajeCliente IS NOT NULL
+         AND CAST(i.FechaUltimoMensajeCliente AS DATE) = CAST(GETDATE() AS DATE)
             THEN 0
         ELSE 1
+    END,
+    CASE
+        WHEN i.FechaUltimoMensajeCliente IS NOT NULL
+         AND CAST(i.FechaUltimoMensajeCliente AS DATE) = CAST(GETDATE() AS DATE)
+            THEN i.FechaUltimoMensajeCliente
+        ELSE NULL
+    END DESC,
+    CASE
+        WHEN i.FechaUltimoMensajeCliente IS NULL
+          OR CAST(i.FechaUltimoMensajeCliente AS DATE) <> CAST(GETDATE() AS DATE)
+        THEN
+            CASE
+                WHEN i.RequiereSeguimiento = 1
+                 AND i.FechaProximoContacto IS NOT NULL
+                 AND i.FechaProximoContacto <= GETDATE()
+                    THEN 0
+                ELSE 1
+            END
+        ELSE 0
     END,
     COALESCE(
         i.FechaUltimaInteraccion,
