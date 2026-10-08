@@ -30,6 +30,9 @@ public interface IClientesRepository
     Task<int> RegistrarInteraccionWhatsApp(
         InteresadoWhatsAppEventoRequest request);
 
+    Task<List<WhatsAppConversacionSincronizacionDto>> ObtenerConversacionesWhatsAppDia(
+        DateTime fecha);
+
     Task<SincronizarContactoWhatsAppResultadoDto> SincronizarContactoWhatsApp(
         WhatsAppContactoSincronizacionRequest request);
 

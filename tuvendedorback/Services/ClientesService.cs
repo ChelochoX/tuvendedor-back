@@ -125,6 +125,24 @@ public class ClientesService : IClientesService
         var dia =
             (fecha ?? DateTime.Today).Date;
 
+        var conversaciones =
+            await _repository
+                .ObtenerConversacionesWhatsAppDia(
+                    dia);
+
+        var resultado =
+            new SincronizacionWhatsAppResultadoDto
+            {
+                Fecha = dia,
+                ChatsEncontrados =
+                    conversaciones.Count
+            };
+
+        if (conversaciones.Count == 0)
+        {
+            return resultado;
+        }
+
         var entorno =
             Environment.GetEnvironmentVariable(
                 "ASPNETCORE_ENVIRONMENT");
@@ -160,6 +178,19 @@ public class ClientesService : IClientesService
                 "No está configurada la clave interna para sincronizar WhatsApp.");
         }
 
+        var identificadores =
+            conversaciones
+                .Select(
+                    x =>
+                        x.IdentificadorExterno)
+                .Where(
+                    x =>
+                        !string.IsNullOrWhiteSpace(
+                            x))
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
         var client =
             _httpClientFactory.CreateClient();
 
@@ -168,12 +199,19 @@ public class ClientesService : IClientesService
 
         using var httpRequest =
             new HttpRequestMessage(
-                HttpMethod.Get,
-                $"{baseUrl}/crm/chats-dia?fecha={dia:yyyy-MM-dd}");
+                HttpMethod.Post,
+                $"{baseUrl}/crm/resolver-identidades");
 
         httpRequest.Headers.TryAddWithoutValidation(
             "X-TuVendedor-Internal-Key",
             internalKey);
+
+        httpRequest.Content =
+            JsonContent.Create(
+                new
+                {
+                    identificadores
+                });
 
         using var response =
             await client.SendAsync(
@@ -196,7 +234,7 @@ public class ClientesService : IClientesService
 
         var bridge =
             JsonSerializer.Deserialize<
-                WhatsAppChatsDiaBridgeResponse>(
+                WhatsAppResolverBridgeResponse>(
                 json,
                 new JsonSerializerOptions
                 {
@@ -216,28 +254,31 @@ public class ClientesService : IClientesService
                 "WhatsApp no devolvió una respuesta válida.");
         }
 
-        var resultado =
-            new SincronizacionWhatsAppResultadoDto
-            {
-                Fecha =
-                    dia,
-
-                ChatsEncontrados =
-                    bridge.Data.Count
-            };
+        var identidades =
+            bridge.Data
+                .Where(
+                    x =>
+                        !string.IsNullOrWhiteSpace(
+                            x.IdentificadorExterno))
+                .GroupBy(
+                    x =>
+                        x.IdentificadorExterno,
+                    StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    x => x.Key,
+                    x => x.Last(),
+                    StringComparer.OrdinalIgnoreCase);
 
         foreach (
-            var contacto
-            in bridge.Data)
+            var conversacion
+            in conversaciones)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(
-                    contacto.IdentificadorExterno))
-                {
-                    resultado.Errores++;
-                    continue;
-                }
+                identidades.TryGetValue(
+                    conversacion
+                        .IdentificadorExterno,
+                    out var identidad);
 
                 var item =
                     await _repository
@@ -245,33 +286,40 @@ public class ClientesService : IClientesService
                             new WhatsAppContactoSincronizacionRequest
                             {
                                 IdentificadorExterno =
-                                    contacto.IdentificadorExterno,
+                                    conversacion
+                                        .IdentificadorExterno,
 
                                 NumeroWhatsapp =
-                                    contacto.NumeroWhatsapp,
+                                    identidad
+                                        ?.NumeroWhatsapp,
 
                                 NombreContacto =
-                                    contacto.NombreContacto,
+                                    identidad
+                                        ?.NombreContacto,
 
                                 UltimoMensajeCliente =
-                                    contacto.UltimoMensajeCliente,
+                                    conversacion
+                                        .UltimoMensajeCliente,
 
                                 UltimaRespuesta =
-                                    contacto.UltimaRespuesta,
+                                    conversacion
+                                        .UltimaRespuesta,
 
                                 FechaUltimoMensajeCliente =
-                                    contacto.FechaUltimoMensajeCliente,
+                                    conversacion
+                                        .FechaUltimoMensajeCliente,
 
                                 FechaUltimaRespuesta =
-                                    contacto.FechaUltimaRespuesta,
+                                    conversacion
+                                        .FechaUltimaRespuesta,
 
                                 FechaUltimaInteraccion =
-                                    contacto.FechaUltimaInteraccion
-                                    ??
-                                    dia,
+                                    conversacion
+                                        .FechaUltimaInteraccion,
 
                                 CantidadMensajesDia =
-                                    contacto.CantidadMensajesDia
+                                    conversacion
+                                        .CantidadMensajesDia
                             });
 
                 resultado.Procesados++;
@@ -301,16 +349,19 @@ public class ClientesService : IClientesService
                 _logger.LogWarning(
                     ex,
                     "No se pudo sincronizar chat WhatsApp {Identificador}",
-                    contacto.IdentificadorExterno);
+                    conversacion
+                        .IdentificadorExterno);
             }
         }
 
         _logger.LogInformation(
-            "Sincronización WhatsApp {Fecha}: {Procesados} procesados, {Nuevos} nuevos, {Actualizados} actualizados, {Errores} errores. Usuario {IdUsuario}",
+            "Sincronización WhatsApp {Fecha}: {Procesados} procesados, {Nuevos} nuevos, {Actualizados} actualizados, {ConTelefono} con teléfono, {SinTelefono} sin teléfono, {Errores} errores. Usuario {IdUsuario}",
             dia,
             resultado.Procesados,
             resultado.Nuevos,
             resultado.Actualizados,
+            resultado.ConTelefonoReal,
+            resultado.SinTelefonoReal,
             resultado.Errores,
             idUsuario);
 
@@ -562,19 +613,21 @@ public class ClientesService : IClientesService
         }
     }
 
-    private sealed class WhatsAppChatsDiaBridgeResponse
+    private sealed class WhatsAppResolverBridgeResponse
     {
         public bool Success { get; set; }
 
         public string? Message { get; set; }
 
-        public List<WhatsAppChatBridgeItem>
+        public int Errores { get; set; }
+
+        public List<WhatsAppResolverBridgeItem>
             Data
         { get; set; } = new();
     }
 
 
-    private sealed class WhatsAppChatBridgeItem
+    private sealed class WhatsAppResolverBridgeItem
     {
         public string IdentificadorExterno { get; set; } =
             string.Empty;
@@ -583,17 +636,7 @@ public class ClientesService : IClientesService
 
         public string? NombreContacto { get; set; }
 
-        public string? UltimoMensajeCliente { get; set; }
-
-        public string? UltimaRespuesta { get; set; }
-
-        public DateTime? FechaUltimoMensajeCliente { get; set; }
-
-        public DateTime? FechaUltimaRespuesta { get; set; }
-
-        public DateTime? FechaUltimaInteraccion { get; set; }
-
-        public int CantidadMensajesDia { get; set; }
+        public string? Error { get; set; }
     }
 
 }

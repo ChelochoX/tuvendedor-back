@@ -628,6 +628,114 @@ SELECT @IdInteresado;";
 
 
     // =========================================================
+    // CONVERSACIONES WHATSAPP DEL DIA DESDE NUESTRA BBDD
+    // =========================================================
+
+    public async Task<List<WhatsAppConversacionSincronizacionDto>>
+        ObtenerConversacionesWhatsAppDia(
+            DateTime fecha)
+    {
+        using var conn =
+            _conexion.CreateSqlConnection();
+
+        try
+        {
+            var desde =
+                fecha.Date;
+
+            var hasta =
+                desde.AddDays(1);
+
+            const string sql = @"
+WITH ConversacionesDia AS
+(
+    SELECT
+        c.Id,
+        c.IdentificadorExterno,
+        MAX(m.Fecha) AS FechaUltimaInteraccion,
+        COUNT(1) AS CantidadMensajesDia
+    FROM dbo.Conversaciones c
+    INNER JOIN dbo.MensajesConversacion m
+        ON m.IdConversacion = c.Id
+    WHERE c.Canal = 'WHATSAPP'
+      AND m.Fecha >= @Desde
+      AND m.Fecha < @Hasta
+      AND NULLIF(
+            LTRIM(RTRIM(c.IdentificadorExterno)),
+            ''
+          ) IS NOT NULL
+    GROUP BY
+        c.Id,
+        c.IdentificadorExterno
+)
+SELECT
+    cd.IdentificadorExterno,
+    cli.Mensaje AS UltimoMensajeCliente,
+    ia.Mensaje AS UltimaRespuesta,
+    cli.Fecha AS FechaUltimoMensajeCliente,
+    ia.Fecha AS FechaUltimaRespuesta,
+    cd.FechaUltimaInteraccion,
+    cd.CantidadMensajesDia
+FROM ConversacionesDia cd
+OUTER APPLY
+(
+    SELECT TOP (1)
+        m.Mensaje,
+        m.Fecha
+    FROM dbo.MensajesConversacion m
+    WHERE m.IdConversacion = cd.Id
+      AND UPPER(LTRIM(RTRIM(m.Emisor))) = 'CLIENTE'
+      AND m.Fecha >= @Desde
+      AND m.Fecha < @Hasta
+    ORDER BY
+        m.Fecha DESC,
+        m.Id DESC
+) cli
+OUTER APPLY
+(
+    SELECT TOP (1)
+        m.Mensaje,
+        m.Fecha
+    FROM dbo.MensajesConversacion m
+    WHERE m.IdConversacion = cd.Id
+      AND UPPER(LTRIM(RTRIM(m.Emisor))) IN ('IA', 'PANAMBI')
+      AND m.Fecha >= @Desde
+      AND m.Fecha < @Hasta
+    ORDER BY
+        m.Fecha DESC,
+        m.Id DESC
+) ia
+ORDER BY
+    cd.FechaUltimaInteraccion DESC,
+    cd.Id DESC;";
+
+            var data =
+                await conn.QueryAsync<
+                    WhatsAppConversacionSincronizacionDto>(
+                    sql,
+                    new
+                    {
+                        Desde = desde,
+                        Hasta = hasta
+                    });
+
+            return data.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error obteniendo conversaciones WhatsApp del día {Fecha}",
+                fecha.Date);
+
+            throw new RepositoryException(
+                "Error obteniendo conversaciones WhatsApp del día.",
+                ex);
+        }
+    }
+
+
+    // =========================================================
     // SINCRONIZACION DE CHATS DESDE WHATSAPP
     // Idempotente por conversación, identificador externo o teléfono.
     // No pisa la agenda/motivo de seguimiento manual del vendedor.

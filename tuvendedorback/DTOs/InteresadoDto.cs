@@ -165,6 +165,25 @@ public class InteresadosResumenDto
 }
 
 
+public class WhatsAppConversacionSincronizacionDto
+{
+    public string IdentificadorExterno { get; set; } =
+        string.Empty;
+
+    public string? UltimoMensajeCliente { get; set; }
+
+    public string? UltimaRespuesta { get; set; }
+
+    public DateTime? FechaUltimoMensajeCliente { get; set; }
+
+    public DateTime? FechaUltimaRespuesta { get; set; }
+
+    public DateTime FechaUltimaInteraccion { get; set; }
+
+    public int CantidadMensajesDia { get; set; }
+}
+
+
 public class SincronizarContactoWhatsAppResultadoDto
 {
     public int IdInteresado { get; set; }
