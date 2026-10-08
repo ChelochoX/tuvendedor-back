@@ -49,6 +49,15 @@ public class OllamaService
     private readonly int
         _maxVisionImageBytes;
 
+    private readonly int
+        _timeoutSegundos;
+
+    private readonly int
+        _visionTimeoutSegundos;
+
+    private readonly int
+        _visionNumCtx;
+
 
     public OllamaService(
         HttpClient httpClient,
@@ -79,11 +88,23 @@ public class OllamaService
             ??
             "qwen3-vl:4b";
 
-        var timeoutSegundos =
+        _timeoutSegundos =
             configuration.GetValue<int?>(
                 "IA:TimeoutSeconds")
             ??
             30;
+
+        _visionTimeoutSegundos =
+            configuration.GetValue<int?>(
+                "IA:VisionTimeoutSeconds")
+            ??
+            120;
+
+        _visionNumCtx =
+            configuration.GetValue<int?>(
+                "IA:VisionNumCtx")
+            ??
+            4096;
 
         _esperaColaSegundos =
             configuration.GetValue<int?>(
@@ -115,9 +136,14 @@ public class OllamaService
             ??
             6 * 1024 * 1024;
 
+        /*
+         * Los tiempos de texto y visión son distintos.
+         * La visión necesita más tiempo cuando Ollama debe cargar qwen3-vl
+         * o cambiar desde el modelo de texto. Se desactiva el timeout global
+         * del HttpClient y cada request aplica su propio límite.
+         */
         _httpClient.Timeout =
-            TimeSpan.FromSeconds(
-                timeoutSegundos);
+            Timeout.InfiniteTimeSpan;
     }
 
 
@@ -216,6 +242,7 @@ public class OllamaService
             var body =
                 await EjecutarChat(
                     request,
+                    _timeoutSegundos,
                     cancellationToken);
 
             if (
@@ -451,7 +478,7 @@ public class OllamaService
                                 0.0,
 
                             NumCtx =
-                                2048,
+                                _visionNumCtx,
 
                             NumPredict =
                                 180
@@ -461,6 +488,7 @@ public class OllamaService
             var body =
                 await EjecutarChat(
                     request,
+                    _visionTimeoutSegundos,
                     cancellationToken);
 
             if (
@@ -534,6 +562,17 @@ public class OllamaService
         {
             throw;
         }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Timeout analizando imagen con Ollama. Modelo={Modelo}, TimeoutSegundos={TimeoutSegundos}, NumCtx={NumCtx}",
+                _modeloVision,
+                _visionTimeoutSegundos,
+                _visionNumCtx);
+
+            return null;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(
@@ -587,28 +626,42 @@ public class OllamaService
 
     private async Task<string?> EjecutarChat(
         OllamaChatRequest request,
+        int timeoutSegundos,
         CancellationToken cancellationToken)
     {
         var url =
             $"{_baseUrl.TrimEnd('/')}/api/chat";
 
+        var esVision =
+            request.Messages.Any(
+                x => x.Images is { Count: > 0 });
+
         _logger.LogInformation(
-            "Consultando Ollama. Modelo={Modelo}, Mensajes={CantidadMensajes}, Vision={Vision}",
+            "Consultando Ollama. Modelo={Modelo}, Mensajes={CantidadMensajes}, Vision={Vision}, NumCtx={NumCtx}, TimeoutSegundos={TimeoutSegundos}",
             request.Model,
             request.Messages.Count,
-            request.Messages.Any(
-                x => x.Images is { Count: > 0 }));
+            esVision,
+            request.Options.NumCtx,
+            timeoutSegundos);
+
+        using var timeoutCts =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+
+        timeoutCts.CancelAfter(
+            TimeSpan.FromSeconds(
+                timeoutSegundos));
 
         using var response =
             await _httpClient.PostAsJsonAsync(
                 url,
                 request,
-                cancellationToken);
+                timeoutCts.Token);
 
         var body =
             await response.Content
                 .ReadAsStringAsync(
-                    cancellationToken);
+                    timeoutCts.Token);
 
         if (!response.IsSuccessStatusCode)
         {
