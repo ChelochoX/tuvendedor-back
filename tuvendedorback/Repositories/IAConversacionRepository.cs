@@ -785,6 +785,66 @@ ORDER BY
     }
 
     // =========================================================
+    // CLASIFICAR PUBLICACION COMO MOTO / OTRO PRODUCTO
+    // =========================================================
+
+    public async Task<bool?> EsPublicacionMoto(
+        int idPublicacion)
+    {
+        using var conn =
+            _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+SELECT TOP (1)
+    CAST(
+        CASE
+            WHEN EXISTS
+            (
+                SELECT 1
+                FROM dbo.PublicacionModeloProducto pmp
+                INNER JOIN dbo.ModelosProducto mp
+                    ON mp.Id = pmp.IdModeloProducto
+                WHERE pmp.IdPublicacion = p.Id
+                  AND pmp.Estado = 'Activo'
+                  AND mp.Estado = 'Activo'
+                  AND UPPER(LTRIM(RTRIM(ISNULL(mp.Rubro, '')))) = 'MOTO'
+            )
+            OR UPPER(ISNULL(p.Categoria, '')) LIKE '%MOTO%'
+            THEN 1
+            ELSE 0
+        END
+        AS bit
+    )
+FROM dbo.Publicaciones p
+WHERE p.Id = @IdPublicacion;
+";
+
+            return await conn
+                .QueryFirstOrDefaultAsync<bool?>(
+                    sql,
+                    new
+                    {
+                        IdPublicacion =
+                            idPublicacion
+                    });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error clasificando publicación. IdPublicacion={IdPublicacion}",
+                idPublicacion);
+
+            throw new RepositoryException(
+                "Error clasificando la publicación.",
+                ex);
+        }
+    }
+
+
+    // =========================================================
     // OBTENER MODO CONVERSACION
     // =========================================================
 

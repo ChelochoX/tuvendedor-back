@@ -385,19 +385,26 @@ public class OllamaService
                 Respondé SOLO JSON válido, sin markdown y con esta forma exacta:
                 {
                   "esMoto": true,
+                  "tipoContenido": "MOTO",
                   "marca": "marca visible o inferida con prudencia, o null",
                   "modelo": "modelo visible o inferido con prudencia, o null",
                   "textoVisible": "texto útil visible en la imagen, o null",
+                  "descripcionBreve": "descripción comercial muy breve del contenido, o null",
                   "confianza": 0.0,
                   "motivo": "explicación muy breve"
                 }
 
                 Reglas:
-                - esMoto=true solo si la imagen muestra claramente una motocicleta, scooter o material/publicación comercial de una moto.
+                - tipoContenido debe ser exactamente uno de estos valores: MOTO, OTRO_PRODUCTO, OTRO_CONTENIDO o INCIERTO.
+                - Usá MOTO si la imagen muestra claramente una motocicleta, scooter o material/publicación comercial de una moto.
+                - Usá OTRO_PRODUCTO si muestra claramente un producto, inmueble, terreno, casa, vehículo u otro artículo comercial que no sea una moto.
+                - Usá OTRO_CONTENIDO si es una imagen casual o ajena a una consulta comercial: persona, meme, paisaje, captura sin producto identificable u otro contenido no comercial.
+                - Usá INCIERTO si no podés decidir con suficiente seguridad.
+                - esMoto=true únicamente cuando tipoContenido=MOTO. En cualquier otro caso debe ser false.
                 - No inventes marca ni modelo. Si no se distingue, usá null.
                 - confianza debe estar entre 0 y 1.
-                - Si la imagen no corresponde a motos, esMoto=false.
-                - No respondas preguntas generales ni describas personas, documentos u otros datos sensibles.
+                - descripcionBreve no debe identificar personas ni inferir datos sensibles.
+                - No respondas preguntas generales ni describas documentos o datos sensibles.
                 """;
 
             var request =
@@ -506,6 +513,17 @@ public class OllamaService
                     0,
                     1);
 
+            analisis.TipoContenido =
+                NormalizarTipoContenidoImagen(
+                    analisis.TipoContenido,
+                    analisis.EsMoto);
+
+            analisis.EsMoto =
+                string.Equals(
+                    analisis.TipoContenido,
+                    "MOTO",
+                    StringComparison.OrdinalIgnoreCase);
+
             return analisis;
         }
         catch (OperationCanceledException)
@@ -532,6 +550,38 @@ public class OllamaService
                     .Release();
             }
         }
+    }
+
+
+    private static string NormalizarTipoContenidoImagen(
+        string? tipoContenido,
+        bool esMoto)
+    {
+        var tipo =
+            (tipoContenido ?? string.Empty)
+                .Trim()
+                .ToUpperInvariant();
+
+        return tipo switch
+        {
+            "MOTO" =>
+                "MOTO",
+
+            "OTRO_PRODUCTO" =>
+                "OTRO_PRODUCTO",
+
+            "OTRO_CONTENIDO" =>
+                "OTRO_CONTENIDO",
+
+            "INCIERTO" =>
+                "INCIERTO",
+
+            _ when esMoto =>
+                "MOTO",
+
+            _ =>
+                "INCIERTO"
+        };
     }
 
 

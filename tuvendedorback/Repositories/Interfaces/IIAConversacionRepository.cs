@@ -54,6 +54,9 @@ public interface IIAConversacionRepository
     Task<int?> ObtenerPublicacionActivaPorModelo(
         int idModeloProducto);
 
+    Task<bool?> EsPublicacionMoto(
+        int idPublicacion);
+
     Task<string> ObtenerModoConversacion(
     int idConversacion);
 
