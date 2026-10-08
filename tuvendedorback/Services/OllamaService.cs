@@ -1,5 +1,10 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Processing;
 using tuvendedorback.DTOs;
 using tuvendedorback.Services.Interfaces;
 
@@ -58,6 +63,12 @@ public class OllamaService
     private readonly int
         _visionNumCtx;
 
+    private readonly int
+        _visionNumPredict;
+
+    private readonly int
+        _visionMaxDimension;
+
 
     public OllamaService(
         HttpClient httpClient,
@@ -105,6 +116,24 @@ public class OllamaService
                 "IA:VisionNumCtx")
             ??
             4096;
+
+        _visionNumPredict =
+            Math.Clamp(
+                configuration.GetValue<int?>(
+                    "IA:VisionNumPredict")
+                ??
+                160,
+                96,
+                512);
+
+        _visionMaxDimension =
+            Math.Clamp(
+                configuration.GetValue<int?>(
+                    "IA:VisionMaxDimension")
+                ??
+                1024,
+                640,
+                1600);
 
         _esperaColaSegundos =
             configuration.GetValue<int?>(
@@ -375,6 +404,34 @@ public class OllamaService
             return null;
         }
 
+        try
+        {
+            imagenBase64 =
+                OptimizarImagenParaVision(
+                    imagenBase64,
+                    _visionMaxDimension,
+                    out var anchoOriginal,
+                    out var altoOriginal,
+                    out var anchoFinal,
+                    out var altoFinal,
+                    out var bytesFinales);
+
+            _logger.LogInformation(
+                "Imagen preparada para visión. Original={AnchoOriginal}x{AltoOriginal}, Final={AnchoFinal}x{AltoFinal}, BytesOriginalesAprox={BytesOriginales}, BytesFinales={BytesFinales}",
+                anchoOriginal,
+                altoOriginal,
+                anchoFinal,
+                altoFinal,
+                bytesEstimados,
+                bytesFinales);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "No se pudo optimizar la imagen para visión. Se enviará la imagen original a Ollama.");
+        }
+
         var obtuvoTurno =
             false;
 
@@ -404,34 +461,26 @@ public class OllamaService
 
             var prompt =
                 $$"""
-                Analizá esta imagen únicamente para asistir una venta de motocicletas de TuVendedor.
+                Analizá la imagen para clasificarla dentro de TuVendedor.
 
                 Texto que acompañó la imagen:
                 {{textoExtra}}
 
-                Respondé SOLO JSON válido, sin markdown y con esta forma exacta:
-                {
-                  "esMoto": true,
-                  "tipoContenido": "MOTO",
-                  "marca": "marca visible o inferida con prudencia, o null",
-                  "modelo": "modelo visible o inferido con prudencia, o null",
-                  "textoVisible": "texto útil visible en la imagen, o null",
-                  "descripcionBreve": "descripción comercial muy breve del contenido, o null",
-                  "confianza": 0.0,
-                  "motivo": "explicación muy breve"
-                }
+                Respondé ÚNICAMENTE un JSON válido, compacto y completo. No uses markdown.
+                Usá exactamente estas propiedades:
+                {"esMoto":true,"tipoContenido":"MOTO","marca":null,"modelo":null,"textoVisible":null,"confianza":0.0}
 
                 Reglas:
-                - tipoContenido debe ser exactamente uno de estos valores: MOTO, OTRO_PRODUCTO, OTRO_CONTENIDO o INCIERTO.
-                - Usá MOTO si la imagen muestra claramente una motocicleta, scooter o material/publicación comercial de una moto.
-                - Usá OTRO_PRODUCTO si muestra claramente un producto, inmueble, terreno, casa, vehículo u otro artículo comercial que no sea una moto.
-                - Usá OTRO_CONTENIDO si es una imagen casual o ajena a una consulta comercial: persona, meme, paisaje, captura sin producto identificable u otro contenido no comercial.
-                - Usá INCIERTO si no podés decidir con suficiente seguridad.
-                - esMoto=true únicamente cuando tipoContenido=MOTO. En cualquier otro caso debe ser false.
-                - No inventes marca ni modelo. Si no se distingue, usá null.
-                - confianza debe estar entre 0 y 1.
-                - descripcionBreve no debe identificar personas ni inferir datos sensibles.
-                - No respondas preguntas generales ni describas documentos o datos sensibles.
+                - tipoContenido: MOTO, OTRO_PRODUCTO, OTRO_CONTENIDO o INCIERTO.
+                - MOTO: motocicleta, scooter o publicidad/material comercial de una moto.
+                - OTRO_PRODUCTO: inmueble, terreno, casa, auto u otro producto comercial que no sea moto.
+                - OTRO_CONTENIDO: meme, persona, paisaje u otra imagen no comercial.
+                - INCIERTO: no se puede decidir con seguridad.
+                - esMoto=true solo cuando tipoContenido=MOTO.
+                - Si se leen marca/modelo en la imagen, devolvelos. No inventes.
+                - textoVisible: solo texto útil para identificar el producto, máximo 100 caracteres.
+                - confianza: número decimal entre 0 y 1.
+                - Mantené la respuesta breve para asegurar que el JSON cierre correctamente.
                 """;
 
             var request =
@@ -481,7 +530,7 @@ public class OllamaService
                                 _visionNumCtx,
 
                             NumPredict =
-                                180
+                                _visionNumPredict
                         }
                 };
 
@@ -521,17 +570,28 @@ public class OllamaService
                 LimpiarBloqueJson(
                     contenido);
 
-            var analisis =
-                JsonSerializer.Deserialize<AnalisisImagenMotoDto>(
+            _logger.LogInformation(
+                "Respuesta visual de Ollama. Modelo={Modelo}, Contenido={Contenido}",
+                _modeloVision,
+                TruncarParaLog(
                     contenido,
-                    new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive =
-                            true
-                    });
+                    1200));
 
-            if (analisis is null)
+            if (
+                !IntentarParsearAnalisisImagen(
+                    contenido,
+                    out var analisis)
+                ||
+                analisis is null
+            )
             {
+                _logger.LogWarning(
+                    "No se pudo interpretar la respuesta visual. Modelo={Modelo}, Respuesta={Respuesta}",
+                    _modeloVision,
+                    TruncarParaLog(
+                        contenido,
+                        1200));
+
                 return null;
             }
 
@@ -754,6 +814,356 @@ public class OllamaService
         }
 
         return texto.Trim();
+    }
+
+
+    private static string OptimizarImagenParaVision(
+        string imagenBase64,
+        int maxDimension,
+        out int anchoOriginal,
+        out int altoOriginal,
+        out int anchoFinal,
+        out int altoFinal,
+        out int bytesFinales)
+    {
+        var bytes =
+            Convert.FromBase64String(
+                imagenBase64);
+
+        using var image =
+            Image.Load(
+                bytes);
+
+        anchoOriginal =
+            image.Width;
+
+        altoOriginal =
+            image.Height;
+
+        if (
+            image.Width > maxDimension
+            ||
+            image.Height > maxDimension
+        )
+        {
+            image.Mutate(
+                x =>
+                    x.Resize(
+                        new ResizeOptions
+                        {
+                            Size =
+                                new Size(
+                                    maxDimension,
+                                    maxDimension),
+
+                            Mode =
+                                ResizeMode.Max
+                        }));
+        }
+
+        anchoFinal =
+            image.Width;
+
+        altoFinal =
+            image.Height;
+
+        using var salida =
+            new MemoryStream();
+
+        image.Save(
+            salida,
+            new JpegEncoder
+            {
+                Quality = 82
+            });
+
+        var optimizada =
+            salida.ToArray();
+
+        bytesFinales =
+            optimizada.Length;
+
+        return Convert.ToBase64String(
+            optimizada);
+    }
+
+
+    private static bool IntentarParsearAnalisisImagen(
+        string contenido,
+        out AnalisisImagenMotoDto? analisis)
+    {
+        analisis =
+            null;
+
+        try
+        {
+            analisis =
+                JsonSerializer.Deserialize<AnalisisImagenMotoDto>(
+                    contenido,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive =
+                            true
+                    });
+
+            if (analisis is not null)
+            {
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+            // El modelo puede devolver un JSON útil pero truncado al final.
+            // En ese caso rescatamos únicamente campos completos y seguros.
+        }
+
+        var esMoto =
+            ExtraerBoolJson(
+                contenido,
+                "esMoto");
+
+        var tipoContenido =
+            ExtraerStringJson(
+                contenido,
+                "tipoContenido");
+
+        var marca =
+            ExtraerStringJson(
+                contenido,
+                "marca");
+
+        var modelo =
+            ExtraerStringJson(
+                contenido,
+                "modelo");
+
+        var textoVisible =
+            ExtraerStringJson(
+                contenido,
+                "textoVisible");
+
+        var confianza =
+            ExtraerDoubleJson(
+                contenido,
+                "confianza");
+
+        if (
+            esMoto is null
+            &&
+            string.IsNullOrWhiteSpace(
+                tipoContenido)
+            &&
+            string.IsNullOrWhiteSpace(
+                marca)
+            &&
+            string.IsNullOrWhiteSpace(
+                modelo)
+            &&
+            string.IsNullOrWhiteSpace(
+                textoVisible)
+            &&
+            confianza is null
+        )
+        {
+            return false;
+        }
+
+        var esMotoRecuperada =
+            esMoto
+            ??
+            string.Equals(
+                tipoContenido,
+                "MOTO",
+                StringComparison.OrdinalIgnoreCase);
+
+        var confianzaRecuperada =
+            confianza
+            ??
+            (
+                esMotoRecuperada
+                &&
+                (
+                    !string.IsNullOrWhiteSpace(
+                        modelo)
+                    ||
+                    !string.IsNullOrWhiteSpace(
+                        textoVisible)
+                )
+                    ? 0.75
+                    : 0.0
+            );
+
+        analisis =
+            new AnalisisImagenMotoDto
+            {
+                EsMoto =
+                    esMotoRecuperada,
+
+                TipoContenido =
+                    string.IsNullOrWhiteSpace(
+                        tipoContenido)
+                        ? esMotoRecuperada
+                            ? "MOTO"
+                            : "INCIERTO"
+                        : tipoContenido,
+
+                Marca =
+                    marca,
+
+                Modelo =
+                    modelo,
+
+                TextoVisible =
+                    textoVisible,
+
+                Confianza =
+                    confianzaRecuperada,
+
+                Motivo =
+                    "Respuesta visual recuperada de forma tolerante."
+            };
+
+        return true;
+    }
+
+
+    private static bool? ExtraerBoolJson(
+        string contenido,
+        string propiedad)
+    {
+        var match =
+            Regex.Match(
+                contenido,
+                $"\\\"{Regex.Escape(propiedad)}\\\"\\s*:\\s*(true|false)",
+                RegexOptions.IgnoreCase
+                |
+                RegexOptions.Singleline);
+
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        return bool.TryParse(
+            match.Groups[1].Value,
+            out var valor)
+                ? valor
+                : null;
+    }
+
+
+    private static double? ExtraerDoubleJson(
+        string contenido,
+        string propiedad)
+    {
+        var match =
+            Regex.Match(
+                contenido,
+                $"\\\"{Regex.Escape(propiedad)}\\\"\\s*:\\s*\\\"?(?<valor>-?\\d+(?:[\\.,]\\d+)?)(?<porcentaje>%?)\\\"?",
+                RegexOptions.IgnoreCase
+                |
+                RegexOptions.Singleline);
+
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var raw =
+            match.Groups["valor"]
+                .Value
+                .Replace(
+                    ',',
+                    '.');
+
+        if (
+            !double.TryParse(
+                raw,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var valor)
+        )
+        {
+            return null;
+        }
+
+        if (
+            match.Groups["porcentaje"].Value == "%"
+            ||
+            valor > 1
+        )
+        {
+            valor /=
+                100d;
+        }
+
+        return valor;
+    }
+
+
+    private static string? ExtraerStringJson(
+        string contenido,
+        string propiedad)
+    {
+        var matchNull =
+            Regex.Match(
+                contenido,
+                $"\\\"{Regex.Escape(propiedad)}\\\"\\s*:\\s*null",
+                RegexOptions.IgnoreCase
+                |
+                RegexOptions.Singleline);
+
+        if (matchNull.Success)
+        {
+            return null;
+        }
+
+        var match =
+            Regex.Match(
+                contenido,
+                $"\\\"{Regex.Escape(propiedad)}\\\"\\s*:\\s*\\\"(?<valor>(?:\\\\.|[^\\\"\\\\])*)\\\"",
+                RegexOptions.IgnoreCase
+                |
+                RegexOptions.Singleline);
+
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var raw =
+            $"\"{match.Groups["valor"].Value}\"";
+
+        try
+        {
+            return JsonSerializer.Deserialize<string>(
+                raw);
+        }
+        catch
+        {
+            return match.Groups["valor"]
+                .Value;
+        }
+    }
+
+
+    private static string TruncarParaLog(
+        string valor,
+        int maxLength)
+    {
+        if (
+            string.IsNullOrWhiteSpace(
+                valor)
+            ||
+            valor.Length <= maxLength
+        )
+        {
+            return valor;
+        }
+
+        return valor[..maxLength]
+            +
+            " ...[truncado]";
     }
 
 
