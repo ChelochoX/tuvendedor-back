@@ -136,7 +136,7 @@ public class SolicitudMotoService : ISolicitudMotoService
 
             return Resultado(
                 solicitud,
-                "Listo, cancelé esta solicitud. Cuando quieras podemos comenzar una nueva.",
+                "Entendido. Cancelé esta solicitud y ya no voy a seguir pidiéndote datos para esta moto. Si más adelante querés consultar otra moto o cualquier otro producto de TuVendedor, escribime nomás.",
                 "CANCELADA",
                 "CANCELADA");
         }
@@ -3590,7 +3590,63 @@ public class SolicitudMotoService : ISolicitudMotoService
     private static bool EsCancelar(string mensaje)
     {
         var t = NormalizarTexto(mensaje);
-        return t.Contains("CANCELAR SOLICITUD") || t == "CANCELAR";
+
+        if (string.IsNullOrWhiteSpace(t))
+            return false;
+
+        if (
+            t == "CANCELAR"
+            || t.Contains("CANCELAR SOLICITUD")
+            || t.Contains("CANCELA LA SOLICITUD")
+            || t.Contains("CANCELA MI SOLICITUD")
+            || t.Contains("CANCELAME LA SOLICITUD")
+            || t.Contains("ANULAR SOLICITUD")
+            || t.Contains("ANULA LA SOLICITUD")
+        )
+        {
+            return true;
+        }
+
+        /*
+         * El cliente puede desistir con lenguaje natural y no necesariamente
+         * diciendo "cancelar solicitud". Estas frases deben cortar la máquina
+         * de estados antes de que el texto sea interpretado como el dato que
+         * Panambí está esperando (domicilio, empresa, referencia, etc.).
+         */
+        var desistimientosDirectos = new[]
+        {
+            "YA NO QUIERO",
+            "NO QUIERO MAS",
+            "NO QUIERO LA MOTO",
+            "NO QUIERO MOTO",
+            "NO QUIERO MOTOS",
+            "NO QUIERO ESA MOTO",
+            "YA NO QUIERO LA MOTO",
+            "YA NO QUIERO MOTO",
+            "YA NO QUIERO MOTOS",
+            "NO ME INTERESA LA MOTO",
+            "YA NO ME INTERESA LA MOTO",
+            "NO ME INTERESA MAS",
+            "YA NO ME INTERESA",
+            "NO VOY A COMPRAR",
+            "YA NO VOY A COMPRAR",
+            "DEJEMOS NOMAS",
+            "DEJA NOMAS",
+            "DEJALO NOMAS",
+            "NO QUIERO SEGUIR CON LA SOLICITUD",
+            "NO QUIERO CONTINUAR CON LA SOLICITUD",
+            "NO QUIERO SEGUIR CON EL CREDITO",
+            "NO QUIERO CONTINUAR CON EL CREDITO",
+            "NO QUIERO EL CREDITO",
+            "YA NO QUIERO EL CREDITO"
+        };
+
+        return desistimientosDirectos.Any(
+            frase =>
+                t == frase
+                || t.StartsWith(frase + " ")
+                || t.Contains(" " + frase + " ")
+                || t.EndsWith(" " + frase));
     }
 
     private static bool EsTipo(string actual, string esperado)

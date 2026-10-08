@@ -429,6 +429,17 @@ public class MotoConversacionService
                     "IA",
                     proceso.Respuesta);
 
+            var solicitudCancelada =
+                string.Equals(
+                    proceso.Estado,
+                    "CANCELADA",
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                string.Equals(
+                    proceso.PasoActual,
+                    "CANCELADA",
+                    StringComparison.OrdinalIgnoreCase);
+
             await RegistrarInteresadoSeguro(
                 new InteresadoWhatsAppEventoRequest
                 {
@@ -445,10 +456,12 @@ public class MotoConversacionService
                         solicitudActiva.TipoOperacion,
 
                     EstadoConsulta =
-                        EsCreditoOperacion(
-                            solicitudActiva.TipoOperacion)
-                            ? "CREDITO_EN_PROCESO"
-                            : "CONTADO_EN_PROCESO",
+                        solicitudCancelada
+                            ? "CERRADO"
+                            : EsCreditoOperacion(
+                                solicitudActiva.TipoOperacion)
+                                ? "CREDITO_EN_PROCESO"
+                                : "CONTADO_EN_PROCESO",
 
                     TipoOperacion =
                         solicitudActiva.TipoOperacion,
@@ -465,7 +478,9 @@ public class MotoConversacionService
                         proceso.Respuesta,
 
                     MotivoSeguimiento =
-                        "Solicitud en proceso. Revisar avance si el cliente deja de responder.",
+                        solicitudCancelada
+                            ? "Cliente desistió de la solicitud de moto."
+                            : "Solicitud en proceso. Revisar avance si el cliente deja de responder.",
 
                     EsEntradaCliente =
                         false

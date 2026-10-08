@@ -406,26 +406,40 @@ BEGIN
 
         RequiereSeguimiento =
             CASE
+                WHEN NULLIF(@EstadoConsulta, '') = 'CERRADO'
+                    THEN 0
                 WHEN Estado = 'Inactivo'
                     THEN RequiereSeguimiento
                 ELSE 1
             END,
 
-        -- Si el vendedor ya dejó un motivo/agenda manual, lo conservamos.
+        -- Si se cierra porque el cliente desistió, guardamos ese motivo.
+        -- En los demás casos conservamos primero cualquier motivo manual existente.
         MotivoSeguimiento =
-            COALESCE(
-                NULLIF(MotivoSeguimiento, ''),
-                NULLIF(@MotivoSeguimiento, ''),
-                N'Seguimiento comercial de consulta por WhatsApp.'
-            ),
+            CASE
+                WHEN NULLIF(@EstadoConsulta, '') = 'CERRADO'
+                    THEN COALESCE(
+                        NULLIF(@MotivoSeguimiento, ''),
+                        N'Cliente desistió de la consulta.'
+                    )
+                ELSE COALESCE(
+                    NULLIF(MotivoSeguimiento, ''),
+                    NULLIF(@MotivoSeguimiento, ''),
+                    N'Seguimiento comercial de consulta por WhatsApp.'
+                )
+            END,
 
-        -- No movemos una fecha manual aunque esté vencida.
-        -- Un nuevo mensaje actualiza la interacción, pero no pisa la agenda comercial.
+        -- Una oportunidad cerrada no debe quedar agendada como seguimiento pendiente.
+        -- Para conversaciones activas conservamos la agenda manual existente.
         FechaProximoContacto =
-            COALESCE(
-                FechaProximoContacto,
-                DATEADD(DAY, 1, GETDATE())
-            ),
+            CASE
+                WHEN NULLIF(@EstadoConsulta, '') = 'CERRADO'
+                    THEN NULL
+                ELSE COALESCE(
+                    FechaProximoContacto,
+                    DATEADD(DAY, 1, GETDATE())
+                )
+            END,
 
         FechaUltimoMensajeCliente =
             CASE
