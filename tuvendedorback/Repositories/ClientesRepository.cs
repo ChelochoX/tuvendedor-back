@@ -362,11 +362,29 @@ BEGIN
             COALESCE(@CodigoReferencia, CodigoReferencia),
 
         EstadoConsulta =
-            COALESCE(
-                NULLIF(@EstadoConsulta, ''),
-                EstadoConsulta,
-                'CONSULTANDO'
-            ),
+            CASE
+                WHEN ISNULL(EstadoConsulta, '') IN
+                (
+                    'CREDITO_EN_PROCESO',
+                    'CONTADO_EN_PROCESO',
+                    'DERIVADO_HUMANO',
+                    'CERRADO'
+                )
+                AND NULLIF(@EstadoConsulta, '') IN
+                (
+                    'CONSULTANDO',
+                    'ESPERANDO_MODELO',
+                    'CONSULTA_PROMO',
+                    'COTIZADO'
+                )
+                    THEN EstadoConsulta
+                ELSE
+                    COALESCE(
+                        NULLIF(@EstadoConsulta, ''),
+                        EstadoConsulta,
+                        'CONSULTANDO'
+                    )
+            END,
 
         TipoOperacion =
             COALESCE(
@@ -393,22 +411,21 @@ BEGIN
                 ELSE 1
             END,
 
+        -- Si el vendedor ya dejó un motivo/agenda manual, lo conservamos.
         MotivoSeguimiento =
             COALESCE(
+                NULLIF(MotivoSeguimiento, ''),
                 NULLIF(@MotivoSeguimiento, ''),
-                MotivoSeguimiento,
                 N'Seguimiento comercial de consulta por WhatsApp.'
             ),
 
+        -- No movemos una fecha manual aunque esté vencida.
+        -- Un nuevo mensaje actualiza la interacción, pero no pisa la agenda comercial.
         FechaProximoContacto =
-            CASE
-                WHEN Estado = 'Inactivo'
-                    THEN FechaProximoContacto
-                WHEN FechaProximoContacto IS NULL
-                  OR FechaProximoContacto < GETDATE()
-                    THEN DATEADD(DAY, 1, GETDATE())
-                ELSE FechaProximoContacto
-            END,
+            COALESCE(
+                FechaProximoContacto,
+                DATEADD(DAY, 1, GETDATE())
+            ),
 
         FechaUltimoMensajeCliente =
             CASE
@@ -604,6 +621,357 @@ SELECT @IdInteresado;";
 
             throw new RepositoryException(
                 "Error registrando interacción comercial de WhatsApp.",
+                ex);
+        }
+    }
+
+
+
+    // =========================================================
+    // SINCRONIZACION DE CHATS DESDE WHATSAPP
+    // Idempotente por conversación, identificador externo o teléfono.
+    // No pisa la agenda/motivo de seguimiento manual del vendedor.
+    // =========================================================
+
+    public async Task<SincronizarContactoWhatsAppResultadoDto>
+        SincronizarContactoWhatsApp(
+            WhatsAppContactoSincronizacionRequest request)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            conn.Open();
+
+            using var transaction =
+                conn.BeginTransaction();
+
+            const string sql = @"
+DECLARE @Identificador VARCHAR(150) =
+    NULLIF(LTRIM(RTRIM(@IdentificadorExterno)), '');
+
+DECLARE @TelefonoReal VARCHAR(100) =
+    NULLIF(LTRIM(RTRIM(@NumeroWhatsapp)), '');
+
+DECLARE @NombreWhatsapp NVARCHAR(150) =
+    NULLIF(LTRIM(RTRIM(@NombreContacto)), '');
+
+DECLARE @IdConversacion INT;
+DECLARE @IdInteresado INT;
+DECLARE @EsNuevo BIT = 0;
+
+IF @Identificador IS NULL
+BEGIN
+    THROW 57020, 'No se recibió identificador de WhatsApp.', 1;
+END;
+
+-- Conversación idempotente.
+SELECT TOP (1)
+    @IdConversacion = c.Id
+FROM dbo.Conversaciones c WITH (UPDLOCK, HOLDLOCK)
+WHERE c.Canal = 'WHATSAPP'
+  AND c.IdentificadorExterno = @Identificador
+ORDER BY c.Id DESC;
+
+IF @IdConversacion IS NULL
+BEGIN
+    INSERT INTO dbo.Conversaciones
+    (
+        Canal,
+        IdentificadorExterno,
+        Estado,
+        Modo,
+        FechaInicio,
+        FechaUltimoMensaje
+    )
+    VALUES
+    (
+        'WHATSAPP',
+        @Identificador,
+        'ACTIVA',
+        'IA',
+        COALESCE(@FechaUltimaInteraccion, GETDATE()),
+        COALESCE(@FechaUltimaInteraccion, GETDATE())
+    );
+
+    SET @IdConversacion =
+        CAST(SCOPE_IDENTITY() AS INT);
+END
+ELSE
+BEGIN
+    UPDATE dbo.Conversaciones
+    SET
+        FechaUltimoMensaje =
+            CASE
+                WHEN @FechaUltimaInteraccion IS NOT NULL
+                 AND @FechaUltimaInteraccion > FechaUltimoMensaje
+                    THEN @FechaUltimaInteraccion
+                ELSE FechaUltimoMensaje
+            END
+    WHERE Id = @IdConversacion;
+END;
+
+-- Primero conversación/LID. Si todavía no estaba vinculado, buscamos
+-- por teléfono para fusionar con un interesado cargado manualmente.
+SELECT TOP (1)
+    @IdInteresado = i.Id
+FROM dbo.Interesados i WITH (UPDLOCK, HOLDLOCK)
+WHERE
+    i.IdConversacion = @IdConversacion
+    OR i.IdentificadorExterno = @Identificador
+    OR
+    (
+        @TelefonoReal IS NOT NULL
+        AND
+        REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', '')
+        =
+        REPLACE(REPLACE(REPLACE(@TelefonoReal, ' ', ''), '-', ''), '+', '')
+    )
+ORDER BY
+    CASE
+        WHEN i.IdConversacion = @IdConversacion THEN 1
+        WHEN i.IdentificadorExterno = @Identificador THEN 2
+        ELSE 3
+    END,
+    i.Id DESC;
+
+IF @IdInteresado IS NULL
+BEGIN
+    SET @EsNuevo = 1;
+
+    INSERT INTO dbo.Interesados
+    (
+        Nombre,
+        Telefono,
+        Email,
+        Ciudad,
+        ProductoInteres,
+        AportaIPS,
+        CantidadAportes,
+        Estado,
+        FechaRegistro,
+        FechaProximoContacto,
+        Descripcion,
+        ArchivoUrl,
+        UsuarioResponsable,
+        Origen,
+        IdentificadorExterno,
+        IdConversacion,
+        EstadoConsulta,
+        RequiereSeguimiento,
+        MotivoSeguimiento,
+        FechaUltimoMensajeCliente,
+        FechaUltimaRespuesta,
+        FechaUltimaInteraccion,
+        UltimoMensajeCliente,
+        UltimaRespuesta,
+        CantidadInteracciones
+    )
+    VALUES
+    (
+        LEFT(COALESCE(@NombreWhatsapp, N'Cliente WhatsApp'), 100),
+        LEFT(@TelefonoReal, 20),
+        NULL,
+        NULL,
+        N'Consulta por WhatsApp',
+        0,
+        0,
+        'Activo',
+        COALESCE(@FechaUltimaInteraccion, GETDATE()),
+        DATEADD(
+            DAY,
+            1,
+            COALESCE(@FechaUltimaInteraccion, GETDATE())
+        ),
+        N'Registrado desde sincronización de chats de WhatsApp.',
+        NULL,
+        'PANAMBI',
+        'WHATSAPP',
+        @Identificador,
+        @IdConversacion,
+        'CONSULTANDO',
+        1,
+        N'Seguimiento comercial de consulta por WhatsApp.',
+        @FechaUltimoMensajeCliente,
+        @FechaUltimaRespuesta,
+        COALESCE(@FechaUltimaInteraccion, GETDATE()),
+        LEFT(@UltimoMensajeCliente, 1000),
+        LEFT(@UltimaRespuesta, 1000),
+        ISNULL(@CantidadMensajesDia, 0)
+    );
+
+    SET @IdInteresado =
+        CAST(SCOPE_IDENTITY() AS INT);
+END
+ELSE
+BEGIN
+    UPDATE dbo.Interesados
+    SET
+        Nombre =
+            CASE
+                WHEN @NombreWhatsapp IS NOT NULL
+                 AND
+                 (
+                     Nombre IS NULL
+                     OR LTRIM(RTRIM(Nombre)) = ''
+                     OR Nombre = 'Cliente WhatsApp'
+                 )
+                    THEN LEFT(@NombreWhatsapp, 100)
+                ELSE Nombre
+            END,
+
+        Telefono =
+            CASE
+                WHEN @TelefonoReal IS NOT NULL
+                    THEN LEFT(@TelefonoReal, 20)
+                ELSE Telefono
+            END,
+
+        Origen =
+            CASE
+                WHEN ISNULL(Origen, '') = ''
+                    THEN 'WHATSAPP'
+                WHEN Origen = 'MANUAL'
+                    THEN 'MANUAL+WHATSAPP'
+                ELSE Origen
+            END,
+
+        IdentificadorExterno =
+            COALESCE(NULLIF(IdentificadorExterno, ''), @Identificador),
+
+        IdConversacion =
+            COALESCE(IdConversacion, @IdConversacion),
+
+        Estado =
+            CASE
+                WHEN @FechaUltimaInteraccion IS NOT NULL
+                    THEN 'Activo'
+                ELSE Estado
+            END,
+
+        EstadoConsulta =
+            COALESCE(NULLIF(EstadoConsulta, ''), 'CONSULTANDO'),
+
+        -- Agenda y motivo manual NO se pisan.
+        FechaProximoContacto =
+            COALESCE(
+                FechaProximoContacto,
+                DATEADD(
+                    DAY,
+                    1,
+                    COALESCE(@FechaUltimaInteraccion, GETDATE())
+                )
+            ),
+
+        MotivoSeguimiento =
+            COALESCE(
+                NULLIF(MotivoSeguimiento, ''),
+                N'Seguimiento comercial de consulta por WhatsApp.'
+            ),
+
+        -- La sincronización masiva no cambia una decisión manual
+        -- de seguimiento. Solamente los mensajes en vivo pueden reactivarla.
+        RequiereSeguimiento =
+            RequiereSeguimiento,
+
+        FechaUltimoMensajeCliente =
+            CASE
+                WHEN @FechaUltimoMensajeCliente IS NOT NULL
+                 AND
+                 (
+                     FechaUltimoMensajeCliente IS NULL
+                     OR @FechaUltimoMensajeCliente > FechaUltimoMensajeCliente
+                 )
+                    THEN @FechaUltimoMensajeCliente
+                ELSE FechaUltimoMensajeCliente
+            END,
+
+        FechaUltimaRespuesta =
+            CASE
+                WHEN @FechaUltimaRespuesta IS NOT NULL
+                 AND
+                 (
+                     FechaUltimaRespuesta IS NULL
+                     OR @FechaUltimaRespuesta > FechaUltimaRespuesta
+                 )
+                    THEN @FechaUltimaRespuesta
+                ELSE FechaUltimaRespuesta
+            END,
+
+        FechaUltimaInteraccion =
+            CASE
+                WHEN @FechaUltimaInteraccion IS NOT NULL
+                 AND
+                 (
+                     FechaUltimaInteraccion IS NULL
+                     OR @FechaUltimaInteraccion > FechaUltimaInteraccion
+                 )
+                    THEN @FechaUltimaInteraccion
+                ELSE FechaUltimaInteraccion
+            END,
+
+        UltimoMensajeCliente =
+            CASE
+                WHEN @FechaUltimoMensajeCliente IS NOT NULL
+                 AND
+                 (
+                     FechaUltimoMensajeCliente IS NULL
+                     OR @FechaUltimoMensajeCliente >= FechaUltimoMensajeCliente
+                 )
+                    THEN COALESCE(
+                        NULLIF(LEFT(@UltimoMensajeCliente, 1000), ''),
+                        UltimoMensajeCliente
+                    )
+                ELSE UltimoMensajeCliente
+            END,
+
+        UltimaRespuesta =
+            CASE
+                WHEN @FechaUltimaRespuesta IS NOT NULL
+                 AND
+                 (
+                     FechaUltimaRespuesta IS NULL
+                     OR @FechaUltimaRespuesta >= FechaUltimaRespuesta
+                 )
+                    THEN COALESCE(
+                        NULLIF(LEFT(@UltimaRespuesta, 1000), ''),
+                        UltimaRespuesta
+                    )
+                ELSE UltimaRespuesta
+            END
+
+    WHERE Id = @IdInteresado;
+END;
+
+SELECT
+    @IdInteresado AS IdInteresado,
+    @EsNuevo AS EsNuevo,
+    CASE
+        WHEN @TelefonoReal IS NOT NULL THEN CAST(1 AS BIT)
+        ELSE CAST(0 AS BIT)
+    END AS TieneTelefonoReal;
+";
+
+            var resultado =
+                await conn.QuerySingleAsync<
+                    SincronizarContactoWhatsAppResultadoDto>(
+                    sql,
+                    request,
+                    transaction);
+
+            transaction.Commit();
+
+            return resultado;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error sincronizando contacto de WhatsApp. Identificador={Identificador}",
+                request.IdentificadorExterno);
+
+            throw new RepositoryException(
+                "Error sincronizando contacto de WhatsApp.",
                 ex);
         }
     }
@@ -960,6 +1328,20 @@ SELECT
             ELSE 0
         END
     ) AS NuevosDelDia,
+
+    SUM(
+        CASE
+            WHEN CAST(
+                COALESCE(
+                    i.FechaUltimaInteraccion,
+                    i.FechaRegistro
+                )
+                AS DATE
+            ) = @Dia
+                THEN 1
+            ELSE 0
+        END
+    ) AS InteraccionesDelDia,
 
     SUM(
         CASE

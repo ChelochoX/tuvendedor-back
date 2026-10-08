@@ -33,6 +33,10 @@ public interface IClientesService
     Task<int> RegistrarInteraccionWhatsApp(
         InteresadoWhatsAppEventoRequest request);
 
+    Task<SincronizacionWhatsAppResultadoDto> SincronizarWhatsAppDia(
+        DateTime? fecha,
+        int idUsuario);
+
     Task ActualizarSeguimientoInteresado(
         int idInteresado,
         ActualizarSeguimientoInteresadoRequest request,

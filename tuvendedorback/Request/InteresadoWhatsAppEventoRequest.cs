@@ -65,3 +65,29 @@ public class ActualizarSeguimientoInteresadoRequest
 
     public string? Comentario { get; set; }
 }
+
+
+/// <summary>
+/// Contacto/chat recuperado desde la sesión activa de WhatsApp para
+/// sincronización comercial manual desde el CRM.
+/// </summary>
+public class WhatsAppContactoSincronizacionRequest
+{
+    public string IdentificadorExterno { get; set; } = string.Empty;
+
+    public string? NumeroWhatsapp { get; set; }
+
+    public string? NombreContacto { get; set; }
+
+    public string? UltimoMensajeCliente { get; set; }
+
+    public string? UltimaRespuesta { get; set; }
+
+    public DateTime? FechaUltimoMensajeCliente { get; set; }
+
+    public DateTime? FechaUltimaRespuesta { get; set; }
+
+    public DateTime FechaUltimaInteraccion { get; set; }
+
+    public int CantidadMensajesDia { get; set; }
+}

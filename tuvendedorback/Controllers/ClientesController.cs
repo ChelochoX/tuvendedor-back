@@ -154,6 +154,50 @@ public class ClientesController : ControllerBase
     }
 
 
+
+    [HttpPost("sincronizar-whatsapp-dia")]
+    [SwaggerOperation(
+        Summary = "Sincroniza los chats activos de WhatsApp del día con el CRM de interesados",
+        Description =
+            "Importa/actualiza contactos de WhatsApp sin duplicarlos y conserva los seguimientos manuales existentes.")]
+    public async Task<IActionResult> SincronizarWhatsAppDia(
+        [FromQuery] DateTime? fecha = null)
+    {
+        var idUsuario =
+            _userContext.IdUsuario;
+
+        if (idUsuario is null or 0)
+        {
+            return Unauthorized(
+                new Response<object>
+                {
+                    Success = false,
+                    Errors =
+                        new List<string>
+                        {
+                            "Usuario no autenticado."
+                        },
+                    StatusCode = 401
+                });
+        }
+
+        var data =
+            await _service.SincronizarWhatsAppDia(
+                fecha,
+                idUsuario.Value);
+
+        return Ok(
+            new Response<SincronizacionWhatsAppResultadoDto>
+            {
+                Success = true,
+                Data = data,
+                Message =
+                    "WhatsApp sincronizado correctamente.",
+                StatusCode = 200
+            });
+    }
+
+
     [HttpGet("obtener-interesados")]
     [SwaggerOperation(
         Summary = "Obtiene el listado de interesados",

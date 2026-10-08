@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using System.Text.Json;
 using tuvendedorback.Common;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
@@ -15,19 +16,25 @@ public class ClientesService : IClientesService
     private readonly ILogger<ClientesService> _logger;
     private readonly IImageStorageService _imageStorage;
     private readonly IServiceProvider _serviceProvider;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConfiguration _configuration;
 
     public ClientesService(
         IServiceProvider serviceProvider,
         IImageStorageService imageStorage,
         ILogger<ClientesService> logger,
         IMapper mapper,
-        IClientesRepository repository)
+        IClientesRepository repository,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration)
     {
         _serviceProvider = serviceProvider;
         _imageStorage = imageStorage;
         _logger = logger;
         _mapper = mapper;
         _repository = repository;
+        _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
     }
 
 
@@ -106,6 +113,208 @@ public class ClientesService : IClientesService
         return await _repository
             .RegistrarInteraccionWhatsApp(
                 request);
+    }
+
+
+
+    public async Task<SincronizacionWhatsAppResultadoDto>
+        SincronizarWhatsAppDia(
+            DateTime? fecha,
+            int idUsuario)
+    {
+        var dia =
+            (fecha ?? DateTime.Today).Date;
+
+        var entorno =
+            Environment.GetEnvironmentVariable(
+                "ASPNETCORE_ENVIRONMENT");
+
+        var urlPorDefecto =
+            string.Equals(
+                entorno,
+                "Development",
+                StringComparison.OrdinalIgnoreCase)
+                ? "http://localhost:3100"
+                : "http://tuvendedor_wa:3100";
+
+        var baseUrl =
+            (
+                _configuration[
+                    "WhatsAppBridge:BaseUrl"]
+                ??
+                Environment.GetEnvironmentVariable(
+                    "WHATSAPP_BRIDGE_URL")
+                ??
+                urlPorDefecto
+            )
+            .TrimEnd('/');
+
+        var internalKey =
+            _configuration[
+                "IA:InternalKey"];
+
+        if (string.IsNullOrWhiteSpace(
+            internalKey))
+        {
+            throw new ReglasdeNegocioException(
+                "No está configurada la clave interna para sincronizar WhatsApp.");
+        }
+
+        var client =
+            _httpClientFactory.CreateClient();
+
+        client.Timeout =
+            TimeSpan.FromSeconds(120);
+
+        using var httpRequest =
+            new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{baseUrl}/crm/chats-dia?fecha={dia:yyyy-MM-dd}");
+
+        httpRequest.Headers.TryAddWithoutValidation(
+            "X-TuVendedor-Internal-Key",
+            internalKey);
+
+        using var response =
+            await client.SendAsync(
+                httpRequest);
+
+        var json =
+            await response.Content
+                .ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning(
+                "Bridge WhatsApp devolvió {StatusCode}: {Body}",
+                (int)response.StatusCode,
+                json);
+
+            throw new ReglasdeNegocioException(
+                "No se pudo consultar la sesión de WhatsApp. Revisá que el bridge esté conectado.");
+        }
+
+        var bridge =
+            JsonSerializer.Deserialize<
+                WhatsAppChatsDiaBridgeResponse>(
+                json,
+                new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive =
+                        true
+                });
+
+        if (
+            bridge is null
+            ||
+            !bridge.Success
+        )
+        {
+            throw new ReglasdeNegocioException(
+                bridge?.Message
+                ??
+                "WhatsApp no devolvió una respuesta válida.");
+        }
+
+        var resultado =
+            new SincronizacionWhatsAppResultadoDto
+            {
+                Fecha =
+                    dia,
+
+                ChatsEncontrados =
+                    bridge.Data.Count
+            };
+
+        foreach (
+            var contacto
+            in bridge.Data)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(
+                    contacto.IdentificadorExterno))
+                {
+                    resultado.Errores++;
+                    continue;
+                }
+
+                var item =
+                    await _repository
+                        .SincronizarContactoWhatsApp(
+                            new WhatsAppContactoSincronizacionRequest
+                            {
+                                IdentificadorExterno =
+                                    contacto.IdentificadorExterno,
+
+                                NumeroWhatsapp =
+                                    contacto.NumeroWhatsapp,
+
+                                NombreContacto =
+                                    contacto.NombreContacto,
+
+                                UltimoMensajeCliente =
+                                    contacto.UltimoMensajeCliente,
+
+                                UltimaRespuesta =
+                                    contacto.UltimaRespuesta,
+
+                                FechaUltimoMensajeCliente =
+                                    contacto.FechaUltimoMensajeCliente,
+
+                                FechaUltimaRespuesta =
+                                    contacto.FechaUltimaRespuesta,
+
+                                FechaUltimaInteraccion =
+                                    contacto.FechaUltimaInteraccion
+                                    ??
+                                    dia,
+
+                                CantidadMensajesDia =
+                                    contacto.CantidadMensajesDia
+                            });
+
+                resultado.Procesados++;
+
+                if (item.EsNuevo)
+                {
+                    resultado.Nuevos++;
+                }
+                else
+                {
+                    resultado.Actualizados++;
+                }
+
+                if (item.TieneTelefonoReal)
+                {
+                    resultado.ConTelefonoReal++;
+                }
+                else
+                {
+                    resultado.SinTelefonoReal++;
+                }
+            }
+            catch (Exception ex)
+            {
+                resultado.Errores++;
+
+                _logger.LogWarning(
+                    ex,
+                    "No se pudo sincronizar chat WhatsApp {Identificador}",
+                    contacto.IdentificadorExterno);
+            }
+        }
+
+        _logger.LogInformation(
+            "Sincronización WhatsApp {Fecha}: {Procesados} procesados, {Nuevos} nuevos, {Actualizados} actualizados, {Errores} errores. Usuario {IdUsuario}",
+            dia,
+            resultado.Procesados,
+            resultado.Nuevos,
+            resultado.Actualizados,
+            resultado.Errores,
+            idUsuario);
+
+        return resultado;
     }
 
 
@@ -352,4 +561,39 @@ public class ClientesService : IClientesService
                 });
         }
     }
+
+    private sealed class WhatsAppChatsDiaBridgeResponse
+    {
+        public bool Success { get; set; }
+
+        public string? Message { get; set; }
+
+        public List<WhatsAppChatBridgeItem>
+            Data
+        { get; set; } = new();
+    }
+
+
+    private sealed class WhatsAppChatBridgeItem
+    {
+        public string IdentificadorExterno { get; set; } =
+            string.Empty;
+
+        public string? NumeroWhatsapp { get; set; }
+
+        public string? NombreContacto { get; set; }
+
+        public string? UltimoMensajeCliente { get; set; }
+
+        public string? UltimaRespuesta { get; set; }
+
+        public DateTime? FechaUltimoMensajeCliente { get; set; }
+
+        public DateTime? FechaUltimaRespuesta { get; set; }
+
+        public DateTime? FechaUltimaInteraccion { get; set; }
+
+        public int CantidadMensajesDia { get; set; }
+    }
+
 }

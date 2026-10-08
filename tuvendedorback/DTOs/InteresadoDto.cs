@@ -141,6 +141,12 @@ public class InteresadosResumenDto
 
     public int NuevosDelDia { get; set; }
 
+    /// <summary>
+    /// Cantidad de interesados con interacción en la fecha consultada.
+    /// Es un conteo de contactos únicos, no de mensajes.
+    /// </summary>
+    public int InteraccionesDelDia { get; set; }
+
     public int PendientesSeguimiento { get; set; }
 
     public int SeguimientosVencidos { get; set; }
@@ -156,4 +162,34 @@ public class InteresadosResumenDto
     public int ContadoEnProceso { get; set; }
 
     public int DerivadosHumano { get; set; }
+}
+
+
+public class SincronizarContactoWhatsAppResultadoDto
+{
+    public int IdInteresado { get; set; }
+
+    public bool EsNuevo { get; set; }
+
+    public bool TieneTelefonoReal { get; set; }
+}
+
+
+public class SincronizacionWhatsAppResultadoDto
+{
+    public DateTime Fecha { get; set; }
+
+    public int ChatsEncontrados { get; set; }
+
+    public int Procesados { get; set; }
+
+    public int Nuevos { get; set; }
+
+    public int Actualizados { get; set; }
+
+    public int ConTelefonoReal { get; set; }
+
+    public int SinTelefonoReal { get; set; }
+
+    public int Errores { get; set; }
 }
