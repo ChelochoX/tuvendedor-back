@@ -1558,7 +1558,7 @@ public class MotoConversacionService
                 StringComparison.OrdinalIgnoreCase)
         )
         {
-            var textoDetectado =
+            var textoMarketplaceDetectado =
                 string.Join(
                     " ",
                     new[]
@@ -1572,7 +1572,7 @@ public class MotoConversacionService
             var respuestaMarketplaceImagen =
                 await ProcesarMarketplaceSiCorresponde(
                     idConversacion,
-                    textoDetectado,
+                    textoMarketplaceDetectado,
                     null,
                     false,
                     cancellationToken);
