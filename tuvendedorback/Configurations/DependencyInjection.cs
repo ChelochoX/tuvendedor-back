@@ -41,6 +41,7 @@ public static class DependencyInjection
         services.AddScoped<ICreditoMotoGestionRepository, CreditoMotoGestionRepository>();
         services.AddScoped<IDescuentoContadoMotoRepository,DescuentoContadoMotoRepository>();
         services.AddScoped<IContadoMotoGestionRepository,ContadoMotoGestionRepository>();
+        services.AddScoped<ISeguimientoWhatsappRepository, SeguimientoWhatsappRepository>();
 
         return services;
     }
@@ -83,6 +84,9 @@ public static class DependencyInjection
         services.AddScoped<IDescuentoContadoMotoService,DescuentoContadoMotoService>();
         services.AddScoped<IContadoMotoGestionService,ContadoMotoGestionService>();
         services.AddScoped<ICreditoMotoPdfService,CreditoMotoPdfService>();
+        services.AddScoped<ISeguimientoWhatsappService, SeguimientoWhatsappService>();
+        services.AddHttpClient<ISeguimientoWhatsappSender, SeguimientoWhatsappSender>();
+        services.AddHostedService<SeguimientoWhatsappBackgroundService>();
 
         return services;
     }
