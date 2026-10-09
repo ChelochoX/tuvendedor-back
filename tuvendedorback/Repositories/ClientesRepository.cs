@@ -13,6 +13,9 @@ public class ClientesRepository : IClientesRepository
     private readonly DbConnections _conexion;
     private readonly ILogger<ClientesRepository> _logger;
 
+    private static readonly TimeZoneInfo ZonaHorariaParaguay =
+        ObtenerZonaHorariaParaguay();
+
     public ClientesRepository(
         ILogger<ClientesRepository> logger,
         DbConnections conexion)
@@ -654,11 +657,9 @@ SELECT @IdInteresado;";
 
         try
         {
-            var desde =
-                fecha.Date;
-
-            var hasta =
-                desde.AddDays(1);
+            var (desdeUtc, hastaUtc) =
+                ObtenerRangoUtcDiaParaguay(
+                    fecha);
 
             const string sql = @"
 WITH ConversacionesDia AS
@@ -729,8 +730,8 @@ ORDER BY
                     sql,
                     new
                     {
-                        Desde = desde,
-                        Hasta = hasta
+                        Desde = desdeUtc,
+                        Hasta = hastaUtc
                     });
 
             return data.ToList();
@@ -1449,9 +1450,6 @@ FETCH NEXT (@Limit) ROWS ONLY;");
         try
         {
             const string sql = @"
-DECLARE @Dia DATE =
-    COALESCE(CAST(@Fecha AS DATE), CAST(GETDATE() AS DATE));
-
 SELECT
     SUM(
         CASE
@@ -1463,7 +1461,8 @@ SELECT
 
     SUM(
         CASE
-            WHEN CAST(i.FechaRegistro AS DATE) = @Dia
+            WHEN i.FechaRegistro >= @DesdeUtc
+             AND i.FechaRegistro < @HastaUtc
                 THEN 1
             ELSE 0
         END
@@ -1471,13 +1470,8 @@ SELECT
 
     SUM(
         CASE
-            WHEN CAST(
-                COALESCE(
-                    i.FechaUltimaInteraccion,
-                    i.FechaRegistro
-                )
-                AS DATE
-            ) = @Dia
+            WHEN i.FechaUltimoMensajeCliente >= @DesdeUtc
+             AND i.FechaUltimoMensajeCliente < @HastaUtc
                 THEN 1
             ELSE 0
         END
@@ -1583,12 +1577,23 @@ SELECT
 
 FROM dbo.Interesados i;";
 
+            var fechaReferencia =
+                fecha ??
+                TimeZoneInfo.ConvertTimeFromUtc(
+                    DateTime.UtcNow,
+                    ZonaHorariaParaguay);
+
+            var (desdeUtc, hastaUtc) =
+                ObtenerRangoUtcDiaParaguay(
+                    fechaReferencia);
+
             return
                 await conn.QueryFirstAsync<InteresadosResumenDto>(
                     sql,
                     new
                     {
-                        Fecha = fecha?.Date
+                        DesdeUtc = desdeUtc,
+                        HastaUtc = hastaUtc
                     });
         }
         catch (Exception ex)
@@ -2042,4 +2047,50 @@ CASE
     ELSE 0
 END";
     }
+
+    // =========================================================
+    // FECHAS OPERATIVAS - PARAGUAY / UTC
+    // =========================================================
+
+    private static (DateTime DesdeUtc, DateTime HastaUtc)
+        ObtenerRangoUtcDiaParaguay(
+            DateTime fechaParaguay)
+    {
+        var inicioLocal =
+            DateTime.SpecifyKind(
+                fechaParaguay.Date,
+                DateTimeKind.Unspecified);
+
+        var finLocal =
+            inicioLocal.AddDays(1);
+
+        return
+        (
+            TimeZoneInfo.ConvertTimeToUtc(
+                inicioLocal,
+                ZonaHorariaParaguay),
+            TimeZoneInfo.ConvertTimeToUtc(
+                finLocal,
+                ZonaHorariaParaguay)
+        );
+    }
+
+
+    private static TimeZoneInfo
+        ObtenerZonaHorariaParaguay()
+    {
+        try
+        {
+            // Linux / contenedores Docker.
+            return TimeZoneInfo.FindSystemTimeZoneById(
+                "America/Asuncion");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            // Windows / desarrollo local.
+            return TimeZoneInfo.FindSystemTimeZoneById(
+                "Paraguay Standard Time");
+        }
+    }
+
 }
