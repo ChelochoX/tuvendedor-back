@@ -95,26 +95,9 @@ SET
     IdUsuarioActualizacion = @IdUsuario
 WHERE Id = 1;
 
--- Toda modificación de reglas/configuración invalida lo todavía no enviado.
--- Primero limpiamos únicamente el marcador CRM que sabemos que fue creado por este motor.
-UPDATE i
-SET
-    RequiereSeguimiento = 0,
-    FechaProximoContacto = NULL,
-    MotivoSeguimiento = NULL
-FROM dbo.Interesados i
-WHERE i.MotivoSeguimiento LIKE N'Seguimiento automático WhatsApp #%'
-  AND EXISTS
-  (
-      SELECT 1
-      FROM dbo.SeguimientoWhatsappEnvios e
-      WHERE e.IdInteresado = i.Id
-        AND e.Estado = 'PENDIENTE'
-  );
-
--- Se eliminan solamente pendientes; ENVIADOS/ERROR/CANCELADOS quedan como auditoría.
-DELETE FROM dbo.SeguimientoWhatsappEnvios
-WHERE Estado = 'PENDIENTE';
+-- IMPORTANTE: guardar configuración o apagar el motor NO borra la cola.
+-- Los pendientes se conservan para la prueba controlada y la auditoría.
+-- Antes de activar envío real hay que revisar los pendientes existentes.
 
 UPDATE dbo.SeguimientoWhatsappReglas
 SET
@@ -380,7 +363,7 @@ ORDER BY cliente.Fecha ASC, i.Id ASC;";
     {
         using var conn = _conexion.CreateSqlConnection();
         conn.Open();
-        using var transaction = conn.BeginTransaction();
+        using var transaction = conn.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
         try
         {
@@ -388,7 +371,7 @@ ORDER BY cliente.Fecha ASC, i.Id ASC;";
 IF EXISTS
 (
     SELECT 1
-    FROM dbo.SeguimientoWhatsappEnvios
+    FROM dbo.SeguimientoWhatsappEnvios WITH (UPDLOCK, HOLDLOCK)
     WHERE IdInteresado = @IdInteresado
       AND CicloInicio = @CicloInicio
       AND NumeroSeguimiento = @NumeroSeguimiento
@@ -453,6 +436,15 @@ SELECT CAST(1 AS BIT);";
 
             transaction.Commit();
             return creado;
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number is 2601 or 2627)
+        {
+            // Otro proceso registró el mismo ciclo/paso: duplicado esperado, no error 500.
+            transaction.Rollback();
+            _logger.LogInformation(
+                "Seguimiento ya registrado por otro ciclo. IdInteresado={IdInteresado}, Orden={Orden}",
+                candidato.IdInteresado, regla.Orden);
+            return false;
         }
         catch (Exception ex)
         {
