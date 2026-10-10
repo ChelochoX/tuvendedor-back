@@ -266,14 +266,19 @@ OUTER APPLY
         c.Id AS IdConversacion,
         c.Modo,
         c.FechaUltimoMensaje
-    FROM dbo.Contactos ct
-    INNER JOIN dbo.Conversaciones c
-        ON c.IdContacto = ct.Id
+    FROM dbo.Conversaciones c
+    LEFT JOIN dbo.Contactos ct ON ct.Id = c.IdContacto
     WHERE
-        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(ct.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
-        =
-        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
-    ORDER BY c.FechaUltimoMensaje DESC, c.Id DESC
+        c.Id = i.IdConversacion
+        OR
+        (
+            i.IdConversacion IS NULL
+            AND UPPER(ISNULL(c.Canal, '')) = 'WHATSAPP'
+            AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(ct.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
+              = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
+        )
+    ORDER BY CASE WHEN c.Id = i.IdConversacion THEN 0 ELSE 1 END,
+             c.FechaUltimoMensaje DESC, c.Id DESC
 ) conv
 
 OUTER APPLY
@@ -301,6 +306,10 @@ WHERE
     ISNULL(i.Estado, 'Activo') <> 'Inactivo'
     AND UPPER(ISNULL(i.Origen, '')) = 'WHATSAPP'
     AND ISNULL(i.NoContactarWhatsapp, 0) = 0
+    AND ISNULL(i.RequiereSeguimiento, 0) = 1
+    -- Seguimientos automáticos exclusivamente para motos con modelo identificado.
+    AND (i.IdModeloProducto IS NOT NULL
+         OR NULLIF(LTRIM(RTRIM(ISNULL(i.ModeloInteres, ''))), '') IS NOT NULL)
     AND NULLIF(LTRIM(RTRIM(ISNULL(i.Telefono, ''))), '') IS NOT NULL
 
     -- Si por datos históricos existen dos Interesados para el mismo teléfono,
@@ -486,14 +495,19 @@ OUTER APPLY
 (
     SELECT TOP (1)
         c.Id AS IdConversacion
-    FROM dbo.Contactos ct
-    INNER JOIN dbo.Conversaciones c
-        ON c.IdContacto = ct.Id
+    FROM dbo.Conversaciones c
+    LEFT JOIN dbo.Contactos ct ON ct.Id = c.IdContacto
     WHERE
-        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(ct.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
-        =
-        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
-    ORDER BY c.FechaUltimoMensaje DESC, c.Id DESC
+        c.Id = i.IdConversacion
+        OR
+        (
+            i.IdConversacion IS NULL
+            AND UPPER(ISNULL(c.Canal, '')) = 'WHATSAPP'
+            AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(ct.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
+              = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
+        )
+    ORDER BY CASE WHEN c.Id = i.IdConversacion THEN 0 ELSE 1 END,
+             c.FechaUltimoMensaje DESC, c.Id DESC
 ) conv
 OUTER APPLY
 (
