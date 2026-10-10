@@ -37,6 +37,7 @@ public sealed class SeguimientoWhatsappCandidatoDto
     public int CantidadSeguimientosEnviados { get; set; }
     public int? UltimoNumeroSeguimientoEnviado { get; set; }
     public DateTime? FechaUltimoSeguimientoEnviado { get; set; }
+    public DateTime? FechaPausaHasta { get; set; }
 }
 
 public sealed class SeguimientoWhatsappEnvioPendienteDto
@@ -83,4 +84,6 @@ public sealed class SeguimientoWhatsappEstadoVigenciaDto
 {
     public bool Vigente { get; set; }
     public string? MotivoCancelacion { get; set; }
+    public string? UltimoMensajeCliente { get; set; }
+    public DateTime? FechaUltimoMensajeCliente { get; set; }
 }

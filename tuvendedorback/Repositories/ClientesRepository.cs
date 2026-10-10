@@ -3,6 +3,7 @@ using System.Text;
 using tuvendedorback.Data;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
+using tuvendedorback.Helpers;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Request;
 
@@ -128,6 +129,12 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
             using var transaction =
                 conn.BeginTransaction();
 
+            var decision = request.EsEntradaCliente
+                ? PoliticaSeguimientoCliente.Evaluar(request.MensajeCliente)
+                : PoliticaSeguimientoCliente.Evaluar(null);
+            var consultaInmueble = request.EsEntradaCliente &&
+                PoliticaSeguimientoCliente.EsConsultaInmueble(request.MensajeCliente);
+
             const string sql = @"
 DECLARE @IdInteresado INT;
 DECLARE @Identificador VARCHAR(150) = NULLIF(LTRIM(RTRIM(@IdentificadorExterno)), '');
@@ -138,6 +145,38 @@ DECLARE @Marca VARCHAR(150);
 DECLARE @Modelo VARCHAR(250);
 DECLARE @CodigoReferencia VARCHAR(100);
 DECLARE @ProductoInteres NVARCHAR(300);
+DECLARE @PausaHasta DATETIME2(3) =
+    CASE @PausaUnidad
+        WHEN 'DIA' THEN DATEADD(DAY, @PausaValor, GETDATE())
+        WHEN 'SEMANA' THEN DATEADD(DAY, @PausaValor * 7, GETDATE())
+        WHEN 'MES' THEN DATEADD(MONTH, @PausaValor, GETDATE())
+        WHEN 'ANIO' THEN DATEADD(YEAR, @PausaValor, GETDATE())
+        WHEN 'HORA' THEN DATEADD(HOUR, @PausaValor, GETDATE())
+        ELSE NULL
+    END;
+DECLARE @EsPublicacionOtroRubro BIT = CASE WHEN @ConsultaInmueble = 1 THEN 1 ELSE 0 END;
+
+-- Una consulta nueva sobre un inmueble debe limpiar el modelo de moto anterior.
+-- La clasificación es por rubro real de la publicación y su modelo asociado.
+IF @IdPublicacion IS NOT NULL AND @IdModeloProducto IS NULL
+   AND EXISTS (SELECT 1 FROM dbo.Publicaciones WHERE Id = @IdPublicacion)
+   AND NOT EXISTS
+   (
+       SELECT 1
+       FROM dbo.PublicacionModeloProducto pmp
+       INNER JOIN dbo.ModelosProducto mp ON mp.Id = pmp.IdModeloProducto
+       WHERE pmp.IdPublicacion = @IdPublicacion AND pmp.Estado = 'Activo'
+         AND UPPER(LTRIM(RTRIM(ISNULL(mp.Rubro, '')))) = 'MOTO'
+   )
+   AND NOT EXISTS
+   (
+       SELECT 1 FROM dbo.Publicaciones p
+       WHERE p.Id = @IdPublicacion
+         AND UPPER(ISNULL(p.Categoria, '')) LIKE '%MOTO%'
+   )
+BEGIN
+    SET @EsPublicacionOtroRubro = 1;
+END;
 
 -- Si el caller solamente mandó IdConversacion, recuperamos el identificador.
 IF @Identificador IS NULL
@@ -251,6 +290,7 @@ BEGIN
         PasoOperacion,
         RequiereSeguimiento,
         MotivoSeguimiento,
+        NoContactarWhatsapp,
         FechaUltimoMensajeCliente,
         FechaUltimaRespuesta,
         FechaUltimaInteraccion,
@@ -269,7 +309,9 @@ BEGIN
         0,
         'Activo',
         GETDATE(),
-        DATEADD(DAY, 1, GETDATE()),
+        CASE WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 OR @PausaIndefinida = 1
+             THEN NULL WHEN @PausaHasta IS NOT NULL THEN @PausaHasta
+             ELSE DATEADD(DAY, 1, GETDATE()) END,
         N'Registrado automáticamente desde la conversación de WhatsApp.',
         NULL,
         'PANAMBI',
@@ -282,15 +324,24 @@ BEGIN
         @Marca,
         @Modelo,
         @CodigoReferencia,
-        COALESCE(NULLIF(@EstadoConsulta, ''), 'CONSULTANDO'),
+        CASE WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1
+             THEN 'CERRADO'
+             ELSE COALESCE(NULLIF(@EstadoConsulta, ''), 'CONSULTANDO') END,
         NULLIF(@TipoOperacion, ''),
         @IdSolicitudOperacion,
         NULLIF(@PasoOperacion, ''),
-        1,
-        COALESCE(
-            NULLIF(@MotivoSeguimiento, ''),
-            N'Seguimiento comercial de consulta por WhatsApp.'
-        ),
+        CASE WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1
+                    OR @PausaIndefinida = 1 OR @PausaHasta IS NOT NULL
+             THEN 0 ELSE 1 END,
+        CASE
+            WHEN @DecisionNoContactar = 1 THEN N'NO_CONTACTAR_SOLICITADO'
+            WHEN @DecisionDesiste = 1 THEN N'RECHAZO_MOTO_EXPLICITO'
+            WHEN @PausaIndefinida = 1 THEN N'PAUSA_SEGUIMIENTO_SIN_FECHA'
+            WHEN @PausaHasta IS NOT NULL THEN N'PAUSA_SEGUIMIENTO_HASTA'
+            ELSE COALESCE(NULLIF(@MotivoSeguimiento, ''),
+                N'Seguimiento comercial de consulta por WhatsApp.')
+        END,
+        @DecisionNoContactar,
         CASE WHEN @EsEntradaCliente = 1 THEN GETDATE() ELSE NULL END,
         CASE WHEN NULLIF(@Respuesta, '') IS NOT NULL THEN GETDATE() ELSE NULL END,
         GETDATE(),
@@ -350,98 +401,94 @@ BEGIN
             END,
 
         IdModeloProducto =
-            COALESCE(@IdModeloProducto, IdModeloProducto),
+            CASE WHEN @EsPublicacionOtroRubro = 1 THEN NULL
+                 ELSE COALESCE(@IdModeloProducto, IdModeloProducto) END,
 
         IdPublicacion =
             COALESCE(@IdPublicacion, IdPublicacion),
 
         MarcaInteres =
-            COALESCE(@Marca, MarcaInteres),
+            CASE WHEN @EsPublicacionOtroRubro = 1 THEN NULL
+                 ELSE COALESCE(@Marca, MarcaInteres) END,
 
         ModeloInteres =
-            COALESCE(@Modelo, ModeloInteres),
+            CASE WHEN @EsPublicacionOtroRubro = 1 THEN NULL
+                 ELSE COALESCE(@Modelo, ModeloInteres) END,
 
         CodigoReferencia =
-            COALESCE(@CodigoReferencia, CodigoReferencia),
+            CASE WHEN @EsPublicacionOtroRubro = 1 THEN NULL
+                 ELSE COALESCE(@CodigoReferencia, CodigoReferencia) END,
 
         EstadoConsulta =
             CASE
-                WHEN ISNULL(EstadoConsulta, '') IN
-                (
-                    'CREDITO_EN_PROCESO',
-                    'CONTADO_EN_PROCESO',
-                    'DERIVADO_HUMANO',
-                    'CERRADO'
-                )
-                AND NULLIF(@EstadoConsulta, '') IN
-                (
-                    'CONSULTANDO',
-                    'ESPERANDO_MODELO',
-                    'CONSULTA_PROMO',
-                    'COTIZADO'
-                )
+                WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 THEN 'CERRADO'
+                WHEN @DecisionRetoma = 1 AND ISNULL(NoContactarWhatsapp, 0) = 0
+                     AND (MotivoSeguimiento IN (
+                         N'RECHAZO_MOTO_EXPLICITO', N'PAUSA_SEGUIMIENTO_SIN_FECHA',
+                         N'PAUSA_SEGUIMIENTO_HASTA') OR EstadoConsulta = 'SIN_RESPUESTA')
+                     THEN 'CONSULTANDO'
+                WHEN EstadoConsulta IN ('CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO',
+                                       'DERIVADO_HUMANO', 'CERRADO')
+                    AND NULLIF(@EstadoConsulta, '') IN ('CONSULTANDO', 'ESPERANDO_MODELO',
+                                                       'CONSULTA_PROMO', 'COTIZADO')
                     THEN EstadoConsulta
-                ELSE
-                    COALESCE(
-                        NULLIF(@EstadoConsulta, ''),
-                        EstadoConsulta,
-                        'CONSULTANDO'
-                    )
+                ELSE COALESCE(NULLIF(@EstadoConsulta, ''), EstadoConsulta, 'CONSULTANDO')
             END,
 
-        TipoOperacion =
-            COALESCE(
-                NULLIF(@TipoOperacion, ''),
-                TipoOperacion
-            ),
+        TipoOperacion = COALESCE(NULLIF(@TipoOperacion, ''), TipoOperacion),
+        IdSolicitudOperacion = COALESCE(@IdSolicitudOperacion, IdSolicitudOperacion),
+        PasoOperacion = COALESCE(NULLIF(@PasoOperacion, ''), PasoOperacion),
 
-        IdSolicitudOperacion =
-            COALESCE(
-                @IdSolicitudOperacion,
-                IdSolicitudOperacion
-            ),
-
-        PasoOperacion =
-            COALESCE(
-                NULLIF(@PasoOperacion, ''),
-                PasoOperacion
-            ),
+        NoContactarWhatsapp =
+            CASE WHEN @DecisionNoContactar = 1 THEN 1 ELSE NoContactarWhatsapp END,
 
         RequiereSeguimiento =
             CASE
-                WHEN NULLIF(@EstadoConsulta, '') = 'CERRADO'
-                    THEN 0
-                WHEN Estado = 'Inactivo'
-                    THEN RequiereSeguimiento
-                ELSE 1
+                WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 OR
+                     @PausaIndefinida = 1 OR @PausaHasta IS NOT NULL OR
+                     @EsPublicacionOtroRubro = 1 THEN 0
+                WHEN ISNULL(NoContactarWhatsapp, 0) = 1 OR
+                     EstadoConsulta IN ('CERRADO', 'CREDITO_EN_PROCESO',
+                                        'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
+                     AND @DecisionRetoma = 0 THEN 0
+                WHEN NULLIF(@EstadoConsulta, '') IN ('CERRADO', 'CREDITO_EN_PROCESO',
+                        'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO') THEN 0
+                WHEN MotivoSeguimiento IN (N'RECHAZO_MOTO_EXPLICITO',
+                        N'PAUSA_SEGUIMIENTO_SIN_FECHA', N'PAUSA_SEGUIMIENTO_HASTA')
+                     AND @DecisionRetoma = 0 THEN 0
+                WHEN @DecisionRetoma = 1 AND ISNULL(NoContactarWhatsapp, 0) = 0 THEN 1
+                WHEN @EsEntradaCliente = 1 AND EstadoConsulta = 'SIN_RESPUESTA' THEN 1
+                ELSE RequiereSeguimiento
             END,
 
-        -- Si se cierra porque el cliente desistió, guardamos ese motivo.
-        -- En los demás casos conservamos primero cualquier motivo manual existente.
         MotivoSeguimiento =
             CASE
+                WHEN @DecisionNoContactar = 1 THEN N'NO_CONTACTAR_SOLICITADO'
+                WHEN @DecisionDesiste = 1 THEN N'RECHAZO_MOTO_EXPLICITO'
+                WHEN @PausaIndefinida = 1 THEN N'PAUSA_SEGUIMIENTO_SIN_FECHA'
+                WHEN @PausaHasta IS NOT NULL THEN N'PAUSA_SEGUIMIENTO_HASTA'
+                WHEN @DecisionRetoma = 1 AND MotivoSeguimiento IN (
+                    N'RECHAZO_MOTO_EXPLICITO', N'PAUSA_SEGUIMIENTO_SIN_FECHA',
+                    N'PAUSA_SEGUIMIENTO_HASTA', N'Secuencia automática finalizada sin nueva respuesta.')
+                    THEN N'Seguimiento comercial de consulta por WhatsApp.'
+                WHEN @EsEntradaCliente = 1 AND EstadoConsulta = 'SIN_RESPUESTA'
+                    THEN N'Seguimiento comercial de consulta por WhatsApp.'
                 WHEN NULLIF(@EstadoConsulta, '') = 'CERRADO'
-                    THEN COALESCE(
-                        NULLIF(@MotivoSeguimiento, ''),
-                        N'Cliente desistió de la consulta.'
-                    )
-                ELSE COALESCE(
-                    NULLIF(MotivoSeguimiento, ''),
-                    NULLIF(@MotivoSeguimiento, ''),
-                    N'Seguimiento comercial de consulta por WhatsApp.'
-                )
+                    THEN COALESCE(NULLIF(@MotivoSeguimiento, ''), N'Cliente desistió de la consulta.')
+                ELSE COALESCE(NULLIF(MotivoSeguimiento, ''), NULLIF(@MotivoSeguimiento, ''),
+                              N'Seguimiento comercial de consulta por WhatsApp.')
             END,
 
-        -- Una oportunidad cerrada no debe quedar agendada como seguimiento pendiente.
-        -- Para conversaciones activas conservamos la agenda manual existente.
         FechaProximoContacto =
             CASE
-                WHEN NULLIF(@EstadoConsulta, '') = 'CERRADO'
-                    THEN NULL
-                ELSE COALESCE(
-                    FechaProximoContacto,
-                    DATEADD(DAY, 1, GETDATE())
-                )
+                WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 OR
+                     @PausaIndefinida = 1 THEN NULL
+                WHEN @PausaHasta IS NOT NULL THEN @PausaHasta
+                WHEN @DecisionRetoma = 1 OR
+                     (@EsEntradaCliente = 1 AND EstadoConsulta = 'SIN_RESPUESTA')
+                     THEN DATEADD(DAY, 1, GETDATE())
+                WHEN NULLIF(@EstadoConsulta, '') = 'CERRADO' THEN NULL
+                ELSE COALESCE(FechaProximoContacto, DATEADD(DAY, 1, GETDATE()))
             END,
 
         FechaUltimoMensajeCliente =
@@ -622,7 +669,31 @@ SELECT @IdInteresado;";
             var id =
                 await conn.ExecuteScalarAsync<int>(
                     sql,
-                    request,
+                    new
+                    {
+                        request.IdConversacion,
+                        request.IdentificadorExterno,
+                        request.NumeroWhatsapp,
+                        request.NombreContacto,
+                        request.IdModeloProducto,
+                        request.IdPublicacion,
+                        request.TipoConsulta,
+                        request.EstadoConsulta,
+                        request.MensajeCliente,
+                        request.Respuesta,
+                        request.TipoOperacion,
+                        request.IdSolicitudOperacion,
+                        request.PasoOperacion,
+                        request.MotivoSeguimiento,
+                        request.EsEntradaCliente,
+                        DecisionNoContactar = decision.NoContactar,
+                        DecisionDesiste = decision.Desiste,
+                        PausaIndefinida = decision.PausaIndefinida,
+                        PausaValor = decision.PausaValor,
+                        PausaUnidad = decision.PausaUnidad,
+                        DecisionRetoma = decision.RetomaConsulta,
+                        ConsultaInmueble = consultaInmueble
+                    },
                     transaction);
 
             transaction.Commit();

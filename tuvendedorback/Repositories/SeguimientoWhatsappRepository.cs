@@ -239,9 +239,16 @@ SELECT TOP (@Limite)
         WHERE e.IdInteresado = i.Id
           AND e.CicloInicio = CAST(cliente.Fecha AS DATETIME2(3))
           AND e.Estado = 'ENVIADO'
-    ) AS FechaUltimoSeguimientoEnviado
+    ) AS FechaUltimoSeguimientoEnviado,
+    CASE WHEN i.MotivoSeguimiento = N'PAUSA_SEGUIMIENTO_HASTA'
+         THEN i.FechaProximoContacto ELSE NULL END AS FechaPausaHasta
 
 FROM dbo.Interesados i
+INNER JOIN dbo.ModelosProducto mp
+    ON mp.Id = i.IdModeloProducto
+   AND UPPER(LTRIM(RTRIM(ISNULL(mp.Rubro, '')))) = 'MOTO'
+   AND UPPER(ISNULL(mp.Estado, 'Activo')) = 'ACTIVO'
+
 
 OUTER APPLY
 (
@@ -289,10 +296,23 @@ WHERE
     ISNULL(i.Estado, 'Activo') <> 'Inactivo'
     AND UPPER(ISNULL(i.Origen, '')) = 'WHATSAPP'
     AND ISNULL(i.NoContactarWhatsapp, 0) = 0
-    AND ISNULL(i.RequiereSeguimiento, 0) = 1
-    -- Seguimientos automáticos exclusivamente para motos con modelo identificado.
-    AND (i.IdModeloProducto IS NOT NULL
-         OR NULLIF(LTRIM(RTRIM(ISNULL(i.ModeloInteres, ''))), '') IS NOT NULL)
+    -- Ya no se exige RequiereSeguimiento=1: se incorpora automáticamente a
+    -- consultas de motos elegibles desde FechaDesdeElegibilidad.
+    -- Pero se respetan todas las exclusiones explícitas y manuales.
+    AND ISNULL(i.MotivoSeguimiento, '') NOT IN
+        (N'NO_CONTACTAR_SOLICITADO', N'RECHAZO_MOTO_EXPLICITO',
+         N'PAUSA_SEGUIMIENTO_SIN_FECHA',
+         N'Secuencia automática finalizada sin nueva respuesta.',
+         N'Error técnico en seguimiento automático WhatsApp. Requiere revisión manual.')
+    AND (ISNULL(i.MotivoSeguimiento, '') <> N'PAUSA_SEGUIMIENTO_HASTA'
+         OR (i.FechaProximoContacto IS NOT NULL
+             AND i.FechaProximoContacto <= GETDATE()))
+    -- No reactivar tareas manualmente suspendidas con un motivo desconocido.
+    AND (NULLIF(LTRIM(RTRIM(ISNULL(i.MotivoSeguimiento, ''))), '') IS NULL
+         OR i.MotivoSeguimiento IN
+             (N'Seguimiento comercial de consulta por WhatsApp.',
+              N'PAUSA_SEGUIMIENTO_HASTA')
+         OR i.MotivoSeguimiento LIKE N'Seguimiento automático WhatsApp #%')
     AND NULLIF(LTRIM(RTRIM(ISNULL(i.Telefono, ''))), '') IS NOT NULL
 
     -- Si por datos históricos existen dos Interesados para el mismo teléfono,
@@ -315,8 +335,8 @@ WHERE
     AND cliente.Fecha >= @FechaDesdeElegibilidad
     AND UPPER(ISNULL(ultimo.Emisor, '')) = 'IA'
     AND UPPER(ISNULL(conv.Modo, 'IA')) <> 'HUMANO'
-    AND UPPER(ISNULL(i.EstadoConsulta, '')) NOT IN
-        ('CERRADO', 'CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
+    AND UPPER(ISNULL(i.EstadoConsulta, '')) IN
+        ('CONSULTANDO', 'COTIZADO', 'CONSULTA_PROMO', 'ESPERANDO_MODELO')
 
     AND NOT EXISTS
     (
@@ -683,12 +703,34 @@ SELECT TOP (1)
     CASE
         WHEN e.Estado <> 'PROCESANDO'
             THEN CAST(0 AS BIT)
+        WHEN cfg.Activo = 0 OR UPPER(ISNULL(cfg.ModoEnvio, '')) <> 'ACTIVO'
+            THEN CAST(0 AS BIT)
         WHEN ISNULL(i.NoContactarWhatsapp, 0) = 1
+            THEN CAST(0 AS BIT)
+        WHEN UPPER(LTRIM(RTRIM(ISNULL(mp.Rubro, '')))) <> 'MOTO'
+             OR UPPER(ISNULL(mp.Estado, 'Activo')) <> 'ACTIVO'
+            THEN CAST(0 AS BIT)
+        WHEN cfg.FechaDesdeElegibilidad IS NULL OR
+             e.CicloInicio < cfg.FechaDesdeElegibilidad
+            THEN CAST(0 AS BIT)
+        WHEN ISNULL(i.MotivoSeguimiento, '') IN
+            (N'RECHAZO_MOTO_EXPLICITO', N'NO_CONTACTAR_SOLICITADO',
+             N'PAUSA_SEGUIMIENTO_SIN_FECHA',
+             N'Error técnico en seguimiento automático WhatsApp. Requiere revisión manual.')
+            OR (i.MotivoSeguimiento = N'PAUSA_SEGUIMIENTO_HASTA'
+                AND (i.FechaProximoContacto IS NULL
+                     OR i.FechaProximoContacto > GETDATE()))
+            THEN CAST(0 AS BIT)
+        WHEN NULLIF(LTRIM(RTRIM(ISNULL(i.MotivoSeguimiento, ''))), '') IS NOT NULL
+             AND i.MotivoSeguimiento NOT IN
+                 (N'Seguimiento comercial de consulta por WhatsApp.',
+                  N'PAUSA_SEGUIMIENTO_HASTA')
+             AND i.MotivoSeguimiento NOT LIKE N'Seguimiento automático WhatsApp #%'
             THEN CAST(0 AS BIT)
         WHEN ISNULL(i.Estado, 'Activo') = 'Inactivo'
             THEN CAST(0 AS BIT)
-        WHEN UPPER(ISNULL(i.EstadoConsulta, '')) IN
-            ('CERRADO', 'CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
+        WHEN UPPER(ISNULL(i.EstadoConsulta, '')) NOT IN
+            ('CONSULTANDO', 'COTIZADO', 'CONSULTA_PROMO', 'ESPERANDO_MODELO')
             THEN CAST(0 AS BIT)
         WHEN UPPER(ISNULL(c.Modo, 'IA')) = 'HUMANO'
             THEN CAST(0 AS BIT)
@@ -723,12 +765,34 @@ SELECT TOP (1)
     CASE
         WHEN e.Estado <> 'PROCESANDO'
             THEN N'El envío ya no está en proceso.'
+        WHEN cfg.Activo = 0 OR UPPER(ISNULL(cfg.ModoEnvio, '')) <> 'ACTIVO'
+            THEN N'El motor comercial no está habilitado para enviar.'
         WHEN ISNULL(i.NoContactarWhatsapp, 0) = 1
             THEN N'El cliente está marcado como no contactar por WhatsApp.'
+        WHEN UPPER(LTRIM(RTRIM(ISNULL(mp.Rubro, '')))) <> 'MOTO'
+             OR UPPER(ISNULL(mp.Estado, 'Activo')) <> 'ACTIVO'
+            THEN N'El producto no es una moto activa del catálogo.'
+        WHEN cfg.FechaDesdeElegibilidad IS NULL OR
+             e.CicloInicio < cfg.FechaDesdeElegibilidad
+            THEN N'La consulta es anterior a la fecha configurada para seguimiento.'
+        WHEN ISNULL(i.MotivoSeguimiento, '') IN
+            (N'RECHAZO_MOTO_EXPLICITO', N'NO_CONTACTAR_SOLICITADO',
+             N'PAUSA_SEGUIMIENTO_SIN_FECHA',
+             N'Error técnico en seguimiento automático WhatsApp. Requiere revisión manual.')
+            OR (i.MotivoSeguimiento = N'PAUSA_SEGUIMIENTO_HASTA'
+                AND (i.FechaProximoContacto IS NULL
+                     OR i.FechaProximoContacto > GETDATE()))
+            THEN N'El cliente rechazó, pausó o requiere revisión manual; no corresponde enviar.'
+        WHEN NULLIF(LTRIM(RTRIM(ISNULL(i.MotivoSeguimiento, ''))), '') IS NOT NULL
+             AND i.MotivoSeguimiento NOT IN
+                 (N'Seguimiento comercial de consulta por WhatsApp.',
+                  N'PAUSA_SEGUIMIENTO_HASTA')
+             AND i.MotivoSeguimiento NOT LIKE N'Seguimiento automático WhatsApp #%'
+            THEN N'El seguimiento fue deshabilitado o tiene una indicación manual.'
         WHEN ISNULL(i.Estado, 'Activo') = 'Inactivo'
             THEN N'El interesado está inactivo.'
-        WHEN UPPER(ISNULL(i.EstadoConsulta, '')) IN
-            ('CERRADO', 'CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
+        WHEN UPPER(ISNULL(i.EstadoConsulta, '')) NOT IN
+            ('CONSULTANDO', 'COTIZADO', 'CONSULTA_PROMO', 'ESPERANDO_MODELO')
             THEN N'La consulta cambió de etapa y ya no corresponde seguimiento automático.'
         WHEN UPPER(ISNULL(c.Modo, 'IA')) = 'HUMANO'
             THEN N'La conversación está siendo atendida por una persona.'
@@ -758,14 +822,26 @@ SELECT TOP (1)
         )
             THEN N'El cliente inició un proceso de contado.'
         ELSE NULL
-    END AS MotivoCancelacion
+    END AS MotivoCancelacion,
+    cliente.Mensaje AS UltimoMensajeCliente,
+    cliente.Fecha AS FechaUltimoMensajeCliente
 
 FROM dbo.SeguimientoWhatsappEnvios e
 INNER JOIN dbo.Interesados i
     ON i.Id = e.IdInteresado
+LEFT JOIN dbo.ModelosProducto mp ON mp.Id = i.IdModeloProducto
+CROSS JOIN dbo.SeguimientoWhatsappConfiguracion cfg
 LEFT JOIN dbo.Conversaciones c
     ON c.Id = e.IdConversacion
-WHERE e.Id = @IdEnvio;";
+OUTER APPLY
+(
+    SELECT TOP (1) m.Mensaje, m.Fecha
+    FROM dbo.MensajesConversacion m
+    WHERE m.IdConversacion = e.IdConversacion
+      AND UPPER(m.Emisor) = 'CLIENTE'
+    ORDER BY m.Fecha DESC, m.Id DESC
+) cliente
+WHERE e.Id = @IdEnvio AND cfg.Id = 1;";
 
             var resultado =
                 await conn.QueryFirstOrDefaultAsync<SeguimientoWhatsappEstadoVigenciaDto>(
@@ -784,6 +860,24 @@ WHERE e.Id = @IdEnvio;";
             throw new RepositoryException(
                 "No se pudo validar el seguimiento WhatsApp.",
                 ex);
+        }
+    }
+
+    public async Task LiberarPendiente(long idEnvio)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        const string sql = @"
+UPDATE dbo.SeguimientoWhatsappEnvios
+SET Estado = 'PENDIENTE', FechaInicioProceso = NULL
+WHERE Id = @IdEnvio AND Estado = 'PROCESANDO';";
+        try
+        {
+            await conn.ExecuteAsync(sql, new { IdEnvio = idEnvio });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error liberando seguimiento {IdEnvio} tras detener motor.", idEnvio);
+            throw new RepositoryException("No se pudo liberar el seguimiento WhatsApp.", ex);
         }
     }
 

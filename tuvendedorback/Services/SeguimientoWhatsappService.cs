@@ -1,4 +1,5 @@
 ﻿using tuvendedorback.DTOs;
+using tuvendedorback.Helpers;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
@@ -82,6 +83,32 @@ public sealed class SeguimientoWhatsappService : ISeguimientoWhatsappService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // Defensa para registros históricos: se interpretan expresiones explícitas
+            // del último mensaje del cliente sin obligar a un UPDATE masivo del CRM.
+            var decisionHistorica = PoliticaSeguimientoCliente.Evaluar(
+                candidato.UltimoMensajeCliente);
+            if (decisionHistorica.NoContactar || decisionHistorica.Desiste ||
+                decisionHistorica.PausaIndefinida ||
+                PoliticaSeguimientoCliente.EsConsultaInmueble(candidato.UltimoMensajeCliente))
+                continue;
+
+            DateTime? fechaEsperarHasta = null;
+            if (decisionHistorica.PausaValor.HasValue)
+            {
+                var cantidad = decisionHistorica.PausaValor.Value;
+                fechaEsperarHasta = decisionHistorica.PausaUnidad switch
+                {
+                    "DIA" => candidato.FechaUltimoMensajeCliente.AddDays(cantidad),
+                    "SEMANA" => candidato.FechaUltimoMensajeCliente.AddDays(cantidad * 7),
+                    "MES" => candidato.FechaUltimoMensajeCliente.AddMonths(cantidad),
+                    "ANIO" => candidato.FechaUltimoMensajeCliente.AddYears(cantidad),
+                    "HORA" => candidato.FechaUltimoMensajeCliente.AddHours(cantidad),
+                    _ => null
+                };
+                if (fechaEsperarHasta > DateTime.Now)
+                    continue;
+            }
+
             var ultimoOrden = candidato.UltimoNumeroSeguimientoEnviado ?? 0;
             var siguienteRegla = reglas.FirstOrDefault(x => x.Orden > ultimoOrden);
 
@@ -99,6 +126,13 @@ public sealed class SeguimientoWhatsappService : ISeguimientoWhatsappService
                 fechaBase,
                 siguienteRegla.DemoraValor,
                 siguienteRegla.DemoraUnidad);
+
+            // Respetar una fecha de espera solicitada, incluso en consultas históricas.
+            if (candidato.FechaPausaHasta.HasValue &&
+                programadoPara < candidato.FechaPausaHasta.Value)
+                programadoPara = candidato.FechaPausaHasta.Value;
+            if (fechaEsperarHasta.HasValue && programadoPara < fechaEsperarHasta.Value)
+                programadoPara = fechaEsperarHasta.Value;
 
             var mensaje = ConstruirMensaje(
                 siguienteRegla.Mensaje,
@@ -141,10 +175,44 @@ public sealed class SeguimientoWhatsappService : ISeguimientoWhatsappService
 
         if (!vigencia.Vigente)
         {
+            // No cancelar una cola válida por un apagado/cambio a simulación.
+            if (vigencia.MotivoCancelacion == "El motor comercial no está habilitado para enviar.")
+            {
+                await _repository.LiberarPendiente(envio.Id);
+                return;
+            }
+
             await _repository.MarcarCancelado(
                 envio.Id,
                 vigencia.MotivoCancelacion
                     ?? "El seguimiento dejó de ser aplicable antes del envío.");
+            return;
+        }
+
+        // Comprobación adicional antes de salir a WhatsApp, también para colas
+        // antiguas creadas antes de incorporar la interpretación de rechazos/pausas.
+        var ultimaDecision = PoliticaSeguimientoCliente.Evaluar(vigencia.UltimoMensajeCliente);
+        var esperarHasta = ultimaDecision.PausaValor.HasValue &&
+                           vigencia.FechaUltimoMensajeCliente.HasValue
+            ? ultimaDecision.PausaUnidad switch
+            {
+                "DIA" => vigencia.FechaUltimoMensajeCliente.Value.AddDays(ultimaDecision.PausaValor.Value),
+                "SEMANA" => vigencia.FechaUltimoMensajeCliente.Value.AddDays(ultimaDecision.PausaValor.Value * 7),
+                "MES" => vigencia.FechaUltimoMensajeCliente.Value.AddMonths(ultimaDecision.PausaValor.Value),
+                "ANIO" => vigencia.FechaUltimoMensajeCliente.Value.AddYears(ultimaDecision.PausaValor.Value),
+                "HORA" => vigencia.FechaUltimoMensajeCliente.Value.AddHours(ultimaDecision.PausaValor.Value),
+                _ => (DateTime?)null
+            }
+            : null;
+
+        if (ultimaDecision.NoContactar || ultimaDecision.Desiste ||
+            ultimaDecision.PausaIndefinida ||
+            (esperarHasta.HasValue && esperarHasta.Value > DateTime.Now) ||
+            PoliticaSeguimientoCliente.EsConsultaInmueble(vigencia.UltimoMensajeCliente))
+        {
+            await _repository.MarcarCancelado(
+                envio.Id,
+                "Se detectó rechazo, espera solicitada o consulta ajena a motos en el último mensaje del cliente.");
             return;
         }
 
@@ -303,7 +371,8 @@ public sealed class SeguimientoWhatsappService : ISeguimientoWhatsappService
         string? nombre,
         string? productoInteres)
     {
-        var nombreCorto = string.IsNullOrWhiteSpace(nombre)
+        var nombreCorto = string.IsNullOrWhiteSpace(nombre) ||
+                          nombre.Trim().Equals("Cliente WhatsApp", StringComparison.OrdinalIgnoreCase)
             ? string.Empty
             : nombre.Trim()
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries)

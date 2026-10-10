@@ -30,6 +30,9 @@ public interface ISeguimientoWhatsappRepository
 
     Task<SeguimientoWhatsappEstadoVigenciaDto> ValidarVigencia(long idEnvio);
 
+    // Si el operador apaga el motor durante un envío, devolverlo a la cola.
+    Task LiberarPendiente(long idEnvio);
+
     Task MarcarCancelado(long idEnvio, string motivo);
 
     Task MarcarEnviado(
