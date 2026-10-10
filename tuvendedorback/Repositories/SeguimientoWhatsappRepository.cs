@@ -325,7 +325,6 @@ WHERE
     AND UPPER(ISNULL(conv.Modo, 'IA')) <> 'HUMANO'
     AND UPPER(ISNULL(i.EstadoConsulta, '')) NOT IN
         ('CERRADO', 'CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
-    AND UPPER(ISNULL(i.EstadoGestion, '')) <> 'CERRADO'
 
     AND NOT EXISTS
     (
@@ -685,8 +684,6 @@ SELECT TOP (1)
         WHEN UPPER(ISNULL(i.EstadoConsulta, '')) IN
             ('CERRADO', 'CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
             THEN CAST(0 AS BIT)
-        WHEN UPPER(ISNULL(i.EstadoGestion, '')) = 'CERRADO'
-            THEN CAST(0 AS BIT)
         WHEN UPPER(ISNULL(c.Modo, 'IA')) = 'HUMANO'
             THEN CAST(0 AS BIT)
         WHEN EXISTS
@@ -727,8 +724,6 @@ SELECT TOP (1)
         WHEN UPPER(ISNULL(i.EstadoConsulta, '')) IN
             ('CERRADO', 'CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
             THEN N'La consulta cambió de etapa y ya no corresponde seguimiento automático.'
-        WHEN UPPER(ISNULL(i.EstadoGestion, '')) = 'CERRADO'
-            THEN N'La gestión comercial está cerrada.'
         WHEN UPPER(ISNULL(c.Modo, 'IA')) = 'HUMANO'
             THEN N'La conversación está siendo atendida por una persona.'
         WHEN EXISTS
@@ -969,11 +964,6 @@ BEGIN
                 ('CERRADO', 'CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
                 THEN 'SIN_RESPUESTA'
             ELSE EstadoConsulta
-        END,
-        EstadoGestion = CASE
-            WHEN UPPER(ISNULL(EstadoGestion, '')) <> 'CERRADO'
-                THEN 'SIN_RESPUESTA'
-            ELSE EstadoGestion
         END
     WHERE Id = @IdInteresado;
 END;";
