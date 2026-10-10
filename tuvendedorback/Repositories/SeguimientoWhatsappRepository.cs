@@ -733,7 +733,7 @@ SELECT TOP (1)
     Mensaje,
     ProgramadoPara,
     IntentosTecnicos
-FROM dbo.SeguimientoWhatsappEnvios WITH (UPDLOCK, READPAST, ROWLOCK)
+FROM dbo.SeguimientoWhatsappEnvios WITH (UPDLOCK, ROWLOCK)
 WHERE Estado = 'PENDIENTE'
   AND ProgramadoPara <= GETDATE()
 ORDER BY ProgramadoPara ASC, Id ASC;";
