@@ -109,7 +109,12 @@ public sealed class SeguimientoWhatsappService : ISeguimientoWhatsappService
                     continue;
             }
 
+            // La consulta SQL ya excluye ciclos completos y reingresos tras
+            // una respuesta. Defensa adicional para no exceder la secuencia.
             var ultimoOrden = candidato.UltimoNumeroSeguimientoEnviado ?? 0;
+            if (ultimoOrden >= reglas[^1].Orden)
+                continue;
+
             var siguienteRegla = reglas.FirstOrDefault(x => x.Orden > ultimoOrden);
 
             if (siguienteRegla is null)

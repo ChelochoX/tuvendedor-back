@@ -27,14 +27,44 @@ public static class PoliticaSeguimientoCliente
 
         var texto = Normalizar(mensaje);
 
-        // Pedido explícito de no recibir mensajes (distinto de no comprar esta moto).
+        // Una negativa breve y aislada es ambigua. No se seguirá insistiendo
+        // automáticamente, pero tampoco se marca como baja global del canal.
+        if (Regex.IsMatch(texto, @"^(?:no\s*,?\s*gracias|gracias\s*,?\s*no)\b"))
+            return new(false, false, true, null, null, false);
+
+        // Un rechazo definitivo prevalece incluso si el mensaje contiene
+        // simultáneamente una referencia temporal.
+        if (ContieneAlguna(texto,
+                "no me escribas mas", "no me escriban mas", "no me escribas nunca",
+                "no me escriban nunca", "nunca me escribas", "nunca me contacten"))
+            return new(true, false, false, null, null, false);
+
+        // La frase «no me escribas por dos meses» es una pausa temporal,
+        // no un bloqueo definitivo. Solo aceptamos duraciones explícitas.
+        var optOutTemporal = Regex.Match(texto,
+            @"\b(?:no me escribas|no me escriban|no me contactes|no me contacten|no me mandes mensajes|no me manden mensajes|no me envies mensajes|no me envien mensajes)\s+(?:por|durante|hasta dentro de)\s+(?:unos?\s+)?(?<n>\d{1,3}|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|quince|treinta)\s+(?<u>dias?|semanas?|meses?|anos?|horas?)\b",
+            RegexOptions.CultureInvariant);
+        var pausaTemporal = ExtraerDuracion(optOutTemporal);
+        if (pausaTemporal.HasValue)
+            return new(false, false, false, pausaTemporal.Value.Valor,
+                pausaTemporal.Value.Unidad, false);
+
+        // Pedido explícito e indefinido de no recibir mensajes.
         var noContactar = ContieneAlguna(texto,
             "no me escrib", "no escribas", "no me contact", "no me mandes",
             "no me envies", "no quiero recibir mensajes", "dejen de escrib",
             "no quiero que me escrib", "no quiero que me contact", "no me vuelvan a escribir",
-            "no quiero mas mensajes", "dejen de mandarme mensajes");
+            "no quiero mas mensajes", "dejen de mandarme mensajes",
+            "nunca me escribas", "no me escriban nunca");
         if (noContactar)
+        {
+            // Si indicó una espera pero no puede calcularse la fecha, se
+            // suspende indefinidamente hasta nueva indicación del cliente.
+            if (Regex.IsMatch(texto,
+                    @"\b(?:por un tiempo|por ahora|de momento|hasta que|hasta el|hasta la)\b"))
+                return new(false, false, true, null, null, false);
             return new(true, false, false, null, null, false);
+        }
 
         // Rechazo concreto. No confundir con «no quiero credito», «no quiero roja», etc.
         var desiste = Regex.IsMatch(texto, @"^no me interesa(?:[.!?]|$|\s+(?:la moto|esa moto|el modelo))")
@@ -58,39 +88,13 @@ public static class PoliticaSeguimientoCliente
 
         if (pideEsperar)
         {
-            // Se limita el rango para evitar desbordamiento en DATEADD y fechas absurdas.
+            // Se limita el rango para evitar desbordamiento en DATEADD.
             var duracion = Regex.Match(texto,
                 @"\b(?:en|dentro de|esperar|esperare|esperame|espera|pasado|hasta dentro de|contactame en|escribime en)\s+(?:unos?\s+)?(?<n>\d{1,3}|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|quince|treinta)\s+(?<u>dias?|semanas?|meses?|anos?|horas?)\b",
                 RegexOptions.CultureInvariant);
-            if (duracion.Success)
-            {
-                var numero = duracion.Groups["n"].Value;
-                var palabras = new Dictionary<string, int>
-                {
-                    ["un"] = 1,
-                    ["una"] = 1,
-                    ["dos"] = 2,
-                    ["tres"] = 3,
-                    ["cuatro"] = 4,
-                    ["cinco"] = 5,
-                    ["seis"] = 6,
-                    ["siete"] = 7,
-                    ["ocho"] = 8,
-                    ["nueve"] = 9,
-                    ["diez"] = 10,
-                    ["quince"] = 15,
-                    ["treinta"] = 30
-                };
-                var valor = palabras.TryGetValue(numero, out var literal)
-                    ? literal : int.Parse(numero, CultureInfo.InvariantCulture);
-                var unidad = duracion.Groups["u"].Value;
-                var unidadSql = unidad.StartsWith("dia") ? "DIA"
-                    : unidad.StartsWith("semana") ? "SEMANA"
-                    : unidad.StartsWith("mes") ? "MES"
-                    : unidad.StartsWith("ano") ? "ANIO" : "HORA";
-                if (valor is >= 1 and <= 365)
-                    return new(false, false, false, valor, unidadSql, false);
-            }
+            var pausa = ExtraerDuracion(duracion);
+            if (pausa.HasValue)
+                return new(false, false, false, pausa.Value.Valor, pausa.Value.Unidad, false);
             if (ContieneAlguna(texto, "el mes que viene", "proximo mes"))
                 return new(false, false, false, 1, "MES", false);
             if (ContieneAlguna(texto, "la semana que viene", "proxima semana"))
@@ -118,6 +122,41 @@ public static class PoliticaSeguimientoCliente
         Regex.IsMatch(Normalizar(mensaje),
             @"\b(?:terrenos?|lotes?|casas?|departamentos?|duplex|inmuebles?)\b",
             RegexOptions.CultureInvariant);
+
+    private static (int Valor, string Unidad)? ExtraerDuracion(Match match)
+    {
+        if (!match.Success)
+            return null;
+
+        var numero = match.Groups["n"].Value;
+        var palabras = new Dictionary<string, int>
+        {
+            ["un"] = 1,
+            ["una"] = 1,
+            ["dos"] = 2,
+            ["tres"] = 3,
+            ["cuatro"] = 4,
+            ["cinco"] = 5,
+            ["seis"] = 6,
+            ["siete"] = 7,
+            ["ocho"] = 8,
+            ["nueve"] = 9,
+            ["diez"] = 10,
+            ["quince"] = 15,
+            ["treinta"] = 30
+        };
+        var valor = palabras.TryGetValue(numero, out var literal)
+            ? literal : int.Parse(numero, CultureInfo.InvariantCulture);
+        if (valor is < 1 or > 365)
+            return null;
+
+        var unidad = match.Groups["u"].Value;
+        var codigo = unidad.StartsWith("dia") ? "DIA"
+            : unidad.StartsWith("semana") ? "SEMANA"
+            : unidad.StartsWith("mes") ? "MES"
+            : unidad.StartsWith("ano") ? "ANIO" : "HORA";
+        return (valor, codigo);
+    }
 
     private static bool ContieneAlguna(string texto, params string[] opciones)
         => opciones.Any(texto.Contains);

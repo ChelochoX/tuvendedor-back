@@ -2,6 +2,7 @@
 using tuvendedorback.Data;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
+using tuvendedorback.Helpers;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Request;
 
@@ -221,7 +222,6 @@ SELECT TOP (@Limite)
         SELECT COUNT(1)
         FROM dbo.SeguimientoWhatsappEnvios e
         WHERE e.IdInteresado = i.Id
-          AND e.CicloInicio = CAST(cliente.Fecha AS DATETIME2(3))
           AND e.Estado = 'ENVIADO'
     ) AS CantidadSeguimientosEnviados,
 
@@ -229,7 +229,6 @@ SELECT TOP (@Limite)
         SELECT MAX(e.NumeroSeguimiento)
         FROM dbo.SeguimientoWhatsappEnvios e
         WHERE e.IdInteresado = i.Id
-          AND e.CicloInicio = CAST(cliente.Fecha AS DATETIME2(3))
           AND e.Estado = 'ENVIADO'
     ) AS UltimoNumeroSeguimientoEnviado,
 
@@ -237,7 +236,6 @@ SELECT TOP (@Limite)
         SELECT MAX(e.FechaEnvio)
         FROM dbo.SeguimientoWhatsappEnvios e
         WHERE e.IdInteresado = i.Id
-          AND e.CicloInicio = CAST(cliente.Fecha AS DATETIME2(3))
           AND e.Estado = 'ENVIADO'
     ) AS FechaUltimoSeguimientoEnviado,
     CASE WHEN i.MotivoSeguimiento = N'PAUSA_SEGUIMIENTO_HASTA'
@@ -333,6 +331,58 @@ WHERE
 
     AND cliente.Fecha IS NOT NULL
     AND cliente.Fecha >= @FechaDesdeElegibilidad
+
+    -- Una respuesta normal NO reinicia la secuencia tras un contacto previo.
+    -- Excepción controlada: una pausa con FECHA explícita ya cumplida puede
+    -- continuar; tras enviar el paso retomado se permiten los siguientes pasos
+    -- de ese mismo ciclo sin reiniciar el contador global por interesado.
+    AND
+    (
+        NOT EXISTS
+        (
+            SELECT 1 FROM dbo.SeguimientoWhatsappEnvios anterior
+            WHERE anterior.IdInteresado = i.Id
+              AND anterior.CicloInicio < CAST(cliente.Fecha AS DATETIME2(3))
+        )
+        OR
+        (
+            i.MotivoSeguimiento = N'PAUSA_SEGUIMIENTO_HASTA'
+            AND i.FechaProximoContacto IS NOT NULL
+            AND i.FechaProximoContacto <= GETDATE()
+        )
+        OR EXISTS
+        (
+            SELECT 1 FROM dbo.SeguimientoWhatsappEnvios delCiclo
+            WHERE delCiclo.IdInteresado = i.Id
+              AND delCiclo.CicloInicio = CAST(cliente.Fecha AS DATETIME2(3))
+              AND delCiclo.Estado = 'ENVIADO'
+        )
+    )
+
+    -- Excluir ciclos ya programados, suspendidos, cancelados o con error.
+    -- Evita que llenen los primeros TOP (200) en cada ejecución.
+    AND NOT EXISTS
+    (
+        SELECT 1 FROM dbo.SeguimientoWhatsappEnvios existente
+        WHERE existente.IdInteresado = i.Id
+          AND existente.CicloInicio = CAST(cliente.Fecha AS DATETIME2(3))
+          AND existente.Estado IN ('PENDIENTE', 'PROCESANDO', 'ERROR', 'CANCELADO')
+    )
+
+    -- Cuando ya se envió el último paso activo, no es más candidato.
+    -- El paso siguiente, si existe, seguirá contando desde el envío previo.
+    AND EXISTS
+    (
+        SELECT 1 FROM dbo.SeguimientoWhatsappReglas regla
+        WHERE regla.Activo = 1
+          AND regla.Orden > ISNULL(
+          (
+              SELECT MAX(enviado.NumeroSeguimiento)
+              FROM dbo.SeguimientoWhatsappEnvios enviado
+              WHERE enviado.IdInteresado = i.Id
+                AND enviado.Estado = 'ENVIADO'
+          ), 0)
+    )
     AND UPPER(ISNULL(ultimo.Emisor, '')) = 'IA'
     AND UPPER(ISNULL(conv.Modo, 'IA')) <> 'HUMANO'
     AND UPPER(ISNULL(i.EstadoConsulta, '')) IN
@@ -484,104 +534,137 @@ SELECT CAST(1 AS BIT);";
     public async Task AplicarBajasAutomaticas()
     {
         using var conn = _conexion.CreateSqlConnection();
-        conn.Open();
-        using var transaction = conn.BeginTransaction();
 
         try
         {
-            const string sql = @"
-DECLARE @Bajas TABLE
-(
-    IdInteresado INT PRIMARY KEY
-);
-
-UPDATE i
-SET
-    NoContactarWhatsapp = 1,
-    RequiereSeguimiento = 0,
-    FechaProximoContacto = NULL,
-    MotivoSeguimiento = N'Cliente solicitó no recibir seguimientos automáticos por WhatsApp.'
-OUTPUT INSERTED.Id INTO @Bajas(IdInteresado)
+            // El filtro SQL solo identifica mensajes candidatos a opt-out.
+            // La política C# decide si realmente es una baja definitiva o
+            // una pausa temporal (ej.: «no me escribas por dos meses»).
+            const string sqlCandidatos = @"
+SELECT
+    i.Id AS IdInteresado,
+    conv.IdConversacion,
+    cliente.IdUltimoMensaje,
+    cliente.Mensaje AS UltimoMensajeCliente
 FROM dbo.Interesados i
 OUTER APPLY
 (
-    SELECT TOP (1)
-        c.Id AS IdConversacion
+    SELECT TOP (1) c.Id AS IdConversacion
     FROM dbo.Conversaciones c
     LEFT JOIN dbo.Contactos ct ON ct.Id = c.IdContacto
-    WHERE
-        c.Id = i.IdConversacion
-        OR
-        (
-            i.IdConversacion IS NULL
-            AND UPPER(ISNULL(c.Canal, '')) = 'WHATSAPP'
-            AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(ct.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
-              = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
-        )
+    WHERE c.Id = i.IdConversacion
+       OR (i.IdConversacion IS NULL
+           AND UPPER(ISNULL(c.Canal, '')) = 'WHATSAPP'
+           AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(ct.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '')
+             = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''))
     ORDER BY CASE WHEN c.Id = i.IdConversacion THEN 0 ELSE 1 END,
              c.FechaUltimoMensaje DESC, c.Id DESC
 ) conv
 OUTER APPLY
 (
-    SELECT TOP (1)
-        LOWER(LTRIM(RTRIM(ISNULL(m.Mensaje, '')))) AS Mensaje
+    SELECT TOP (1) m.Id AS IdUltimoMensaje, m.Mensaje
     FROM dbo.MensajesConversacion m
     WHERE m.IdConversacion = conv.IdConversacion
       AND UPPER(m.Emisor) = 'CLIENTE'
     ORDER BY m.Fecha DESC, m.Id DESC
 ) cliente
-WHERE
-    ISNULL(i.NoContactarWhatsapp, 0) = 0
-    AND UPPER(ISNULL(i.Origen, '')) = 'WHATSAPP'
-    AND
-    (
-        cliente.Mensaje LIKE N'%no me escrib%'
-        OR cliente.Mensaje LIKE N'%no escribas más%'
-        OR cliente.Mensaje LIKE N'%no escribas mas%'
-        OR cliente.Mensaje LIKE N'%no me contact%'
-        OR cliente.Mensaje LIKE N'%no quiero recibir mensajes%'
-        OR cliente.Mensaje LIKE N'%no me mandes más%'
-        OR cliente.Mensaje LIKE N'%no me mandes mas%'
-        OR cliente.Mensaje LIKE N'%no mandar más%'
-        OR cliente.Mensaje LIKE N'%no mandar mas%'
-        OR cliente.Mensaje LIKE N'%basta de mensajes%'
-    );
+WHERE ISNULL(i.NoContactarWhatsapp, 0) = 0
+  AND UPPER(ISNULL(i.Origen, '')) = 'WHATSAPP'
+  AND cliente.Mensaje IS NOT NULL
+  AND (cliente.Mensaje LIKE N'%no me escrib%'
+       OR cliente.Mensaje LIKE N'%no escribas%'
+       OR cliente.Mensaje LIKE N'%no me contact%'
+       OR cliente.Mensaje LIKE N'%no me mandes%'
+       OR cliente.Mensaje LIKE N'%no quiero recibir mensajes%'
+       OR cliente.Mensaje LIKE N'%no me envies%'
+       OR cliente.Mensaje LIKE N'%dejen de escrib%'
+       OR cliente.Mensaje LIKE N'%no quiero mas mensajes%');";
+
+            var candidatos = (await conn.QueryAsync<BajaAutomaticaCandidato>(sqlCandidatos))
+                .Where(x => x.IdConversacion > 0 && x.IdUltimoMensaje > 0 &&
+                            PoliticaSeguimientoCliente.Evaluar(x.UltimoMensajeCliente).NoContactar)
+                .ToList();
+
+            if (candidatos.Count == 0)
+                return;
+
+            conn.Open();
+            using var transaction = conn.BeginTransaction();
+            try
+            {
+                const string sqlAplicarBaja = @"
+DECLARE @Bajas TABLE (IdInteresado INT PRIMARY KEY);
+UPDATE i
+SET NoContactarWhatsapp = 1,
+    RequiereSeguimiento = 0,
+    FechaProximoContacto = NULL,
+    MotivoSeguimiento = N'Cliente solicitó no recibir seguimientos automáticos por WhatsApp.'
+OUTPUT INSERTED.Id INTO @Bajas(IdInteresado)
+FROM dbo.Interesados i
+WHERE i.Id = @IdInteresado
+  AND ISNULL(i.NoContactarWhatsapp, 0) = 0
+  AND (i.IdConversacion = @IdConversacion OR i.IdConversacion IS NULL)
+  AND EXISTS
+  (
+      SELECT 1 FROM dbo.MensajesConversacion m
+      WHERE m.Id = @IdUltimoMensaje
+        AND m.IdConversacion = @IdConversacion
+        AND UPPER(m.Emisor) = 'CLIENTE'
+        AND NOT EXISTS
+        (
+            SELECT 1 FROM dbo.MensajesConversacion m2
+            WHERE m2.IdConversacion = m.IdConversacion
+              AND UPPER(m2.Emisor) = 'CLIENTE'
+              AND (m2.Fecha > m.Fecha OR (m2.Fecha = m.Fecha AND m2.Id > m.Id))
+        )
+  );
 
 UPDATE e
-SET
-    Estado = 'CANCELADO',
+SET Estado = 'CANCELADO',
     MotivoCancelacion = N'Cliente solicitó no recibir más seguimientos automáticos.',
     FechaInicioProceso = NULL
 FROM dbo.SeguimientoWhatsappEnvios e
-INNER JOIN @Bajas b
-    ON b.IdInteresado = e.IdInteresado
+INNER JOIN @Bajas b ON b.IdInteresado = e.IdInteresado
 WHERE e.Estado IN ('PENDIENTE', 'PROCESANDO');
 
-INSERT INTO dbo.Seguimientos
-(
-    IdInteresado,
-    Fecha,
-    Comentario,
-    Usuario
-)
-SELECT
-    b.IdInteresado,
-    GETDATE(),
-    N'Cliente solicitó no recibir más seguimientos automáticos por WhatsApp. Se canceló la cola pendiente.',
-    N'PANAMBI_AUTO'
+INSERT INTO dbo.Seguimientos (IdInteresado, Fecha, Comentario, Usuario)
+SELECT b.IdInteresado, GETDATE(),
+       N'Cliente solicitó no recibir más seguimientos automáticos por WhatsApp. Se canceló la cola pendiente.',
+       N'PANAMBI_AUTO'
 FROM @Bajas b;";
 
-            await conn.ExecuteAsync(sql, transaction: transaction);
-            transaction.Commit();
+                foreach (var candidato in candidatos)
+                {
+                    await conn.ExecuteAsync(sqlAplicarBaja,
+                        new
+                        {
+                            candidato.IdInteresado,
+                            candidato.IdConversacion,
+                            candidato.IdUltimoMensaje
+                        }, transaction);
+                }
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
         }
         catch (Exception ex)
         {
-            transaction.Rollback();
             _logger.LogError(ex, "Error aplicando bajas automáticas de seguimiento WhatsApp.");
             throw new RepositoryException(
-                "No se pudieron procesar las solicitudes de no contacto por WhatsApp.",
-                ex);
+                "No se pudieron procesar las solicitudes de no contacto por WhatsApp.", ex);
         }
+    }
+
+    private sealed class BajaAutomaticaCandidato
+    {
+        public int IdInteresado { get; set; }
+        public int IdConversacion { get; set; }
+        public long IdUltimoMensaje { get; set; }
+        public string? UltimoMensajeCliente { get; set; }
     }
 
     public async Task RecuperarProcesandoVencidos(int minutos)
