@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
+using tuvendedorback.Helpers;
 using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
@@ -148,7 +149,7 @@ public class MotoConversacionService
         // Desde el primer mensaje ya conservamos al contacto como
         // oportunidad comercial. Si luego consulta un modelo concreto,
         // actualizamos esta misma ficha en vez de crear duplicados.
-        await RegistrarInteresadoSeguro(
+        var idInteresadoRegistrado = await RegistrarInteresadoSeguro(
             new InteresadoWhatsAppEventoRequest
             {
                 IdConversacion =
@@ -327,6 +328,18 @@ public class MotoConversacionService
                 "CLIENTE",
                 MensajeParaHistorial(request));
 
+        // Una baja de WhatsApp tiene prioridad absoluta, incluso si
+        // había un formulario de crédito o una derivación en curso.
+        if (PoliticaSeguimientoCliente.Evaluar(request.Mensaje).NoContactar)
+        {
+            const string respuestaBaja =
+                "Entendido. Respetamos tu decisión y no volveremos a enviarte " +
+                "seguimientos automáticos por WhatsApp. Gracias por avisarnos.";
+            await RegistrarCierreSeguro(idConversacion, respuestaBaja,
+                "NO_CONTACTAR_SOLICITADO", idInteresadoRegistrado);
+            return RespuestaCierre(idConversacion, respuestaBaja);
+        }
+
         // =====================================================
         // 3A. PUBLICACION DE PRODUCTO QUE NO ES MOTO
         // =====================================================
@@ -494,6 +507,77 @@ public class MotoConversacionService
                 Respuesta = proceso.Respuesta,
                 RequierePublicacion = false
             };
+        }
+
+        // =====================================================
+        // 5A. RESPETO A LA DECISION COMERCIAL DEL CLIENTE
+        //
+        // Se ejecuta DESPUES de las solicitudes activas para que un
+        // «no» a una pregunta de IPS no cierre una solicitud de credito.
+        // Se ejecuta ANTES de cualquier busqueda de Marketplace/Ollama.
+        // =====================================================
+
+        var decisionComercial = PoliticaSeguimientoCliente.Evaluar(request.Mensaje);
+
+        // La solicitud explícita de desistimiento se reconoce incluso
+        // sin un seguimiento previo. No se envía a la IA general.
+        if (decisionComercial.Desiste)
+        {
+            const string respuestaDesistimiento =
+                "¡Gracias por responder! 😊 Respetamos tu decisión. " +
+                "Quedamos a tu disposición cuando desees consultar o adquirir " +
+                "alguno de nuestros productos. Podés visitar " +
+                "https://www.tuvendedor.com.py cuando quieras. " +
+                "¡Que tengas un excelente día!";
+
+            await RegistrarCierreSeguro(
+                idConversacion, respuestaDesistimiento, "RECHAZO_MOTO_EXPLICITO",
+                idInteresadoRegistrado);
+            return RespuestaCierre(idConversacion, respuestaDesistimiento);
+        }
+
+        // Si esa oportunidad ya fue cerrada, no responder a «gracias»,
+        // «hola», «no» ni a mensajes sin intención nueva de compra.
+        // Una publicación nueva o interés explícito sí puede abrir otra consulta.
+        if (idInteresadoRegistrado.HasValue &&
+            !decisionComercial.RetomaConsulta &&
+            !idPublicacionExplicita.HasValue)
+        {
+            var interesadoCerrado = await EsOportunidadRechazada(
+                idInteresadoRegistrado.Value);
+            if (interesadoCerrado)
+                return RespuestaCierre(idConversacion, string.Empty);
+        }
+
+        // Si el cliente pidió esperar, no redirigirlo a otros productos.
+        // La pausa ya fue registrada por RegistrarInteraccionWhatsApp.
+        if (decisionComercial.PausaIndefinida ||
+            decisionComercial.PausaValor.HasValue)
+        {
+            const string respuestaEspera =
+                "Entendido, respetaremos tu decisión y el tiempo que " +
+                "nos indicaste. Gracias por avisarnos. 😊";
+            await _repository.RegistrarMensaje(idConversacion, "IA", respuestaEspera);
+            return RespuestaCierre(idConversacion, respuestaEspera);
+        }
+
+        // Un «no» corto solo es rechazo cuando la última respuesta de
+        // Panambí era una oferta o seguimiento de moto, no una pregunta
+        // genérica cuyo «no» pudiera tener otro significado.
+        if (EsNegativaComercialCorta(request.Mensaje) &&
+            await UltimaRespuestaFueOfertaMoto(idConversacion))
+        {
+            const string respuestaNegativa =
+                "¡Gracias por responder! 😊 Respetamos tu decisión. " +
+                "Quedamos a tu disposición cuando desees consultar o adquirir " +
+                "alguno de nuestros productos. Podés visitar " +
+                "https://www.tuvendedor.com.py cuando quieras. " +
+                "¡Que tengas un excelente día!";
+
+            await RegistrarCierreSeguro(
+                idConversacion, respuestaNegativa, "RECHAZO_MOTO_EXPLICITO",
+                idInteresadoRegistrado);
+            return RespuestaCierre(idConversacion, respuestaNegativa);
         }
 
         // =====================================================
@@ -3357,26 +3441,99 @@ public class MotoConversacionService
     // CRM / INTERESADOS
     // =========================================================
 
-    private async Task RegistrarInteresadoSeguro(
+    private static MotoConversacionResponseDto RespuestaCierre(
+        int idConversacion, string respuesta) => new()
+        {
+            IdConversacion = idConversacion,
+            Respuesta = respuesta,
+            RequierePublicacion = false
+        };
+
+    private async Task<bool> EsOportunidadRechazada(int idInteresado)
+    {
+        // Un fallo leyendo el CRM no debe permitir que un saludo posterior
+        // vuelva a abrir una oportunidad. Se propaga para revisión.
+        var detalle = await _clientesService.ObtenerDetalleInteresado(idInteresado);
+        return string.Equals(detalle.Interesado.EstadoConsulta, "CERRADO",
+                   StringComparison.OrdinalIgnoreCase)
+            && string.Equals(detalle.Interesado.MotivoSeguimiento,
+                   "RECHAZO_MOTO_EXPLICITO", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool EsNegativaComercialCorta(string? mensaje)
+    {
+        if (string.IsNullOrWhiteSpace(mensaje)) return false;
+        // Solo expresiones breves, sin fechas ni solicitudes de espera.
+        var normalizado = mensaje.ToLowerInvariant()
+            .Normalize(System.Text.NormalizationForm.FormD);
+        var texto = new string(normalizado.Where(c =>
+            System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) !=
+            System.Globalization.UnicodeCategory.NonSpacingMark).ToArray());
+        texto = Regex.Replace(texto, @"[^a-z0-9\s]", " ");
+        texto = Regex.Replace(texto, @"\s+", " ").Trim();
+        // Aceptar también saludos antes de la negativa, como en el caso
+        // real: «Buenos días. Ahora mismo, no. Desde ya gracias».
+        return Regex.IsMatch(texto,
+            @"^(?:(?:buenos dias|buen dia|buenas tardes|buenas noches|hola) )?(?:no|no gracias|no muchas gracias|ahora mismo no|ahora no|por ahora no|no por ahora|de momento no|en este momento no|gracias pero no|muchas gracias pero no)(?: desde ya gracias| gracias| muchas gracias)?$");
+    }
+
+    private async Task<bool> UltimaRespuestaFueOfertaMoto(int idConversacion)
+    {
+        var historial = await _repository.ObtenerUltimosMensajes(idConversacion, 12);
+        var respuesta = historial
+            .Where(x => string.Equals(x.Emisor, "IA", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.Fecha)
+            .FirstOrDefault()?.Mensaje ?? string.Empty;
+        var t = respuesta.ToLowerInvariant();
+        return t.Contains("seguís interesado") || t.Contains("seguís interesada") ||
+               t.Contains("seguis interesado") || t.Contains("seguis interesada") ||
+               t.Contains("seguís buscando moto") ||
+               t.Contains("te escribo nuevamente de tuvendedor") ||
+               t.Contains("te escribo por última vez") ||
+               t.Contains("te escribo por ultima vez") ||
+               t.Contains("al contado o a crédito") ||
+               t.Contains("al contado o a credito");
+    }
+
+    private async Task RegistrarCierreSeguro(
+        int idConversacion, string respuesta, string motivo,
+        int? idInteresado)
+    {
+        // Cerrar también el historial del modelo, no solamente el CRM principal.
+        int? idModeloProducto = null;
+        if (idInteresado.HasValue)
+            idModeloProducto = (await _clientesService
+                .ObtenerDetalleInteresado(idInteresado.Value))
+                .Interesado.IdModeloProducto;
+
+        // En un cierre comercial NO se ignora el fallo del CRM: de otro
+        // modo podríamos despedirnos pero dejar mensajes en la cola.
+        await _clientesService.RegistrarInteraccionWhatsApp(
+            new InteresadoWhatsAppEventoRequest
+            {
+                IdConversacion = idConversacion,
+                IdModeloProducto = idModeloProducto,
+                EstadoConsulta = "CERRADO",
+                MotivoSeguimiento = motivo,
+                Respuesta = respuesta,
+                EsEntradaCliente = false
+            });
+        await _repository.RegistrarMensaje(idConversacion, "IA", respuesta);
+    }
+
+    private async Task<int?> RegistrarInteresadoSeguro(
         InteresadoWhatsAppEventoRequest evento)
     {
         try
         {
-            await _clientesService
-                .RegistrarInteraccionWhatsApp(
-                    evento);
+            return await _clientesService.RegistrarInteraccionWhatsApp(evento);
         }
         catch (Exception ex)
         {
-            /*
-             * El CRM nunca debe cortar una conversación de venta.
-             * Si el registro comercial falla, Panambí continúa y dejamos
-             * trazabilidad en log para corregir el problema.
-             */
-            _logger.LogWarning(
-                ex,
+            _logger.LogWarning(ex,
                 "No se pudo actualizar interesado desde WhatsApp. IdConversacion={IdConversacion}",
                 evento.IdConversacion);
+            return null;
         }
     }
 
