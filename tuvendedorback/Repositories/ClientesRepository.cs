@@ -534,6 +534,37 @@ BEGIN
     WHERE Id = @IdInteresado;
 END;
 
+-- Las pausas con fecha POSPONEN los pendientes; no se cancelan porque
+-- la cola debe reanudarse al cumplirse el plazo indicado por el cliente.
+IF @IdInteresado IS NOT NULL AND @PausaHasta IS NOT NULL
+BEGIN
+    UPDATE dbo.SeguimientoWhatsappEnvios
+    SET ProgramadoPara = CASE
+        WHEN ProgramadoPara < @PausaHasta THEN @PausaHasta
+        ELSE ProgramadoPara END
+    WHERE IdInteresado = @IdInteresado
+      AND Estado = 'PENDIENTE';
+END;
+
+-- Rechazos, opt-out y pausas SIN FECHA sí cancelan los pendientes.
+-- Los ENVIADOS se conservan íntegros como auditoría.
+IF @IdInteresado IS NOT NULL
+   AND (@DecisionNoContactar = 1 OR @DecisionDesiste = 1
+        OR @PausaIndefinida = 1
+        OR NULLIF(@EstadoConsulta, '') = 'CERRADO')
+BEGIN
+    UPDATE e
+    SET Estado = 'CANCELADO',
+        MotivoCancelacion = CASE
+            WHEN @DecisionNoContactar = 1 THEN N'Cliente solicitó no recibir más mensajes.'
+            WHEN @PausaIndefinida = 1 THEN N'Cliente solicitó esperar sin fecha concreta.'
+            ELSE N'Cliente rechazó la oferta; oportunidad cerrada.'
+        END,
+        FechaInicioProceso = NULL
+    FROM dbo.SeguimientoWhatsappEnvios e
+    WHERE e.IdInteresado = @IdInteresado
+      AND e.Estado = 'PENDIENTE';
+END;
 
 -- ============================================================
 -- HISTORIAL POR MODELO

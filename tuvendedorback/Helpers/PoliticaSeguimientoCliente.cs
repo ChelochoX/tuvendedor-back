@@ -27,10 +27,11 @@ public static class PoliticaSeguimientoCliente
 
         var texto = Normalizar(mensaje);
 
-        // Una negativa breve y aislada es ambigua. No se seguirá insistiendo
-        // automáticamente, pero tampoco se marca como baja global del canal.
+        // La negativa corta «no, gracias» puede responder a IPS o a una oferta.
+        // Sin contexto NO cerramos el CRM; MotoConversacionService la evalúa
+        // después de respetar el flujo de solicitudes activas.
         if (Regex.IsMatch(texto, @"^(?:no\s*,?\s*gracias|gracias\s*,?\s*no)\b"))
-            return new(false, false, true, null, null, false);
+            return new(false, false, false, null, null, false);
 
         // Un rechazo definitivo prevalece incluso si el mensaje contiene
         // simultáneamente una referencia temporal.
