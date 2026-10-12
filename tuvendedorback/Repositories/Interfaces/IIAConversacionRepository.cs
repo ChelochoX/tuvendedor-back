@@ -68,4 +68,7 @@ public interface IIAConversacionRepository
     Task CambiarModoConversacion(
         int idConversacion,
         string modo);
+
+    // Cambio explicito desde CRM; nunca se revierte por inactividad.
+    Task CambiarModoAtencionDesdePanel(int idConversacion, int idInteresado, string modo);
 }

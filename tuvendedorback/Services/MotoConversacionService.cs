@@ -182,140 +182,23 @@ public class MotoConversacionService
                     true
             });
 
-        // =====================================================
-        // 2. CONTROL DE MODO HUMANO
-        //
-        // - Si el cliente pide volver con Panambi: vuelve ya.
-        // - Si pasaron 15 minutos desde la derivacion: vuelve sola.
-        // - Si todavia esta dentro de la ventana humana: Panambi calla.
-        //
-        // IMPORTANTE:
-        // al volver a IA NO limpiamos el contexto del producto.
-        // Asi Panambi puede retomar la conversacion donde quedo.
-        // =====================================================
-
-        var modoConversacion =
-            await _repository
-                .ObtenerModoConversacion(
-                    idConversacion);
-
-        if (
-            string.Equals(
-                modoConversacion,
-                "HUMANO",
-                StringComparison.OrdinalIgnoreCase)
-        )
+        // MODO HUMANO PERSISTENTE: solo el operador puede devolver el chat
+        // a Panambí desde el CRM. No existe vencimiento por tiempo, ni el
+        // cliente lo puede reactivar sin autorización del vendedor.
+        var modoConversacion = await _repository.ObtenerModoConversacion(idConversacion);
+        if (string.Equals(modoConversacion, "HUMANO", StringComparison.OrdinalIgnoreCase))
         {
-            var historialHumano =
-                await _repository
-                    .ObtenerUltimosMensajes(
-                        idConversacion,
-                        20);
-
-            var ultimaDerivacionHumana =
-                historialHumano
-                    .Where(
-                        x =>
-                            string.Equals(
-                                x.Emisor,
-                                "IA",
-                                StringComparison.OrdinalIgnoreCase)
-                            &&
-                            EsMensajeDerivacionHumana(
-                                x.Mensaje))
-                    .OrderByDescending(
-                        x => x.Fecha)
-                    .FirstOrDefault();
-
-            var esDerivacionOtroProducto =
-                ultimaDerivacionHumana is not null
-                &&
-                EsMensajeDerivacionOtroProducto(
-                    ultimaDerivacionHumana.Mensaje);
-
-            /*
-             * Antes las consultas de productos no-moto se derivaban
-             * automáticamente a HUMANO. Desde esta versión Panambí
-             * también conversa sobre el Marketplace usando SOLO BBDD.
-             * Por eso, si el modo HUMANO proviene de aquella derivación
-             * automática, retomamos IA inmediatamente.
-             */
-            var volverAhora =
-                esDerivacionOtroProducto
-                    ? true
-                    : SolicitaRetomarIA(
-                        request.Mensaje)
-                      ||
-                      esPublicacionMotoExplicita
-                      ==
-                      true;
-
-            var tiempoHumanoVencido =
-                !esDerivacionOtroProducto
-                &&
-                ultimaDerivacionHumana is not null
-                &&
-                DateTime.Now
-                    >=
-                ultimaDerivacionHumana.Fecha
-                    .AddMinutes(
-                        MINUTOS_MODO_HUMANO);
-
-            if (
-                volverAhora
-                ||
-                tiempoHumanoVencido
-            )
+            // Guardar la entrada para que el vendedor pueda verla en el CRM.
+            await _repository.RegistrarMensaje(idConversacion, "CLIENTE", MensajeParaHistorial(request));
+            return new MotoConversacionResponseDto
             {
-                await _repository
-                    .CambiarModoConversacion(
-                        idConversacion,
-                        "IA");
-
-                _logger.LogInformation(
-                    "Panambi retoma conversacion. IdConversacion={IdConversacion}, Motivo={Motivo}",
-                    idConversacion,
-                    esDerivacionOtroProducto
-                        ? "MIGRACION_MARKETPLACE_IA"
-                        : volverAhora
-                            ? "CLIENTE_SOLICITO_RETORNO"
-                            : "VENCIO_TIEMPO_HUMANO");
-
-                /*
-                 * Seguimos procesando ESTE MISMO mensaje para que
-                 * la nueva consulta de moto reciba respuesta ya.
-                 */
-            }
-            else
-            {
-                await RegistrarInteresadoSeguro(
-                    new InteresadoWhatsAppEventoRequest
-                    {
-                        IdConversacion =
-                            idConversacion,
-
-                        EstadoConsulta =
-                            "DERIVADO_HUMANO",
-
-                        MotivoSeguimiento =
-                            esDerivacionOtroProducto
-                                ? "Consulta de producto no moto en atención manual."
-                                : "Conversación actualmente atendida en modo humano.",
-
-                        EsEntradaCliente =
-                            false
-                    });
-
-                return new MotoConversacionResponseDto
-                {
-                    IdConversacion = idConversacion,
-                    IdPublicacion = null,
-                    Marca = null,
-                    Modelo = null,
-                    Respuesta = string.Empty,
-                    RequierePublicacion = false
-                };
-            }
+                IdConversacion = idConversacion,
+                IdPublicacion = null,
+                Marca = null,
+                Modelo = null,
+                Respuesta = string.Empty,
+                RequierePublicacion = false
+            };
         }
 
         // =====================================================
@@ -1865,15 +1748,12 @@ public class MotoConversacionService
         // seguimientos naturales: "cuánto cuesta", "dónde queda", "pasame",
         // "me interesa", etc.
         if (
-            contextoVigente
-            &&
             contextoActual?.IdPublicacion
                 is int idPublicacionContexto
             &&
             !contextoActual.IdModeloProductoActual.HasValue
             &&
-            EsSeguimientoMarketplace(
-                mensaje)
+            !SolicitaNuevaBusquedaMarketplace(mensaje)
         )
         {
             var esMotoContexto =
@@ -2065,10 +1945,22 @@ public class MotoConversacionService
                 idConversacion,
                 publicacion.Id);
 
-        var respuesta =
-            ConstruirRespuestaDetalleMarketplace(
-                publicacion,
-                mensajeCliente);
+        var respuesta = ConstruirRespuestaDetalleMarketplace(publicacion, mensajeCliente);
+
+        // Escrituras y títulos requieren documentación: no afirmamos que
+        // un inmueble está listo para transferir sin constancia en la ficha.
+        var consultaNormalizada = NormalizarTexto(mensajeCliente ?? "");
+        var pideDocumentacion = consultaNormalizada.Contains("TITULO")
+            || consultaNormalizada.Contains("TRANSFERIR")
+            || consultaNormalizada.Contains("ESCRITURA")
+            || consultaNormalizada.Contains("CEDULA CATASTRAL");
+        if (pideDocumentacion)
+        {
+            await _repository.CambiarModoConversacion(idConversacion, "HUMANO");
+            respuesta = $"Sobre *{publicacion.Titulo}*, prefiero que un asesor " +
+                "confirme la documentación y la posibilidad de transferencia antes de darte un dato incorrecto. " +
+                "Tu consulta queda para atención personal de TuVendedor.";
+        }
 
         await _repository
             .RegistrarMensaje(
@@ -2082,11 +1974,12 @@ public class MotoConversacionService
                 IdConversacion = idConversacion,
                 IdPublicacion = publicacion.Id,
                 TipoConsulta = "MARKETPLACE",
-                EstadoConsulta = "CONSULTANDO",
+                EstadoConsulta = pideDocumentacion ? "DERIVADO_HUMANO" : "CONSULTANDO",
                 MensajeCliente = mensajeCliente,
                 Respuesta = respuesta,
-                MotivoSeguimiento =
-                    "Cliente consultó una publicación no-moto del Marketplace.",
+                MotivoSeguimiento = pideDocumentacion
+                    ? "Revisar documentación inmobiliaria en atención humana."
+                    : "Cliente consultó una publicación no-moto del Marketplace.",
                 EsEntradaCliente = false
             });
 
@@ -2234,6 +2127,31 @@ public class MotoConversacionService
         return null;
     }
 
+
+    // Solo liberar el producto fijado cuando se pide explícitamente otro.
+    // Preguntas sobre precio, ubicación, superficie, título, pagos y
+    // disponibilidad continúan sobre la publicación seleccionada.
+    private static bool SolicitaNuevaBusquedaMarketplace(string mensaje)
+    {
+        var texto = NormalizarTexto(mensaje);
+        return EsConsultaGeneralMarketplace(mensaje)
+            || texto.StartsWith("BUSCO ", StringComparison.Ordinal)
+            || texto.StartsWith("ESTOY BUSCANDO ", StringComparison.Ordinal)
+            || texto.StartsWith("BUSCANDO ", StringComparison.Ordinal)
+            || ContieneFrase(texto, "TENES OTRA")
+            || ContieneFrase(texto, "TIENEN OTRA")
+            || ContieneFrase(texto, "HAY OTROS")
+            || ContieneFrase(texto, "OTRO TERRENO")
+            || ContieneFrase(texto, "OTRA CASA")
+            || ContieneFrase(texto, "OTRA PROPIEDAD")
+            || ContieneFrase(texto, "OTRA OPCION")
+            || ContieneFrase(texto, "MAS OPCIONES")
+            || ContieneFrase(texto, "OTRAS OPCIONES")
+            || ContieneFrase(texto, "CAMBIAR DE PRODUCTO")
+            || ContieneFrase(texto, "BUSCO OTRO")
+            || ContieneFrase(texto, "MOSTRAME OTROS")
+            || ContieneFrase(texto, "QUIERO VER OTROS");
+    }
 
     private static bool EsSeguimientoMarketplace(
         string mensaje)
@@ -2469,6 +2387,29 @@ public class MotoConversacionService
         ProductoSharePreviewDto publicacion,
         string? mensajeCliente)
     {
+        var pregunta = NormalizarTexto(mensajeCliente ?? "");
+        var nombre = publicacion.Titulo.Trim();
+        var url = $"https://tuvendedor.com.py/share/producto/{publicacion.Id}";
+        if (pregunta.Contains("TITULO") || pregunta.Contains("TRANSFERIR")
+            || pregunta.Contains("ESCRITURA") || pregunta.Contains("CEDULA CATASTRAL"))
+            return $"Sobre *{nombre}*, vamos a verificar la documentación antes de confirmar si está listo para transferir.";
+        if (pregunta.Contains("PRECIO") || pregunta.Contains("CUANTO CUESTA")
+            || pregunta.Contains("CUANTO SALE"))
+            return $"El precio publicado de *{nombre}* es *{FormatearPrecioMarketplace(publicacion.Precio, publicacion.Moneda)}*.\n{url}";
+        if (pregunta.Contains("UBICACION") || pregunta.Contains("DONDE QUEDA")
+            || pregunta.Contains("DIRECCION") || pregunta.Contains("CALLE"))
+            return string.IsNullOrWhiteSpace(publicacion.Ubicacion)
+                ? $"No tengo una dirección confirmada para *{nombre}*. Lo puede verificar un asesor de TuVendedor."
+                : $"La ubicación publicada de *{nombre}* es: {publicacion.Ubicacion.Trim()}.\n{url}";
+        if (pregunta.Contains("SUPERFICIE") || pregunta.Contains("MEDIDAS")
+            || pregunta.Contains("METROS") || pregunta.Contains("DIMENSIONES"))
+            return string.IsNullOrWhiteSpace(publicacion.Descripcion)
+                ? $"No tengo medidas verificadas de *{nombre}* en su ficha. Un asesor puede confirmártelas."
+                : $"Estos son los detalles publicados de *{nombre}* (sin agregar medidas no confirmadas):\n{TruncarTextoMarketplace(publicacion.Descripcion, 750)}\n{url}";
+        if (pregunta.Contains("CUOTA") || pregunta.Contains("FINANCI")
+            || pregunta.Contains("ENTREGA") || pregunta.Contains("CREDITO"))
+            return $"Sobre *{nombre}*, el precio publicado es *{FormatearPrecioMarketplace(publicacion.Precio, publicacion.Moneda)}*. No tengo condiciones de financiación verificadas en esta ficha; un asesor puede confirmarlas.\n{url}";
+
         var sb = new StringBuilder();
 
         sb.AppendLine(

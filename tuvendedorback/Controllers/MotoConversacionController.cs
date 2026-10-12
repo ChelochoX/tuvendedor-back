@@ -6,6 +6,7 @@ using System.Text;
 using tuvendedorback.DTOs;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
+using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Wrappers;
 
 namespace tuvendedorback.Controllers;
@@ -20,17 +21,17 @@ public class MotoConversacionController
 
     private readonly IConfiguration
         _configuration;
+    private readonly IIAConversacionRepository _conversaciones;
 
 
     public MotoConversacionController(
         IMotoConversacionService service,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IIAConversacionRepository conversaciones)
     {
-        _service =
-            service;
-
-        _configuration =
-            configuration;
+        _service = service;
+        _configuration = configuration;
+        _conversaciones = conversaciones;
     }
 
 
@@ -64,12 +65,24 @@ public class MotoConversacionController
         }
 
 
-        var data =
-            await _service
-                .ProcesarMensaje(
-                    request,
-                    cancellationToken);
+        var data = await _service.ProcesarMensaje(request, cancellationToken);
 
+        // Segundo control anti-carrera: si el vendedor tomó el chat mientras
+        // se calculaba una respuesta, NO devolverla al bridge para su envío.
+        if (data.IdConversacion > 0 && string.Equals(
+                await _conversaciones.ObtenerModoConversacion(data.IdConversacion),
+                "HUMANO", StringComparison.OrdinalIgnoreCase))
+        {
+            // Admitir solamente el aviso de derivación que acaba de emitir
+            // el propio flujo; nunca enviar ofertas calculadas cuando un
+            // operador haya tomado el control del chat.
+            var avisoDerivacion =
+                data.Respuesta.Contains("te paso con", StringComparison.OrdinalIgnoreCase)
+                || data.Respuesta.Contains("te va a responder una persona", StringComparison.OrdinalIgnoreCase)
+                || data.Respuesta.Contains("Tu consulta queda para atención personal", StringComparison.OrdinalIgnoreCase);
+            if (!avisoDerivacion)
+                data.Respuesta = string.Empty;
+        }
 
         return Ok(
             new Response<

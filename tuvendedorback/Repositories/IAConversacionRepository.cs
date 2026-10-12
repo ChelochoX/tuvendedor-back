@@ -1020,4 +1020,80 @@ WHERE Id = @IdConversacion;
                 ex);
         }
     }
+    // Atención humana persistente. Se aplica al chat y su interesado en la
+    // misma transacción, evitando nuevos seguimientos comerciales automáticos.
+    public async Task CambiarModoAtencionDesdePanel(int idConversacion, int idInteresado, string modo)
+    {
+        if (modo != "HUMANO" && modo != "IA")
+            throw new ArgumentException("Modo no permitido.", nameof(modo));
+
+        using var conn = _conexion.CreateSqlConnection();
+        conn.Open();
+        using var tx = conn.BeginTransaction(System.Data.IsolationLevel.Serializable);
+        try
+        {
+            const string sql = @"
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.Interesados WITH (UPDLOCK, HOLDLOCK)
+    WHERE Id = @IdInteresado AND IdConversacion = @IdConversacion
+)
+    THROW 51040, 'El interesado no corresponde a esa conversación.', 1;
+
+UPDATE dbo.Conversaciones
+SET Modo = @Modo, FechaUltimoMensaje = GETDATE()
+WHERE Id = @IdConversacion AND Canal = 'WHATSAPP';
+
+IF @@ROWCOUNT <> 1
+    THROW 51041, 'No se encontró la conversación WhatsApp.', 1;
+
+IF @Modo = 'IA' AND EXISTS (
+    SELECT 1 FROM dbo.Interesados
+    WHERE IdConversacion = @IdConversacion AND NoContactarWhatsapp = 1
+)
+    THROW 51042, 'El cliente solicitó no recibir mensajes automáticos.', 1;
+
+IF @Modo = 'HUMANO'
+BEGIN
+    UPDATE dbo.Interesados
+    SET EstadoConsulta = CASE WHEN EstadoConsulta = 'CERRADO' THEN EstadoConsulta
+                              ELSE 'DERIVADO_HUMANO' END,
+        RequiereSeguimiento = 0,
+        FechaProximoContacto = NULL,
+        MotivoSeguimiento = N'ATENCION_HUMANA_MANUAL'
+    WHERE IdConversacion = @IdConversacion;
+
+    UPDATE dbo.SeguimientoWhatsappEnvios
+    SET Estado = 'CANCELADO',
+        MotivoCancelacion = N'Atención humana activada desde el CRM.'
+    WHERE IdConversacion = @IdConversacion
+      AND Estado = 'PENDIENTE';
+END
+ELSE
+BEGIN
+    UPDATE dbo.Interesados
+    SET EstadoConsulta = CASE WHEN EstadoConsulta = 'DERIVADO_HUMANO'
+                              THEN 'CONSULTANDO' ELSE EstadoConsulta END,
+        RequiereSeguimiento = 0,
+        FechaProximoContacto = NULL,
+        MotivoSeguimiento = CASE WHEN MotivoSeguimiento = N'ATENCION_HUMANA_MANUAL'
+                                    THEN N'SEGUIMIENTO_MANUAL_DESACTIVADO'
+                                ELSE MotivoSeguimiento END
+    WHERE IdConversacion = @IdConversacion;
+END;
+";
+            await conn.ExecuteAsync(sql, new
+            {
+                IdConversacion = idConversacion,
+                IdInteresado = idInteresado,
+                Modo = modo
+            }, tx);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
 }

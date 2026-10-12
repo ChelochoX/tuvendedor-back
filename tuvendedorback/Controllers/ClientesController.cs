@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using tuvendedorback.Repositories.Interfaces;
 using Swashbuckle.AspNetCore.Annotations;
 using tuvendedorback.Common;
 using tuvendedorback.DTOs;
@@ -14,15 +16,65 @@ public class ClientesController : ControllerBase
 {
     private readonly IClientesService _service;
     private readonly UserContext _userContext;
+    private readonly IClientesRepository _clientesRepository;
+    private readonly IIAConversacionRepository _conversacionRepository;
 
     public ClientesController(
         UserContext userContext,
-        IClientesService service)
+        IClientesService service,
+        IClientesRepository clientesRepository,
+        IIAConversacionRepository conversacionRepository)
     {
         _userContext = userContext;
         _service = service;
+        _clientesRepository = clientesRepository;
+        _conversacionRepository = conversacionRepository;
     }
 
+
+
+    // Controles operativos exclusivos para usuarios autenticados del CRM.
+    // La conversación HUMANO no expira automáticamente.
+    [Authorize]
+    [HttpGet("modo-atencion/{idInteresado:int}")]
+    public async Task<IActionResult> ObtenerModoAtencion(int idInteresado)
+    {
+        if (_userContext.IdUsuario is null or 0) return Unauthorized();
+        var interesado = await _clientesRepository.ObtenerInteresadoPorId(idInteresado);
+        if (interesado?.IdConversacion is not int idConversacion || idConversacion <= 0)
+            return NotFound(new { Success = false, Message = "Este interesado no tiene una conversación WhatsApp asociada." });
+
+        var modo = await _conversacionRepository.ObtenerModoConversacion(idConversacion);
+        return Ok(new Response<object>
+        {
+            Success = true,
+            StatusCode = 200,
+            Data = new { Modo = modo, IdConversacion = idConversacion }
+        });
+    }
+
+    [Authorize]
+    [HttpPut("modo-atencion/{idInteresado:int}")]
+    public async Task<IActionResult> CambiarModoAtencion(int idInteresado, [FromBody] ModoAtencionWhatsappRequest request)
+    {
+        if (_userContext.IdUsuario is null or 0) return Unauthorized();
+        var modo = request.Modo?.Trim().ToUpperInvariant();
+        if (modo != "IA" && modo != "HUMANO")
+            return BadRequest(new { Success = false, Message = "Seleccioná IA o HUMANO." });
+
+        var interesado = await _clientesRepository.ObtenerInteresadoPorId(idInteresado);
+        if (interesado?.IdConversacion is not int idConversacion || idConversacion <= 0)
+            return NotFound(new { Success = false, Message = "Este interesado no tiene conversación WhatsApp." });
+
+        await _conversacionRepository.CambiarModoAtencionDesdePanel(idConversacion, idInteresado, modo);
+        return Ok(new Response<object>
+        {
+            Success = true,
+            StatusCode = 200,
+            Message = modo == "HUMANO" ? "Atención humana activada; Panambí queda en silencio." : "Atención automática reanudada; no se reactivaron seguimientos anteriores.",
+            Data = new { Modo = modo, IdConversacion = idConversacion }
+        });
+    }
 
     [HttpPost("registrar-interesados")]
     [Consumes("multipart/form-data")]
@@ -344,4 +396,9 @@ public class ClientesController : ControllerBase
                 StatusCode = 200
             });
     }
+}
+// Solicitud del panel CRM; no expuesta a los mensajes de clientes.
+public sealed class ModoAtencionWhatsappRequest
+{
+    public string? Modo { get; set; }
 }
