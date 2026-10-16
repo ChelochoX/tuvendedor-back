@@ -335,6 +335,7 @@ BEGIN
              THEN 0 ELSE 1 END,
         CASE
             WHEN @DecisionNoContactar = 1 THEN N'NO_CONTACTAR_SOLICITADO'
+            WHEN @DecisionDesiste = 1 AND @EsPublicacionOtroRubro = 1 THEN N'RECHAZO_PRODUCTO_EXPLICITO'
             WHEN @DecisionDesiste = 1 THEN N'RECHAZO_MOTO_EXPLICITO'
             WHEN @PausaIndefinida = 1 THEN N'PAUSA_SEGUIMIENTO_SIN_FECHA'
             WHEN @PausaHasta IS NOT NULL THEN N'PAUSA_SEGUIMIENTO_HASTA'
@@ -424,7 +425,7 @@ BEGIN
                 WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 THEN 'CERRADO'
                 WHEN @DecisionRetoma = 1 AND ISNULL(NoContactarWhatsapp, 0) = 0
                      AND (MotivoSeguimiento IN (
-                         N'RECHAZO_MOTO_EXPLICITO', N'PAUSA_SEGUIMIENTO_SIN_FECHA',
+                         N'RECHAZO_MOTO_EXPLICITO', N'RECHAZO_PRODUCTO_EXPLICITO', N'PAUSA_SEGUIMIENTO_SIN_FECHA',
                          N'PAUSA_SEGUIMIENTO_HASTA') OR EstadoConsulta = 'SIN_RESPUESTA')
                      THEN 'CONSULTANDO'
                 WHEN EstadoConsulta IN ('CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO',
@@ -453,7 +454,7 @@ BEGIN
                      AND @DecisionRetoma = 0 THEN 0
                 WHEN NULLIF(@EstadoConsulta, '') IN ('CERRADO', 'CREDITO_EN_PROCESO',
                         'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO') THEN 0
-                WHEN MotivoSeguimiento IN (N'RECHAZO_MOTO_EXPLICITO',
+                WHEN MotivoSeguimiento IN (N'RECHAZO_MOTO_EXPLICITO', N'RECHAZO_PRODUCTO_EXPLICITO',
                         N'PAUSA_SEGUIMIENTO_SIN_FECHA', N'PAUSA_SEGUIMIENTO_HASTA')
                      AND @DecisionRetoma = 0 THEN 0
                 WHEN @DecisionRetoma = 1 AND ISNULL(NoContactarWhatsapp, 0) = 0 THEN 1
@@ -464,11 +465,12 @@ BEGIN
         MotivoSeguimiento =
             CASE
                 WHEN @DecisionNoContactar = 1 THEN N'NO_CONTACTAR_SOLICITADO'
-                WHEN @DecisionDesiste = 1 THEN N'RECHAZO_MOTO_EXPLICITO'
+                WHEN @DecisionDesiste = 1 AND @EsPublicacionOtroRubro = 1 THEN N'RECHAZO_PRODUCTO_EXPLICITO'
+            WHEN @DecisionDesiste = 1 THEN N'RECHAZO_MOTO_EXPLICITO'
                 WHEN @PausaIndefinida = 1 THEN N'PAUSA_SEGUIMIENTO_SIN_FECHA'
                 WHEN @PausaHasta IS NOT NULL THEN N'PAUSA_SEGUIMIENTO_HASTA'
                 WHEN @DecisionRetoma = 1 AND MotivoSeguimiento IN (
-                    N'RECHAZO_MOTO_EXPLICITO', N'PAUSA_SEGUIMIENTO_SIN_FECHA',
+                    N'RECHAZO_MOTO_EXPLICITO', N'RECHAZO_PRODUCTO_EXPLICITO', N'PAUSA_SEGUIMIENTO_SIN_FECHA',
                     N'PAUSA_SEGUIMIENTO_HASTA', N'Secuencia automática finalizada sin nueva respuesta.')
                     THEN N'Seguimiento comercial de consulta por WhatsApp.'
                 WHEN @EsEntradaCliente = 1 AND EstadoConsulta = 'SIN_RESPUESTA'
