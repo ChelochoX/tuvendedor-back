@@ -224,27 +224,6 @@ public class MotoConversacionService
         }
 
         // =====================================================
-        // 3A. PUBLICACION DE PRODUCTO QUE NO ES MOTO
-        // =====================================================
-
-        if (
-            idPublicacionExplicita.HasValue
-            &&
-            esPublicacionMotoExplicita
-            ==
-            false
-            &&
-            !SolicitaAtencionHumana(
-                request.Mensaje)
-        )
-        {
-            return await ProcesarPublicacionMarketplace(
-                idConversacion,
-                idPublicacionExplicita.Value,
-                request.Mensaje);
-        }
-
-        // =====================================================
         // 4. HUMANO SOLO SI EL CLIENTE LO PIDE EXPLICITAMENTE
         // =====================================================
 
@@ -414,7 +393,7 @@ public class MotoConversacionService
                 "¡Que tengas un excelente día!";
 
             await RegistrarCierreSeguro(
-                idConversacion, respuestaDesistimiento, "RECHAZO_MOTO_EXPLICITO",
+                idConversacion, respuestaDesistimiento, "RECHAZO_PRODUCTO_EXPLICITO",
                 idInteresadoRegistrado);
             return RespuestaCierre(idConversacion, respuestaDesistimiento);
         }
@@ -444,11 +423,14 @@ public class MotoConversacionService
             return RespuestaCierre(idConversacion, respuestaEspera);
         }
 
-        // Un «no» corto solo es rechazo cuando la última respuesta de
-        // Panambí era una oferta o seguimiento de moto, no una pregunta
-        // genérica cuyo «no» pudiera tener otro significado.
+        // Negativas breves: «No», «Ahora no, gracias», «Ya no puedo gracias».
+        // Solamente cierran si existe contexto comercial real; nunca se
+        // interpretan de esta forma dentro de una solicitud de crédito activa.
+        // Importante: esto sucede ANTES del router de Marketplace y Ollama.
         if (EsNegativaComercialCorta(request.Mensaje) &&
-            await UltimaRespuestaFueOfertaMoto(idConversacion))
+            (await UltimaRespuestaFueOfertaComercial(idConversacion) ||
+             (EsNegativaConAgradecimiento(request.Mensaje) &&
+              await TieneContextoComercialSeleccionado(idConversacion))))
         {
             const string respuestaNegativa =
                 "¡Gracias por responder! 😊 Respetamos tu decisión. " +
@@ -458,9 +440,30 @@ public class MotoConversacionService
                 "¡Que tengas un excelente día!";
 
             await RegistrarCierreSeguro(
-                idConversacion, respuestaNegativa, "RECHAZO_MOTO_EXPLICITO",
+                idConversacion, respuestaNegativa, "RECHAZO_PRODUCTO_EXPLICITO",
                 idInteresadoRegistrado);
             return RespuestaCierre(idConversacion, respuestaNegativa);
+        }
+
+        // =====================================================
+        // 5B. PUBLICACION DE PRODUCTO QUE NO ES MOTO
+        // =====================================================
+
+        if (
+            idPublicacionExplicita.HasValue
+            &&
+            esPublicacionMotoExplicita
+            ==
+            false
+            &&
+            !SolicitaAtencionHumana(
+                request.Mensaje)
+        )
+        {
+            return await ProcesarPublicacionMarketplace(
+                idConversacion,
+                idPublicacionExplicita.Value,
+                request.Mensaje);
         }
 
         // =====================================================
@@ -1950,16 +1953,14 @@ public class MotoConversacionService
         // Escrituras y títulos requieren documentación: no afirmamos que
         // un inmueble está listo para transferir sin constancia en la ficha.
         var consultaNormalizada = NormalizarTexto(mensajeCliente ?? "");
-        var pideDocumentacion = consultaNormalizada.Contains("TITULO")
-            || consultaNormalizada.Contains("TRANSFERIR")
-            || consultaNormalizada.Contains("ESCRITURA")
-            || consultaNormalizada.Contains("CEDULA CATASTRAL");
-        if (pideDocumentacion)
+        var pideDocumentacion = EsConsultaDocumentacionInmueble(consultaNormalizada);
+        var pideVisita = EsSolicitudVisitaInmueble(consultaNormalizada);
+        if (pideDocumentacion || pideVisita)
         {
+            // Nunca confirmar documentación ni una visita de forma automática.
+            // Queda en HUMANO para que el vendedor continúe desde WhatsApp.
             await _repository.CambiarModoConversacion(idConversacion, "HUMANO");
-            respuesta = $"Sobre *{publicacion.Titulo}*, prefiero que un asesor " +
-                "confirme la documentación y la posibilidad de transferencia antes de darte un dato incorrecto. " +
-                "Tu consulta queda para atención personal de TuVendedor.";
+            respuesta += "\n\nDejo esta consulta con un asesor de TuVendedor para continuar personalmente.";
         }
 
         await _repository
@@ -1974,12 +1975,14 @@ public class MotoConversacionService
                 IdConversacion = idConversacion,
                 IdPublicacion = publicacion.Id,
                 TipoConsulta = "MARKETPLACE",
-                EstadoConsulta = pideDocumentacion ? "DERIVADO_HUMANO" : "CONSULTANDO",
+                EstadoConsulta = (pideDocumentacion || pideVisita) ? "DERIVADO_HUMANO" : "CONSULTANDO",
                 MensajeCliente = mensajeCliente,
                 Respuesta = respuesta,
                 MotivoSeguimiento = pideDocumentacion
                     ? "Revisar documentación inmobiliaria en atención humana."
-                    : "Cliente consultó una publicación no-moto del Marketplace.",
+                    : pideVisita
+                        ? "Cliente solicita coordinar una visita inmobiliaria. Atención humana."
+                        : "Cliente consultó una publicación no-moto del Marketplace.",
                 EsEntradaCliente = false
             });
 
@@ -2387,71 +2390,94 @@ public class MotoConversacionService
         ProductoSharePreviewDto publicacion,
         string? mensajeCliente)
     {
-        var pregunta = NormalizarTexto(mensajeCliente ?? "");
-        var nombre = publicacion.Titulo.Trim();
-        var url = $"https://tuvendedor.com.py/share/producto/{publicacion.Id}";
-        if (pregunta.Contains("TITULO") || pregunta.Contains("TRANSFERIR")
-            || pregunta.Contains("ESCRITURA") || pregunta.Contains("CEDULA CATASTRAL"))
-            return $"Sobre *{nombre}*, vamos a verificar la documentación antes de confirmar si está listo para transferir.";
-        if (pregunta.Contains("PRECIO") || pregunta.Contains("CUANTO CUESTA")
-            || pregunta.Contains("CUANTO SALE"))
-            return $"El precio publicado de *{nombre}* es *{FormatearPrecioMarketplace(publicacion.Precio, publicacion.Moneda)}*.\n{url}";
-        if (pregunta.Contains("UBICACION") || pregunta.Contains("DONDE QUEDA")
-            || pregunta.Contains("DIRECCION") || pregunta.Contains("CALLE"))
-            return string.IsNullOrWhiteSpace(publicacion.Ubicacion)
-                ? $"No tengo una dirección confirmada para *{nombre}*. Lo puede verificar un asesor de TuVendedor."
-                : $"La ubicación publicada de *{nombre}* es: {publicacion.Ubicacion.Trim()}.\n{url}";
-        if (pregunta.Contains("SUPERFICIE") || pregunta.Contains("MEDIDAS")
-            || pregunta.Contains("METROS") || pregunta.Contains("DIMENSIONES"))
-            return string.IsNullOrWhiteSpace(publicacion.Descripcion)
-                ? $"No tengo medidas verificadas de *{nombre}* en su ficha. Un asesor puede confirmártelas."
-                : $"Estos son los detalles publicados de *{nombre}* (sin agregar medidas no confirmadas):\n{TruncarTextoMarketplace(publicacion.Descripcion, 750)}\n{url}";
-        if (pregunta.Contains("CUOTA") || pregunta.Contains("FINANCI")
-            || pregunta.Contains("ENTREGA") || pregunta.Contains("CREDITO"))
-            return $"Sobre *{nombre}*, el precio publicado es *{FormatearPrecioMarketplace(publicacion.Precio, publicacion.Moneda)}*. No tengo condiciones de financiación verificadas en esta ficha; un asesor puede confirmarlas.\n{url}";
+        // Respuestas deterministas ancladas en la ficha real; no se envía
+        // a Ollama para improvisar importes, títulos, medidas ni condiciones.
+        var pregunta = NormalizarTexto(mensajeCliente ?? string.Empty);
+        var nombre = publicacion.Titulo?.Trim() ?? "la publicación";
+        var url = $"https://www.tuvendedor.com.py/share/producto/{publicacion.Id}";
+        var precio = FormatearPrecioMarketplace(publicacion.Precio, publicacion.Moneda);
+        var documentacion = EsConsultaDocumentacionInmueble(pregunta);
+        var visita = EsSolicitudVisitaInmueble(pregunta);
+        var precioConsultado = ContieneAlgunaPalabra(pregunta, "PRECIO", "CUANTO CUESTA", "CUANTO SALE", "COSTO", "VALOR");
+        var ubicacionConsultada = ContieneAlgunaPalabra(pregunta, "UBICACION", "DONDE QUEDA", "DIRECCION", "CALLE", "ZONA", "LUGAR");
+        var superficieConsultada = ContieneAlgunaPalabra(pregunta, "SUPERFICIE", "MEDIDAS", "METROS", "DIMENSIONES", "TAMANO", "FRENTE", "FONDO", "M2", "M²");
+        var pagoConsultado = ContieneAlgunaPalabra(pregunta, "CUOTA", "FINANCI", "ENTREGA", "CREDITO", "PAGOS", "CONTADO");
+        var fotosConsultadas = ContieneAlgunaPalabra(pregunta, "FOTO", "IMAGEN", "VIDEO");
+        var disponibleConsultado = ContieneAlgunaPalabra(pregunta, "DISPONIBLE", "SIGUE EN VENTA", "TODAVIA ESTA", "AUN ESTA");
+        var detalleMedidas = ExtraerMedidasPublicadas(publicacion.Descripcion);
+        var respuestas = new List<string>();
 
-        var sb = new StringBuilder();
+        // Una consulta puede hacer DOS preguntas: "metros y título".
+        if (superficieConsultada)
+            respuestas.Add(!string.IsNullOrWhiteSpace(detalleMedidas)
+                ? $"Las dimensiones publicadas de *{nombre}* son: {detalleMedidas}"
+                : $"No tengo medidas confirmadas de *{nombre}* en la ficha. Te puede ayudar un asesor.");
+        if (precioConsultado)
+            respuestas.Add($"El precio publicado de *{nombre}* es *{precio}*.");
+        if (ubicacionConsultada)
+            respuestas.Add(!string.IsNullOrWhiteSpace(publicacion.Ubicacion)
+                ? $"La ubicación publicada es: {publicacion.Ubicacion.Trim()}."
+                : "La ubicación exacta no figura en la ficha. Podemos consultarla con el vendedor.");
+        if (pagoConsultado)
+            respuestas.Add($"El precio publicado es *{precio}*. No tengo condiciones de pago o financiación confirmadas en la ficha; el vendedor podrá verificarlas.");
+        if (fotosConsultadas)
+            respuestas.Add($"Podés ver las fotografías de esta propiedad aquí: {url}");
+        if (disponibleConsultado)
+            respuestas.Add($"La publicación de *{nombre}* figura activa en TuVendedor. Antes de coordinar una visita, el vendedor confirmará la disponibilidad.");
+        if (documentacion)
+            respuestas.Add("Sobre el título y la transferencia, prefiero que el vendedor confirme la documentación. No voy a asegurarte algo que no está verificado.");
+        if (visita)
+            respuestas.Add("¡Con gusto! Para coordinar una visita, decime qué día y horario te quedarían cómodos. Un asesor confirmará la disponibilidad antes de agendarla.");
 
-        sb.AppendLine(
-            $"*{publicacion.Titulo.Trim()}*");
+        if (respuestas.Count > 0)
+            return string.Join("\n\n", respuestas.Distinct());
 
-        sb.AppendLine(
-            $"Precio publicado: *{FormatearPrecioMarketplace(publicacion.Precio, publicacion.Moneda)}*");
-
+        // Si el usuario recién llegó desde el enlace, ofrecemos una ficha
+        // BREVE, no un catálogo ni bloques repetidos de toda la descripción.
+        var ficha = new List<string>
+        {
+            $"*{nombre}*",
+            $"Precio publicado: *{precio}*"
+        };
         if (!string.IsNullOrWhiteSpace(publicacion.Ubicacion))
-        {
-            sb.AppendLine(
-                $"Ubicación: {publicacion.Ubicacion.Trim()}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(publicacion.Categoria))
-        {
-            sb.AppendLine(
-                $"Categoría: {publicacion.Categoria.Trim()}");
-        }
-
-        var descripcion =
-            TruncarTextoMarketplace(
-                publicacion.Descripcion,
-                260);
-
-        if (!string.IsNullOrWhiteSpace(descripcion))
-        {
-            sb.AppendLine();
-            sb.AppendLine(descripcion);
-        }
-
-        sb.AppendLine();
-        sb.AppendLine(
-            $"Ver publicación: https://tuvendedor.com.py/share/producto/{publicacion.Id}");
-
-        sb.AppendLine();
-        sb.Append(
-            "Si querés coordinar, negociar o consultar una condición que no figure en la publicación, escribime “quiero hablar con un asesor” y te paso con una persona.");
-
-        return sb.ToString().Trim();
+            ficha.Add($"Ubicación: {publicacion.Ubicacion.Trim()}");
+        if (!string.IsNullOrWhiteSpace(detalleMedidas))
+            ficha.Add($"Dimensiones: {detalleMedidas}");
+        ficha.Add($"Más información: {url}");
+        ficha.Add("Si querés conocer el inmueble, podemos coordinar una visita con el vendedor. 😊");
+        return string.Join("\n", ficha);
     }
 
+    private static bool ContieneAlgunaPalabra(string texto, params string[] expresiones)
+        => expresiones.Any(texto.Contains);
+
+    private static bool EsConsultaDocumentacionInmueble(string texto) =>
+        ContieneAlgunaPalabra(texto, "TITULO", "TRANSFERIR", "TRANSFERENCIA",
+            "ESCRITURA", "CEDULA CATASTRAL", "DOCUMENTACION", "DOCUMENTOS", "IMPUESTOS");
+
+    private static bool EsSolicitudVisitaInmueble(string texto) =>
+        ContieneAlgunaPalabra(texto, "AGENDAR VISITA", "COORDINAR VISITA",
+            "QUIERO VISITAR", "QUIERO VER EL TERRENO", "QUIERO VER LA CASA",
+            "QUIERO CONOCER EL TERRENO", "PUEDO IR A VER", "PASAR A VER",
+            "PASAR A MIRAR", "IR A MIRAR", "QUIERO IR A VER",
+            "VER LA PROPIEDAD", "VISITAR EL INMUEBLE", "AGENDAMOS UNA VISITA");
+
+    private static string ExtraerMedidasPublicadas(string? descripcion)
+    {
+        if (string.IsNullOrWhiteSpace(descripcion)) return string.Empty;
+        // Sólo devolver frases de superficie o dimensiones realmente presentes.
+        var lineas = Regex.Split(descripcion, @"[\r\n]+")
+            .Select(x => x.Trim(' ', '-', '•', '*'))
+            .Where(x => x.Length > 0 && Regex.IsMatch(x,
+                @"(?i)\b(superficie|dimensiones|medidas|frente|fondo|laterales|metros cuadrados|m2|m²)\b"))
+            .Select(x => TruncarTextoMarketplace(x, 200))
+            .Take(3).ToList();
+        if (lineas.Count > 0) return string.Join("; ", lineas);
+        var coincidencias = Regex.Matches(descripcion,
+            @"(?i)(?:superficie total|superficie|medidas aproximadas|dimensiones)\s*[:\-]?\s*[^.\r\n]{3,160}");
+        return string.Join("; ", coincidencias.Cast<Match>()
+            .Select(x => x.Value.Trim()).Take(2));
+    }
 
     private static string ConstruirRespuestaCategoriasMarketplace(
         IReadOnlyList<string> categorias)
@@ -3397,14 +3423,15 @@ public class MotoConversacionService
         var detalle = await _clientesService.ObtenerDetalleInteresado(idInteresado);
         return string.Equals(detalle.Interesado.EstadoConsulta, "CERRADO",
                    StringComparison.OrdinalIgnoreCase)
-            && string.Equals(detalle.Interesado.MotivoSeguimiento,
-                   "RECHAZO_MOTO_EXPLICITO", StringComparison.OrdinalIgnoreCase);
+            && (string.Equals(detalle.Interesado.MotivoSeguimiento,
+                   "RECHAZO_MOTO_EXPLICITO", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(detalle.Interesado.MotivoSeguimiento,
+                   "RECHAZO_PRODUCTO_EXPLICITO", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool EsNegativaComercialCorta(string? mensaje)
     {
         if (string.IsNullOrWhiteSpace(mensaje)) return false;
-        // Solo expresiones breves, sin fechas ni solicitudes de espera.
         var normalizado = mensaje.ToLowerInvariant()
             .Normalize(System.Text.NormalizationForm.FormD);
         var texto = new string(normalizado.Where(c =>
@@ -3412,28 +3439,55 @@ public class MotoConversacionService
             System.Globalization.UnicodeCategory.NonSpacingMark).ToArray());
         texto = Regex.Replace(texto, @"[^a-z0-9\s]", " ");
         texto = Regex.Replace(texto, @"\s+", " ").Trim();
-        // Aceptar también saludos antes de la negativa, como en el caso
-        // real: «Buenos días. Ahora mismo, no. Desde ya gracias».
+        // No cerrar por "no" cuando representa otra cosa, salvo que la
+        // última acción de Panambí fuera una oferta/seguimiento comercial.
         return Regex.IsMatch(texto,
-            @"^(?:(?:buenos dias|buen dia|buenas tardes|buenas noches|hola) )?(?:no|no gracias|no muchas gracias|ahora mismo no|ahora no|por ahora no|no por ahora|de momento no|en este momento no|gracias pero no|muchas gracias pero no)(?: desde ya gracias| gracias| muchas gracias)?$");
+            @"^(?:(?:buenos dias|buen dia|buenas tardes|buenas noches|hola)\s+)?(?:no|no gracias|no muchas gracias|no por ahora|por ahora no|ahora no|ahora mismo no|ahora no gracias|de momento no|en este momento no|no puedo|ya no puedo|yano puedo|ya no puedo gracias|ya no gracias|no quiero|no quiero gracias|no necesito|no necesito gracias|gracias pero no|muchas gracias pero no|no me interesa|no estoy interesad[oa]|mejor no|ya no puedo comprar)(?:\s+(?:desde ya gracias|gracias|muchas gracias|por su tiempo|por la informacion))?$",
+            RegexOptions.CultureInvariant);
     }
 
-    private async Task<bool> UltimaRespuestaFueOfertaMoto(int idConversacion)
+    private static bool EsNegativaConAgradecimiento(string? mensaje)
+    {
+        var texto = NormalizarTexto(mensaje ?? "");
+        return texto.Contains("NO GRACIAS") || texto.Contains("AHORA NO") ||
+               texto.Contains("AHORA MISMO NO") || texto.Contains("POR AHORA NO") ||
+               texto.Contains("DE MOMENTO NO") || texto.Contains("EN ESTE MOMENTO NO") ||
+               texto.Contains("GRACIAS PERO NO") || texto.Contains("NO PUEDO") || texto.Contains("NO ME INTERESA") ||
+               texto.Contains("NO ESTOY INTERESAD") || texto.Contains("NO QUIERO") ||
+               texto.Contains("MEJOR NO") || texto.Contains("NO NECESITO") ||
+               texto.Contains("YANO PUEDO");
+    }
+
+    private async Task<bool> TieneContextoComercialSeleccionado(int idConversacion)
+    {
+        var contexto = await _repository.ObtenerContextoActual(idConversacion);
+        return contexto?.IdPublicacion is > 0 || contexto?.IdModeloProductoActual is > 0;
+    }
+
+    private async Task<bool> UltimaRespuestaFueOfertaComercial(int idConversacion)
     {
         var historial = await _repository.ObtenerUltimosMensajes(idConversacion, 12);
-        var respuesta = historial
+        var ultima = historial
             .Where(x => string.Equals(x.Emisor, "IA", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.Fecha)
             .FirstOrDefault()?.Mensaje ?? string.Empty;
-        var t = respuesta.ToLowerInvariant();
-        return t.Contains("seguís interesado") || t.Contains("seguís interesada") ||
-               t.Contains("seguis interesado") || t.Contains("seguis interesada") ||
-               t.Contains("seguís buscando moto") ||
-               t.Contains("te escribo nuevamente de tuvendedor") ||
-               t.Contains("te escribo por última vez") ||
-               t.Contains("te escribo por ultima vez") ||
-               t.Contains("al contado o a crédito") ||
-               t.Contains("al contado o a credito");
+        var t = NormalizarTexto(ultima);
+        // Un “no” solamente se interpreta como rechazo si fue respuesta
+        // a una propuesta comercial; no a cualquier pregunta aislada.
+        return t.Contains("SEGUIS INTERESAD") || t.Contains("SEGUIS BUSCANDO") ||
+               t.Contains("TE ESCRIBO NUEVAMENTE") ||
+               t.Contains("POR ULTIMA VEZ") ||
+               t.Contains("AL CONTADO O A CREDITO") ||
+               t.Contains("TE GUSTARIA ADQUIRIR") ||
+               t.Contains("TE GUSTARIA PASAR A MIRAR") ||
+               t.Contains("PODEMOS AGENDAR UNA VISITA") ||
+               t.Contains("QUIERES AGENDAR UNA VISITA") ||
+               t.Contains("QUERES AGENDAR UNA VISITA") ||
+               t.Contains("TE INTERESA ESTA PROPIEDAD") ||
+               t.Contains("SI QUERES COORDINAR") ||
+               t.Contains("PRECIO PUBLICADO") ||
+               t.Contains("VER PUBLICACION") ||
+               t.Contains("/SHARE/PRODUCTO/");
     }
 
     private async Task RegistrarCierreSeguro(

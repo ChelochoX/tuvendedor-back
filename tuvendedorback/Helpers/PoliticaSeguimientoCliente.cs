@@ -27,12 +27,6 @@ public static class PoliticaSeguimientoCliente
 
         var texto = Normalizar(mensaje);
 
-        // La negativa corta «no, gracias» puede responder a IPS o a una oferta.
-        // Sin contexto NO cerramos el CRM; MotoConversacionService la evalúa
-        // después de respetar el flujo de solicitudes activas.
-        if (Regex.IsMatch(texto, @"^(?:no\s*,?\s*gracias|gracias\s*,?\s*no)\b"))
-            return new(false, false, false, null, null, false);
-
         // Un rechazo definitivo prevalece incluso si el mensaje contiene
         // simultáneamente una referencia temporal.
         if (ContieneAlguna(texto,
@@ -67,14 +61,26 @@ public static class PoliticaSeguimientoCliente
             return new(true, false, false, null, null, false);
         }
 
+        // Una negativa corta puede responder a IPS o a una oferta. No
+        // decidimos sin contexto, PERO se evalúa DESPUÉS del opt-out:
+        // «No gracias, no me escriban más» siempre debe bloquear mensajes.
+        if (Regex.IsMatch(texto, @"^(?:no\s*,?\s*gracias|gracias\s*,?\s*no)(?:[.!?]|$)"))
+            return new(false, false, false, null, null, false);
+
         // Rechazo concreto. No confundir con «no quiero credito», «no quiero roja», etc.
-        var desiste = Regex.IsMatch(texto, @"^no me interesa(?:[.!?]|$|\s+(?:la moto|esa moto|el modelo))")
+        var desiste = Regex.IsMatch(texto,
+                @"^no me interesa(?:[.!?]|$|\s+(?:la moto|esa moto|el modelo|el terreno|ese terreno|la casa|esa casa|la propiedad|esa propiedad|el inmueble|este producto|esa publicacion))")
             || ContieneAlguna(texto,
             "no quiero la moto", "no quiero esa moto", "no quiero mas la moto",
             "ya no quiero la moto", "no me interesa la moto", "no me interesa esa moto",
             "ya no me interesa", "no estoy interesado", "no estoy interesada",
             "no voy a comprar la moto", "desisto de la moto", "cancelo la moto",
-            "no quiero comprar la moto", "ya compre otra moto", "ya tengo moto");
+            "no quiero comprar la moto", "ya compre otra moto", "ya tengo moto",
+            "no quiero el terreno", "no quiero ese terreno", "no quiero la casa",
+            "no quiero esta propiedad", "no quiero esa propiedad", "no quiero el inmueble",
+            "no me interesa ese terreno", "no me interesa esa casa", "no me interesa esta propiedad",
+            "no me interesa ese producto", "no voy a comprar esa propiedad",
+            "desisto de este terreno", "no quiero comprar este terreno");
         if (desiste)
             return new(false, true, false, null, null, false);
 

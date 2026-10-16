@@ -1,404 +1,2200 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
-using tuvendedorback.Repositories.Interfaces;
-using Swashbuckle.AspNetCore.Annotations;
-using tuvendedorback.Common;
+﻿using Dapper;
+using System.Text;
+using tuvendedorback.Data;
 using tuvendedorback.DTOs;
+using tuvendedorback.Exceptions;
+using tuvendedorback.Helpers;
+using tuvendedorback.Repositories.Interfaces;
 using tuvendedorback.Request;
-using tuvendedorback.Services.Interfaces;
-using tuvendedorback.Wrappers;
 
-namespace tuvendedorback.Controllers;
+namespace tuvendedorback.Repositories;
 
-[ApiController]
-[Route("api/[controller]")]
-public class ClientesController : ControllerBase
+public class ClientesRepository : IClientesRepository
 {
-    private readonly IClientesService _service;
-    private readonly UserContext _userContext;
-    private readonly IClientesRepository _clientesRepository;
-    private readonly IIAConversacionRepository _conversacionRepository;
+    private readonly DbConnections _conexion;
+    private readonly ILogger<ClientesRepository> _logger;
 
-    public ClientesController(
-        UserContext userContext,
-        IClientesService service,
-        IClientesRepository clientesRepository,
-        IIAConversacionRepository conversacionRepository)
+    private static readonly TimeZoneInfo ZonaHorariaParaguay =
+        ObtenerZonaHorariaParaguay();
+
+    public ClientesRepository(
+        ILogger<ClientesRepository> logger,
+        DbConnections conexion)
     {
-        _userContext = userContext;
-        _service = service;
-        _clientesRepository = clientesRepository;
-        _conversacionRepository = conversacionRepository;
+        _logger = logger;
+        _conexion = conexion;
     }
 
 
+    // =========================================================
+    // REGISTRO MANUAL
+    // =========================================================
 
-    // Controles operativos exclusivos para usuarios autenticados del CRM.
-    // La conversación HUMANO no expira automáticamente.
-    [Authorize]
-    [HttpGet("modo-atencion/{idInteresado:int}")]
-    public async Task<IActionResult> ObtenerModoAtencion(int idInteresado)
+    public async Task<int> InsertarInteresado(
+        InteresadoDto interesado)
     {
-        if (_userContext.IdUsuario is null or 0) return Unauthorized();
-        var interesado = await _clientesRepository.ObtenerInteresadoPorId(idInteresado);
-        if (interesado?.IdConversacion is not int idConversacion || idConversacion <= 0)
-            return NotFound(new { Success = false, Message = "Este interesado no tiene una conversación WhatsApp asociada." });
+        using var conn = _conexion.CreateSqlConnection();
 
-        var modo = await _conversacionRepository.ObtenerModoConversacion(idConversacion);
-        return Ok(new Response<object>
+        try
         {
-            Success = true,
-            StatusCode = 200,
-            Data = new { Modo = modo, IdConversacion = idConversacion }
-        });
-    }
+            const string sql = @"
+INSERT INTO dbo.Interesados
+(
+    Nombre,
+    Telefono,
+    Email,
+    Ciudad,
+    ProductoInteres,
+    AportaIPS,
+    CantidadAportes,
+    Estado,
+    FechaRegistro,
+    FechaProximoContacto,
+    Descripcion,
+    ArchivoUrl,
+    UsuarioResponsable,
 
-    [Authorize]
-    [HttpPut("modo-atencion/{idInteresado:int}")]
-    public async Task<IActionResult> CambiarModoAtencion(int idInteresado, [FromBody] ModoAtencionWhatsappRequest request)
-    {
-        if (_userContext.IdUsuario is null or 0) return Unauthorized();
-        var modo = request.Modo?.Trim().ToUpperInvariant();
-        if (modo != "IA" && modo != "HUMANO")
-            return BadRequest(new { Success = false, Message = "Seleccioná IA o HUMANO." });
+    Origen,
+    EstadoConsulta,
+    RequiereSeguimiento,
+    MotivoSeguimiento,
+    FechaUltimaInteraccion,
+    CantidadInteracciones
+)
+VALUES
+(
+    @Nombre,
+    @Telefono,
+    @Email,
+    @Ciudad,
+    @ProductoInteres,
+    @AportaIPS,
+    @CantidadAportes,
+    @Estado,
+    @FechaRegistro,
+    @FechaProximoContacto,
+    @Descripcion,
+    @ArchivoUrl,
+    @UsuarioResponsable,
 
-        var interesado = await _clientesRepository.ObtenerInteresadoPorId(idInteresado);
-        if (interesado?.IdConversacion is not int idConversacion || idConversacion <= 0)
-            return NotFound(new { Success = false, Message = "Este interesado no tiene conversación WhatsApp." });
+    COALESCE(NULLIF(@Origen, ''), 'MANUAL'),
+    COALESCE(NULLIF(@EstadoConsulta, ''), 'REGISTRADO'),
+    @RequiereSeguimiento,
+    @MotivoSeguimiento,
+    COALESCE(@FechaUltimaInteraccion, @FechaRegistro),
+    @CantidadInteracciones
+);
 
-        await _conversacionRepository.CambiarModoAtencionDesdePanel(idConversacion, idInteresado, modo);
-        return Ok(new Response<object>
-        {
-            Success = true,
-            StatusCode = 200,
-            Message = modo == "HUMANO" ? "Atención humana activada; Panambí queda en silencio." : "Atención automática reanudada; no se reactivaron seguimientos anteriores.",
-            Data = new { Modo = modo, IdConversacion = idConversacion }
-        });
-    }
+SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
-    [HttpPost("registrar-interesados")]
-    [Consumes("multipart/form-data")]
-    [SwaggerOperation(
-        Summary = "Registrar un nuevo interesado")]
-    public async Task<IActionResult> Registrar(
-        [FromForm] InteresadoRequest request)
-    {
-        var idUsuario =
-            _userContext.IdUsuario;
+            var nuevoId =
+                await conn.ExecuteScalarAsync<int>(
+                    sql,
+                    interesado);
 
-        if (idUsuario == null || idUsuario == 0)
-        {
-            return Unauthorized(
-                new Response<object>
-                {
-                    Success = false,
-                    Errors =
-                        new List<string>
-                        {
-                            "Usuario no autenticado."
-                        },
-                    StatusCode = 401
-                });
+            _logger.LogInformation(
+                "Interesado {Nombre} registrado con Id {Id}",
+                interesado.Nombre,
+                nuevoId);
+
+            return nuevoId;
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al insertar interesado {@Interesado}",
+                interesado);
 
-        var id =
-            await _service.RegistrarInteresado(
-                request,
-                idUsuario.Value);
+            throw new RepositoryException(
+                "Error al insertar interesado",
+                ex);
+        }
+    }
 
-        return Ok(
-            new Response<object>
-            {
-                Success = true,
-                Data =
+
+    // =========================================================
+    // REGISTRO / ACTUALIZACION AUTOMATICA DESDE WHATSAPP
+    // =========================================================
+
+    public async Task<int> RegistrarInteraccionWhatsApp(
+        InteresadoWhatsAppEventoRequest request)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            conn.Open();
+
+            using var transaction =
+                conn.BeginTransaction();
+
+            var decision = request.EsEntradaCliente
+                ? PoliticaSeguimientoCliente.Evaluar(request.MensajeCliente)
+                : PoliticaSeguimientoCliente.Evaluar(null);
+            var consultaInmueble = request.EsEntradaCliente &&
+                PoliticaSeguimientoCliente.EsConsultaInmueble(request.MensajeCliente);
+
+            const string sql = @"
+DECLARE @IdInteresado INT;
+DECLARE @Identificador VARCHAR(150) = NULLIF(LTRIM(RTRIM(@IdentificadorExterno)), '');
+DECLARE @TelefonoReal VARCHAR(100) = NULLIF(LTRIM(RTRIM(@NumeroWhatsapp)), '');
+DECLARE @NombreWhatsapp NVARCHAR(150) = NULLIF(LTRIM(RTRIM(@NombreContacto)), '');
+
+DECLARE @Marca VARCHAR(150);
+DECLARE @Modelo VARCHAR(250);
+DECLARE @CodigoReferencia VARCHAR(100);
+DECLARE @ProductoInteres NVARCHAR(300);
+DECLARE @PausaHasta DATETIME2(3) =
+    CASE @PausaUnidad
+        WHEN 'DIA' THEN DATEADD(DAY, @PausaValor, GETDATE())
+        WHEN 'SEMANA' THEN DATEADD(DAY, @PausaValor * 7, GETDATE())
+        WHEN 'MES' THEN DATEADD(MONTH, @PausaValor, GETDATE())
+        WHEN 'ANIO' THEN DATEADD(YEAR, @PausaValor, GETDATE())
+        WHEN 'HORA' THEN DATEADD(HOUR, @PausaValor, GETDATE())
+        ELSE NULL
+    END;
+DECLARE @EsPublicacionOtroRubro BIT = CASE WHEN @ConsultaInmueble = 1 THEN 1 ELSE 0 END;
+
+-- Una consulta nueva sobre un inmueble debe limpiar el modelo de moto anterior.
+-- La clasificación es por rubro real de la publicación y su modelo asociado.
+IF @IdPublicacion IS NOT NULL AND @IdModeloProducto IS NULL
+   AND EXISTS (SELECT 1 FROM dbo.Publicaciones WHERE Id = @IdPublicacion)
+   AND NOT EXISTS
+   (
+       SELECT 1
+       FROM dbo.PublicacionModeloProducto pmp
+       INNER JOIN dbo.ModelosProducto mp ON mp.Id = pmp.IdModeloProducto
+       WHERE pmp.IdPublicacion = @IdPublicacion AND pmp.Estado = 'Activo'
+         AND UPPER(LTRIM(RTRIM(ISNULL(mp.Rubro, '')))) = 'MOTO'
+   )
+   AND NOT EXISTS
+   (
+       SELECT 1 FROM dbo.Publicaciones p
+       WHERE p.Id = @IdPublicacion
+         AND UPPER(ISNULL(p.Categoria, '')) LIKE '%MOTO%'
+   )
+BEGIN
+    SET @EsPublicacionOtroRubro = 1;
+END;
+
+-- Si el caller solamente mandó IdConversacion, recuperamos el identificador.
+IF @Identificador IS NULL
+BEGIN
+    SELECT TOP (1)
+        @Identificador = IdentificadorExterno
+    FROM dbo.Conversaciones
+    WHERE Id = @IdConversacion;
+END;
+
+-- Metadata segura del modelo.
+IF @IdModeloProducto IS NOT NULL
+BEGIN
+    SELECT TOP (1)
+        @Marca = m.Nombre,
+        @Modelo = mp.NombreModelo,
+        @CodigoReferencia = mp.CodigoReferencia
+    FROM dbo.ModelosProducto mp
+    INNER JOIN dbo.Marcas m
+        ON m.Id = mp.IdMarca
+    WHERE mp.Id = @IdModeloProducto;
+
+    SET @ProductoInteres =
+        NULLIF(
+            LTRIM(
+                RTRIM(
+                    CONCAT(
+                        ISNULL(@Marca, ''),
+                        ' ',
+                        ISNULL(@Modelo, '')
+                    )
+                )
+            ),
+            ''
+        );
+END;
+
+-- Si todavía no tenemos modelo pero sí publicación, conservamos su título.
+IF @ProductoInteres IS NULL
+   AND @IdPublicacion IS NOT NULL
+BEGIN
+    SELECT TOP (1)
+        @ProductoInteres = Titulo
+    FROM dbo.Publicaciones
+    WHERE Id = @IdPublicacion;
+END;
+
+-- Buscar primero por conversación, luego identificador y por último teléfono.
+SELECT TOP (1)
+    @IdInteresado = i.Id
+FROM dbo.Interesados i
+WHERE
+    (
+        @IdConversacion > 0
+        AND i.IdConversacion = @IdConversacion
+    )
+    OR
+    (
+        @Identificador IS NOT NULL
+        AND i.IdentificadorExterno = @Identificador
+    )
+    OR
+    (
+        @TelefonoReal IS NOT NULL
+        AND
+        REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', '')
+        =
+        REPLACE(REPLACE(REPLACE(@TelefonoReal, ' ', ''), '-', ''), '+', '')
+    )
+ORDER BY
+    CASE
+        WHEN @IdConversacion > 0
+         AND i.IdConversacion = @IdConversacion
+            THEN 1
+        WHEN @Identificador IS NOT NULL
+         AND i.IdentificadorExterno = @Identificador
+            THEN 2
+        ELSE 3
+    END,
+    i.Id DESC;
+
+IF @IdInteresado IS NULL
+BEGIN
+    INSERT INTO dbo.Interesados
+    (
+        Nombre,
+        Telefono,
+        Email,
+        Ciudad,
+        ProductoInteres,
+        AportaIPS,
+        CantidadAportes,
+        Estado,
+        FechaRegistro,
+        FechaProximoContacto,
+        Descripcion,
+        ArchivoUrl,
+        UsuarioResponsable,
+
+        Origen,
+        IdentificadorExterno,
+        IdConversacion,
+        IdModeloProducto,
+        IdPublicacion,
+        MarcaInteres,
+        ModeloInteres,
+        CodigoReferencia,
+        EstadoConsulta,
+        TipoOperacion,
+        IdSolicitudOperacion,
+        PasoOperacion,
+        RequiereSeguimiento,
+        MotivoSeguimiento,
+        NoContactarWhatsapp,
+        FechaUltimoMensajeCliente,
+        FechaUltimaRespuesta,
+        FechaUltimaInteraccion,
+        UltimoMensajeCliente,
+        UltimaRespuesta,
+        CantidadInteracciones
+    )
+    VALUES
+    (
+        LEFT(COALESCE(@NombreWhatsapp, N'Cliente WhatsApp'), 100),
+        LEFT(@TelefonoReal, 20),
+        NULL,
+        NULL,
+        LEFT(COALESCE(@ProductoInteres, N'Consulta por WhatsApp'), 150),
+        0,
+        0,
+        'Activo',
+        GETDATE(),
+        CASE WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 OR @PausaIndefinida = 1
+             THEN NULL WHEN @PausaHasta IS NOT NULL THEN @PausaHasta
+             ELSE DATEADD(DAY, 1, GETDATE()) END,
+        N'Registrado automáticamente desde la conversación de WhatsApp.',
+        NULL,
+        'PANAMBI',
+
+        'WHATSAPP',
+        @Identificador,
+        @IdConversacion,
+        @IdModeloProducto,
+        @IdPublicacion,
+        @Marca,
+        @Modelo,
+        @CodigoReferencia,
+        CASE WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1
+             THEN 'CERRADO'
+             ELSE COALESCE(NULLIF(@EstadoConsulta, ''), 'CONSULTANDO') END,
+        NULLIF(@TipoOperacion, ''),
+        @IdSolicitudOperacion,
+        NULLIF(@PasoOperacion, ''),
+        CASE WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1
+                    OR @PausaIndefinida = 1 OR @PausaHasta IS NOT NULL
+             THEN 0 ELSE 1 END,
+        CASE
+            WHEN @DecisionNoContactar = 1 THEN N'NO_CONTACTAR_SOLICITADO'
+            WHEN @DecisionDesiste = 1 AND @EsPublicacionOtroRubro = 1 THEN N'RECHAZO_PRODUCTO_EXPLICITO'
+            WHEN @DecisionDesiste = 1 THEN N'RECHAZO_MOTO_EXPLICITO'
+            WHEN @PausaIndefinida = 1 THEN N'PAUSA_SEGUIMIENTO_SIN_FECHA'
+            WHEN @PausaHasta IS NOT NULL THEN N'PAUSA_SEGUIMIENTO_HASTA'
+            ELSE COALESCE(NULLIF(@MotivoSeguimiento, ''),
+                N'Seguimiento comercial de consulta por WhatsApp.')
+        END,
+        @DecisionNoContactar,
+        CASE WHEN @EsEntradaCliente = 1 THEN GETDATE() ELSE NULL END,
+        CASE WHEN NULLIF(@Respuesta, '') IS NOT NULL THEN GETDATE() ELSE NULL END,
+        GETDATE(),
+        CASE WHEN @EsEntradaCliente = 1 THEN LEFT(@MensajeCliente, 1000) ELSE NULL END,
+        CASE WHEN NULLIF(@Respuesta, '') IS NOT NULL THEN LEFT(@Respuesta, 1000) ELSE NULL END,
+        CASE WHEN @EsEntradaCliente = 1 THEN 1 ELSE 0 END
+    );
+
+    SET @IdInteresado = CAST(SCOPE_IDENTITY() AS INT);
+END
+ELSE
+BEGIN
+    UPDATE dbo.Interesados
+    SET
+        Nombre =
+            CASE
+                WHEN @NombreWhatsapp IS NOT NULL
+                 AND
+                 (
+                     Nombre IS NULL
+                     OR LTRIM(RTRIM(Nombre)) = ''
+                     OR Nombre = 'Cliente WhatsApp'
+                 )
+                    THEN LEFT(@NombreWhatsapp, 100)
+                ELSE Nombre
+            END,
+
+        Telefono =
+            CASE
+                WHEN @TelefonoReal IS NOT NULL
+                    THEN LEFT(@TelefonoReal, 20)
+                ELSE Telefono
+            END,
+
+        ProductoInteres =
+            COALESCE(LEFT(@ProductoInteres, 150), ProductoInteres),
+
+        Estado = 'Activo',
+
+        Origen =
+            CASE
+                WHEN Origen IS NULL OR Origen = ''
+                    THEN 'WHATSAPP'
+                WHEN Origen = 'MANUAL'
+                    THEN 'MANUAL+WHATSAPP'
+                ELSE Origen
+            END,
+
+        IdentificadorExterno =
+            COALESCE(@Identificador, IdentificadorExterno),
+
+        IdConversacion =
+            CASE
+                WHEN @IdConversacion > 0
+                    THEN @IdConversacion
+                ELSE IdConversacion
+            END,
+
+        IdModeloProducto =
+            CASE WHEN @EsPublicacionOtroRubro = 1 THEN NULL
+                 ELSE COALESCE(@IdModeloProducto, IdModeloProducto) END,
+
+        IdPublicacion =
+            COALESCE(@IdPublicacion, IdPublicacion),
+
+        MarcaInteres =
+            CASE WHEN @EsPublicacionOtroRubro = 1 THEN NULL
+                 ELSE COALESCE(@Marca, MarcaInteres) END,
+
+        ModeloInteres =
+            CASE WHEN @EsPublicacionOtroRubro = 1 THEN NULL
+                 ELSE COALESCE(@Modelo, ModeloInteres) END,
+
+        CodigoReferencia =
+            CASE WHEN @EsPublicacionOtroRubro = 1 THEN NULL
+                 ELSE COALESCE(@CodigoReferencia, CodigoReferencia) END,
+
+        EstadoConsulta =
+            CASE
+                WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 THEN 'CERRADO'
+                WHEN @DecisionRetoma = 1 AND ISNULL(NoContactarWhatsapp, 0) = 0
+                     AND (MotivoSeguimiento IN (
+                         N'RECHAZO_MOTO_EXPLICITO', N'RECHAZO_PRODUCTO_EXPLICITO', N'PAUSA_SEGUIMIENTO_SIN_FECHA',
+                         N'PAUSA_SEGUIMIENTO_HASTA') OR EstadoConsulta = 'SIN_RESPUESTA')
+                     THEN 'CONSULTANDO'
+                WHEN EstadoConsulta IN ('CREDITO_EN_PROCESO', 'CONTADO_EN_PROCESO',
+                                       'DERIVADO_HUMANO', 'CERRADO')
+                    AND NULLIF(@EstadoConsulta, '') IN ('CONSULTANDO', 'ESPERANDO_MODELO',
+                                                       'CONSULTA_PROMO', 'COTIZADO')
+                    THEN EstadoConsulta
+                ELSE COALESCE(NULLIF(@EstadoConsulta, ''), EstadoConsulta, 'CONSULTANDO')
+            END,
+
+        TipoOperacion = COALESCE(NULLIF(@TipoOperacion, ''), TipoOperacion),
+        IdSolicitudOperacion = COALESCE(@IdSolicitudOperacion, IdSolicitudOperacion),
+        PasoOperacion = COALESCE(NULLIF(@PasoOperacion, ''), PasoOperacion),
+
+        NoContactarWhatsapp =
+            CASE WHEN @DecisionNoContactar = 1 THEN 1 ELSE NoContactarWhatsapp END,
+
+        RequiereSeguimiento =
+            CASE
+                WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 OR
+                     @PausaIndefinida = 1 OR @PausaHasta IS NOT NULL OR
+                     @EsPublicacionOtroRubro = 1 THEN 0
+                WHEN ISNULL(NoContactarWhatsapp, 0) = 1 OR
+                     EstadoConsulta IN ('CERRADO', 'CREDITO_EN_PROCESO',
+                                        'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
+                     AND @DecisionRetoma = 0 THEN 0
+                WHEN NULLIF(@EstadoConsulta, '') IN ('CERRADO', 'CREDITO_EN_PROCESO',
+                        'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO') THEN 0
+                WHEN MotivoSeguimiento IN (N'RECHAZO_MOTO_EXPLICITO', N'RECHAZO_PRODUCTO_EXPLICITO',
+                        N'PAUSA_SEGUIMIENTO_SIN_FECHA', N'PAUSA_SEGUIMIENTO_HASTA')
+                     AND @DecisionRetoma = 0 THEN 0
+                WHEN @DecisionRetoma = 1 AND ISNULL(NoContactarWhatsapp, 0) = 0 THEN 1
+                WHEN @EsEntradaCliente = 1 AND EstadoConsulta = 'SIN_RESPUESTA' THEN 1
+                ELSE RequiereSeguimiento
+            END,
+
+        MotivoSeguimiento =
+            CASE
+                WHEN @DecisionNoContactar = 1 THEN N'NO_CONTACTAR_SOLICITADO'
+                WHEN @DecisionDesiste = 1 AND @EsPublicacionOtroRubro = 1 THEN N'RECHAZO_PRODUCTO_EXPLICITO'
+            WHEN @DecisionDesiste = 1 THEN N'RECHAZO_MOTO_EXPLICITO'
+                WHEN @PausaIndefinida = 1 THEN N'PAUSA_SEGUIMIENTO_SIN_FECHA'
+                WHEN @PausaHasta IS NOT NULL THEN N'PAUSA_SEGUIMIENTO_HASTA'
+                WHEN @DecisionRetoma = 1 AND MotivoSeguimiento IN (
+                    N'RECHAZO_MOTO_EXPLICITO', N'RECHAZO_PRODUCTO_EXPLICITO', N'PAUSA_SEGUIMIENTO_SIN_FECHA',
+                    N'PAUSA_SEGUIMIENTO_HASTA', N'Secuencia automática finalizada sin nueva respuesta.')
+                    THEN N'Seguimiento comercial de consulta por WhatsApp.'
+                WHEN @EsEntradaCliente = 1 AND EstadoConsulta = 'SIN_RESPUESTA'
+                    THEN N'Seguimiento comercial de consulta por WhatsApp.'
+                WHEN NULLIF(@EstadoConsulta, '') = 'CERRADO'
+                    THEN COALESCE(NULLIF(@MotivoSeguimiento, ''), N'Cliente desistió de la consulta.')
+                ELSE COALESCE(NULLIF(MotivoSeguimiento, ''), NULLIF(@MotivoSeguimiento, ''),
+                              N'Seguimiento comercial de consulta por WhatsApp.')
+            END,
+
+        FechaProximoContacto =
+            CASE
+                WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 OR
+                     @PausaIndefinida = 1 THEN NULL
+                WHEN @PausaHasta IS NOT NULL THEN @PausaHasta
+                WHEN @DecisionRetoma = 1 OR
+                     (@EsEntradaCliente = 1 AND EstadoConsulta = 'SIN_RESPUESTA')
+                     THEN DATEADD(DAY, 1, GETDATE())
+                WHEN NULLIF(@EstadoConsulta, '') = 'CERRADO' THEN NULL
+                ELSE COALESCE(FechaProximoContacto, DATEADD(DAY, 1, GETDATE()))
+            END,
+
+        FechaUltimoMensajeCliente =
+            CASE
+                WHEN @EsEntradaCliente = 1
+                    THEN GETDATE()
+                ELSE FechaUltimoMensajeCliente
+            END,
+
+        FechaUltimaRespuesta =
+            CASE
+                WHEN NULLIF(@Respuesta, '') IS NOT NULL
+                    THEN GETDATE()
+                ELSE FechaUltimaRespuesta
+            END,
+
+        FechaUltimaInteraccion =
+            GETDATE(),
+
+        UltimoMensajeCliente =
+            CASE
+                WHEN @EsEntradaCliente = 1
+                    THEN LEFT(@MensajeCliente, 1000)
+                ELSE UltimoMensajeCliente
+            END,
+
+        UltimaRespuesta =
+            CASE
+                WHEN NULLIF(@Respuesta, '') IS NOT NULL
+                    THEN LEFT(@Respuesta, 1000)
+                ELSE UltimaRespuesta
+            END,
+
+        CantidadInteracciones =
+            ISNULL(CantidadInteracciones, 0)
+            +
+            CASE
+                WHEN @EsEntradaCliente = 1
+                    THEN 1
+                ELSE 0
+            END
+
+    WHERE Id = @IdInteresado;
+END;
+
+-- Las pausas con fecha POSPONEN los pendientes; no se cancelan porque
+-- la cola debe reanudarse al cumplirse el plazo indicado por el cliente.
+IF @IdInteresado IS NOT NULL AND @PausaHasta IS NOT NULL
+BEGIN
+    UPDATE dbo.SeguimientoWhatsappEnvios
+    SET ProgramadoPara = CASE
+        WHEN ProgramadoPara < @PausaHasta THEN @PausaHasta
+        ELSE ProgramadoPara END
+    WHERE IdInteresado = @IdInteresado
+      AND Estado = 'PENDIENTE';
+END;
+
+-- Rechazos, opt-out y pausas SIN FECHA sí cancelan los pendientes.
+-- Los ENVIADOS se conservan íntegros como auditoría.
+IF @IdInteresado IS NOT NULL
+   AND (@DecisionNoContactar = 1 OR @DecisionDesiste = 1
+        OR @PausaIndefinida = 1
+        OR NULLIF(@EstadoConsulta, '') = 'CERRADO')
+BEGIN
+    UPDATE e
+    SET Estado = 'CANCELADO',
+        MotivoCancelacion = CASE
+            WHEN @DecisionNoContactar = 1 THEN N'Cliente solicitó no recibir más mensajes.'
+            WHEN @PausaIndefinida = 1 THEN N'Cliente solicitó esperar sin fecha concreta.'
+            ELSE N'Cliente rechazó la oferta; oportunidad cerrada.'
+        END,
+        FechaInicioProceso = NULL
+    FROM dbo.SeguimientoWhatsappEnvios e
+    WHERE e.IdInteresado = @IdInteresado
+      AND e.Estado = 'PENDIENTE';
+END;
+
+-- ============================================================
+-- HISTORIAL POR MODELO
+-- Se conserva una fila por interesado + conversación + modelo.
+-- Si el cliente consulta otra moto se crea otra fila.
+-- ============================================================
+
+IF @IdModeloProducto IS NOT NULL
+BEGIN
+    DECLARE @IdConsulta INT;
+
+    SELECT TOP (1)
+        @IdConsulta = Id
+    FROM dbo.InteresadoConsultasMoto
+    WHERE IdInteresado = @IdInteresado
+      AND IdConversacion = @IdConversacion
+      AND IdModeloProducto = @IdModeloProducto
+    ORDER BY Id DESC;
+
+    IF @IdConsulta IS NULL
+    BEGIN
+        INSERT INTO dbo.InteresadoConsultasMoto
+        (
+            IdInteresado,
+            IdConversacion,
+            IdModeloProducto,
+            IdPublicacion,
+            Marca,
+            Modelo,
+            CodigoReferencia,
+            TipoConsulta,
+            EstadoConsulta,
+            TipoOperacion,
+            IdSolicitudOperacion,
+            PasoOperacion,
+            UltimoMensajeCliente,
+            UltimaRespuesta,
+            FechaPrimeraConsulta,
+            FechaUltimaConsulta,
+            CantidadInteracciones
+        )
+        VALUES
+        (
+            @IdInteresado,
+            @IdConversacion,
+            @IdModeloProducto,
+            @IdPublicacion,
+            @Marca,
+            @Modelo,
+            @CodigoReferencia,
+            COALESCE(NULLIF(@TipoConsulta, ''), 'CONSULTA_MODELO'),
+            COALESCE(NULLIF(@EstadoConsulta, ''), 'CONSULTANDO'),
+            NULLIF(@TipoOperacion, ''),
+            @IdSolicitudOperacion,
+            NULLIF(@PasoOperacion, ''),
+            LEFT(@MensajeCliente, 1500),
+            LEFT(@Respuesta, 1500),
+            GETDATE(),
+            GETDATE(),
+            1
+        );
+    END
+    ELSE
+    BEGIN
+        UPDATE dbo.InteresadoConsultasMoto
+        SET
+            IdPublicacion =
+                COALESCE(@IdPublicacion, IdPublicacion),
+
+            Marca =
+                COALESCE(@Marca, Marca),
+
+            Modelo =
+                COALESCE(@Modelo, Modelo),
+
+            CodigoReferencia =
+                COALESCE(@CodigoReferencia, CodigoReferencia),
+
+            TipoConsulta =
+                COALESCE(
+                    NULLIF(@TipoConsulta, ''),
+                    TipoConsulta
+                ),
+
+            EstadoConsulta =
+                COALESCE(
+                    NULLIF(@EstadoConsulta, ''),
+                    EstadoConsulta
+                ),
+
+            TipoOperacion =
+                COALESCE(
+                    NULLIF(@TipoOperacion, ''),
+                    TipoOperacion
+                ),
+
+            IdSolicitudOperacion =
+                COALESCE(
+                    @IdSolicitudOperacion,
+                    IdSolicitudOperacion
+                ),
+
+            PasoOperacion =
+                COALESCE(
+                    NULLIF(@PasoOperacion, ''),
+                    PasoOperacion
+                ),
+
+            UltimoMensajeCliente =
+                COALESCE(
+                    NULLIF(LEFT(@MensajeCliente, 1500), ''),
+                    UltimoMensajeCliente
+                ),
+
+            UltimaRespuesta =
+                COALESCE(
+                    NULLIF(LEFT(@Respuesta, 1500), ''),
+                    UltimaRespuesta
+                ),
+
+            FechaUltimaConsulta =
+                GETDATE(),
+
+            CantidadInteracciones =
+                ISNULL(CantidadInteracciones, 0) + 1
+
+        WHERE Id = @IdConsulta;
+    END;
+END;
+
+SELECT @IdInteresado;";
+
+            var id =
+                await conn.ExecuteScalarAsync<int>(
+                    sql,
                     new
                     {
-                        Id = id
+                        request.IdConversacion,
+                        request.IdentificadorExterno,
+                        request.NumeroWhatsapp,
+                        request.NombreContacto,
+                        request.IdModeloProducto,
+                        request.IdPublicacion,
+                        request.TipoConsulta,
+                        request.EstadoConsulta,
+                        request.MensajeCliente,
+                        request.Respuesta,
+                        request.TipoOperacion,
+                        request.IdSolicitudOperacion,
+                        request.PasoOperacion,
+                        request.MotivoSeguimiento,
+                        request.EsEntradaCliente,
+                        DecisionNoContactar = decision.NoContactar,
+                        DecisionDesiste = decision.Desiste,
+                        PausaIndefinida = decision.PausaIndefinida,
+                        PausaValor = decision.PausaValor,
+                        PausaUnidad = decision.PausaUnidad,
+                        DecisionRetoma = decision.RetomaConsulta,
+                        ConsultaInmueble = consultaInmueble
                     },
-                Message =
-                    "Interesado registrado correctamente"
-            });
+                    transaction);
+
+            transaction.Commit();
+
+            return id;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error registrando interacción WhatsApp. IdConversacion={IdConversacion}",
+                request.IdConversacion);
+
+            throw new RepositoryException(
+                "Error registrando interacción comercial de WhatsApp.",
+                ex);
+        }
     }
 
 
-    [HttpPost("registrar-seguimiento")]
-    [SwaggerOperation(
-        Summary = "Agregar seguimiento a un interesado existente")]
-    public async Task<IActionResult> AgregarSeguimiento(
-        [FromBody] SeguimientoRequest request)
+
+    // =========================================================
+    // CONVERSACIONES WHATSAPP DEL DIA DESDE NUESTRA BBDD
+    // =========================================================
+
+    public async Task<List<WhatsAppConversacionSincronizacionDto>>
+        ObtenerConversacionesWhatsAppDia(
+            DateTime fecha)
     {
-        var idUsuario =
-            _userContext.IdUsuario;
+        using var conn =
+            _conexion.CreateSqlConnection();
 
-        if (idUsuario == null || idUsuario == 0)
+        try
         {
-            return Unauthorized(
-                new Response<object>
-                {
-                    Success = false,
-                    Errors =
-                        new List<string>
-                        {
-                            "Usuario no autenticado."
-                        },
-                    StatusCode = 401
-                });
-        }
+            var (desdeUtc, hastaUtc) =
+                ObtenerRangoUtcDiaParaguay(
+                    fecha);
 
-        var id =
-            await _service.AgregarSeguimiento(
-                request,
-                idUsuario.Value);
+            const string sql = @"
+WITH ConversacionesDia AS
+(
+    SELECT
+        c.Id,
+        c.IdentificadorExterno,
+        MAX(m.Fecha) AS FechaUltimaInteraccion,
+        COUNT(1) AS CantidadMensajesDia
+    FROM dbo.Conversaciones c
+    INNER JOIN dbo.MensajesConversacion m
+        ON m.IdConversacion = c.Id
+    WHERE c.Canal = 'WHATSAPP'
+      AND m.Fecha >= @Desde
+      AND m.Fecha < @Hasta
+      AND NULLIF(
+            LTRIM(RTRIM(c.IdentificadorExterno)),
+            ''
+          ) IS NOT NULL
+    GROUP BY
+        c.Id,
+        c.IdentificadorExterno
+)
+SELECT
+    cd.IdentificadorExterno,
+    cli.Mensaje AS UltimoMensajeCliente,
+    ia.Mensaje AS UltimaRespuesta,
+    cli.Fecha AS FechaUltimoMensajeCliente,
+    ia.Fecha AS FechaUltimaRespuesta,
+    cd.FechaUltimaInteraccion,
+    cd.CantidadMensajesDia
+FROM ConversacionesDia cd
+OUTER APPLY
+(
+    SELECT TOP (1)
+        m.Mensaje,
+        m.Fecha
+    FROM dbo.MensajesConversacion m
+    WHERE m.IdConversacion = cd.Id
+      AND UPPER(LTRIM(RTRIM(m.Emisor))) = 'CLIENTE'
+      AND m.Fecha >= @Desde
+      AND m.Fecha < @Hasta
+    ORDER BY
+        m.Fecha DESC,
+        m.Id DESC
+) cli
+OUTER APPLY
+(
+    SELECT TOP (1)
+        m.Mensaje,
+        m.Fecha
+    FROM dbo.MensajesConversacion m
+    WHERE m.IdConversacion = cd.Id
+      AND UPPER(LTRIM(RTRIM(m.Emisor))) IN ('IA', 'PANAMBI')
+      AND m.Fecha >= @Desde
+      AND m.Fecha < @Hasta
+    ORDER BY
+        m.Fecha DESC,
+        m.Id DESC
+) ia
+ORDER BY
+    cd.FechaUltimaInteraccion DESC,
+    cd.Id DESC;";
 
-        return Ok(
-            new Response<object>
-            {
-                Success = true,
-                Data =
+            var data =
+                await conn.QueryAsync<
+                    WhatsAppConversacionSincronizacionDto>(
+                    sql,
                     new
                     {
-                        Id = id
-                    },
-                Message =
-                    "Seguimiento agregado correctamente"
-            });
-    }
+                        Desde = desdeUtc,
+                        Hasta = hastaUtc
+                    });
 
-
-    [HttpPut("actualizar-seguimiento/{id:int}")]
-    [SwaggerOperation(
-        Summary = "Actualizar próxima gestión/seguimiento de un interesado")]
-    public async Task<IActionResult> ActualizarSeguimiento(
-        int id,
-        [FromBody] ActualizarSeguimientoInteresadoRequest request)
-    {
-        var idUsuario =
-            _userContext.IdUsuario;
-
-        if (idUsuario is null or 0)
-        {
-            return Unauthorized(
-                new Response<object>
-                {
-                    Success = false,
-                    Errors =
-                        new List<string>
-                        {
-                            "Usuario no autenticado."
-                        },
-                    StatusCode = 401
-                });
+            return data.ToList();
         }
-
-        await _service.ActualizarSeguimientoInteresado(
-            id,
-            request,
-            idUsuario.Value);
-
-        return Ok(
-            new Response<object>
-            {
-                Success = true,
-                Message =
-                    "Seguimiento actualizado correctamente.",
-                StatusCode = 200
-            });
-    }
-
-
-
-    [HttpPost("sincronizar-whatsapp-dia")]
-    [SwaggerOperation(
-        Summary = "Sincroniza los chats activos de WhatsApp del día con el CRM de interesados",
-        Description =
-            "Importa/actualiza contactos de WhatsApp sin duplicarlos y conserva los seguimientos manuales existentes.")]
-    public async Task<IActionResult> SincronizarWhatsAppDia(
-        [FromQuery] DateTime? fecha = null)
-    {
-        var idUsuario =
-            _userContext.IdUsuario;
-
-        if (idUsuario is null or 0)
+        catch (Exception ex)
         {
-            return Unauthorized(
-                new Response<object>
-                {
-                    Success = false,
-                    Errors =
-                        new List<string>
-                        {
-                            "Usuario no autenticado."
-                        },
-                    StatusCode = 401
-                });
+            _logger.LogError(
+                ex,
+                "Error obteniendo conversaciones WhatsApp del día {Fecha}",
+                fecha.Date);
+
+            throw new RepositoryException(
+                "Error obteniendo conversaciones WhatsApp del día.",
+                ex);
         }
-
-        var data =
-            await _service.SincronizarWhatsAppDia(
-                fecha,
-                idUsuario.Value);
-
-        return Ok(
-            new Response<SincronizacionWhatsAppResultadoDto>
-            {
-                Success = true,
-                Data = data,
-                Message =
-                    "WhatsApp sincronizado correctamente.",
-                StatusCode = 200
-            });
     }
 
 
-    [HttpGet("obtener-interesados")]
-    [SwaggerOperation(
-        Summary = "Obtiene el listado de interesados",
-        Description =
-            "Devuelve los interesados manuales y los registrados automáticamente desde WhatsApp.")]
-    public async Task<IActionResult> ObtenerInteresados(
-        [FromQuery] FiltroInteresadosRequest filtro)
+    // =========================================================
+    // SINCRONIZACION DE CHATS DESDE WHATSAPP
+    // Idempotente por conversación, identificador externo o teléfono.
+    // No pisa la agenda/motivo de seguimiento manual del vendedor.
+    // =========================================================
+
+    public async Task<SincronizarContactoWhatsAppResultadoDto>
+        SincronizarContactoWhatsApp(
+            WhatsAppContactoSincronizacionRequest request)
     {
-        var (items, total) =
-            await _service.ObtenerInteresados(
-                filtro);
+        using var conn = _conexion.CreateSqlConnection();
 
-        var resultado =
-            new
+        try
+        {
+            conn.Open();
+
+            using var transaction =
+                conn.BeginTransaction();
+
+            const string sql = @"
+DECLARE @Identificador VARCHAR(150) =
+    NULLIF(LTRIM(RTRIM(@IdentificadorExterno)), '');
+
+DECLARE @TelefonoReal VARCHAR(100) =
+    NULLIF(LTRIM(RTRIM(@NumeroWhatsapp)), '');
+
+DECLARE @NombreWhatsapp NVARCHAR(150) =
+    NULLIF(LTRIM(RTRIM(@NombreContacto)), '');
+
+DECLARE @IdConversacion INT;
+DECLARE @IdInteresado INT;
+DECLARE @EsNuevo BIT = 0;
+
+IF @Identificador IS NULL
+BEGIN
+    THROW 57020, 'No se recibió identificador de WhatsApp.', 1;
+END;
+
+-- Conversación idempotente.
+SELECT TOP (1)
+    @IdConversacion = c.Id
+FROM dbo.Conversaciones c WITH (UPDLOCK, HOLDLOCK)
+WHERE c.Canal = 'WHATSAPP'
+  AND c.IdentificadorExterno = @Identificador
+ORDER BY c.Id DESC;
+
+IF @IdConversacion IS NULL
+BEGIN
+    INSERT INTO dbo.Conversaciones
+    (
+        Canal,
+        IdentificadorExterno,
+        Estado,
+        Modo,
+        FechaInicio,
+        FechaUltimoMensaje
+    )
+    VALUES
+    (
+        'WHATSAPP',
+        @Identificador,
+        'ACTIVA',
+        'IA',
+        COALESCE(@FechaUltimaInteraccion, GETDATE()),
+        COALESCE(@FechaUltimaInteraccion, GETDATE())
+    );
+
+    SET @IdConversacion =
+        CAST(SCOPE_IDENTITY() AS INT);
+END
+ELSE
+BEGIN
+    UPDATE dbo.Conversaciones
+    SET
+        FechaUltimoMensaje =
+            CASE
+                WHEN @FechaUltimaInteraccion IS NOT NULL
+                 AND @FechaUltimaInteraccion > FechaUltimoMensaje
+                    THEN @FechaUltimaInteraccion
+                ELSE FechaUltimoMensaje
+            END
+    WHERE Id = @IdConversacion;
+END;
+
+-- Primero conversación/LID. Si todavía no estaba vinculado, buscamos
+-- por teléfono para fusionar con un interesado cargado manualmente.
+SELECT TOP (1)
+    @IdInteresado = i.Id
+FROM dbo.Interesados i WITH (UPDLOCK, HOLDLOCK)
+WHERE
+    i.IdConversacion = @IdConversacion
+    OR i.IdentificadorExterno = @Identificador
+    OR
+    (
+        @TelefonoReal IS NOT NULL
+        AND
+        REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', '')
+        =
+        REPLACE(REPLACE(REPLACE(@TelefonoReal, ' ', ''), '-', ''), '+', '')
+    )
+ORDER BY
+    CASE
+        WHEN i.IdConversacion = @IdConversacion THEN 1
+        WHEN i.IdentificadorExterno = @Identificador THEN 2
+        ELSE 3
+    END,
+    i.Id DESC;
+
+IF @IdInteresado IS NULL
+BEGIN
+    SET @EsNuevo = 1;
+
+    INSERT INTO dbo.Interesados
+    (
+        Nombre,
+        Telefono,
+        Email,
+        Ciudad,
+        ProductoInteres,
+        AportaIPS,
+        CantidadAportes,
+        Estado,
+        FechaRegistro,
+        FechaProximoContacto,
+        Descripcion,
+        ArchivoUrl,
+        UsuarioResponsable,
+        Origen,
+        IdentificadorExterno,
+        IdConversacion,
+        EstadoConsulta,
+        RequiereSeguimiento,
+        MotivoSeguimiento,
+        FechaUltimoMensajeCliente,
+        FechaUltimaRespuesta,
+        FechaUltimaInteraccion,
+        UltimoMensajeCliente,
+        UltimaRespuesta,
+        CantidadInteracciones
+    )
+    VALUES
+    (
+        LEFT(COALESCE(@NombreWhatsapp, N'Cliente WhatsApp'), 100),
+        LEFT(@TelefonoReal, 20),
+        NULL,
+        NULL,
+        N'Consulta por WhatsApp',
+        0,
+        0,
+        'Activo',
+        COALESCE(@FechaUltimaInteraccion, GETDATE()),
+        DATEADD(
+            DAY,
+            1,
+            COALESCE(@FechaUltimaInteraccion, GETDATE())
+        ),
+        N'Registrado desde sincronización de chats de WhatsApp.',
+        NULL,
+        'PANAMBI',
+        'WHATSAPP',
+        @Identificador,
+        @IdConversacion,
+        'CONSULTANDO',
+        1,
+        N'Seguimiento comercial de consulta por WhatsApp.',
+        @FechaUltimoMensajeCliente,
+        @FechaUltimaRespuesta,
+        COALESCE(@FechaUltimaInteraccion, GETDATE()),
+        LEFT(@UltimoMensajeCliente, 1000),
+        LEFT(@UltimaRespuesta, 1000),
+        ISNULL(@CantidadMensajesDia, 0)
+    );
+
+    SET @IdInteresado =
+        CAST(SCOPE_IDENTITY() AS INT);
+END
+ELSE
+BEGIN
+    UPDATE dbo.Interesados
+    SET
+        Nombre =
+            CASE
+                WHEN @NombreWhatsapp IS NOT NULL
+                 AND
+                 (
+                     Nombre IS NULL
+                     OR LTRIM(RTRIM(Nombre)) = ''
+                     OR Nombre = 'Cliente WhatsApp'
+                 )
+                    THEN LEFT(@NombreWhatsapp, 100)
+                ELSE Nombre
+            END,
+
+        Telefono =
+            CASE
+                WHEN @TelefonoReal IS NOT NULL
+                    THEN LEFT(@TelefonoReal, 20)
+                ELSE Telefono
+            END,
+
+        Origen =
+            CASE
+                WHEN ISNULL(Origen, '') = ''
+                    THEN 'WHATSAPP'
+                WHEN Origen = 'MANUAL'
+                    THEN 'MANUAL+WHATSAPP'
+                ELSE Origen
+            END,
+
+        IdentificadorExterno =
+            COALESCE(NULLIF(IdentificadorExterno, ''), @Identificador),
+
+        IdConversacion =
+            COALESCE(IdConversacion, @IdConversacion),
+
+        Estado =
+            CASE
+                WHEN @FechaUltimaInteraccion IS NOT NULL
+                    THEN 'Activo'
+                ELSE Estado
+            END,
+
+        EstadoConsulta =
+            COALESCE(NULLIF(EstadoConsulta, ''), 'CONSULTANDO'),
+
+        -- Agenda y motivo manual NO se pisan.
+        FechaProximoContacto =
+            COALESCE(
+                FechaProximoContacto,
+                DATEADD(
+                    DAY,
+                    1,
+                    COALESCE(@FechaUltimaInteraccion, GETDATE())
+                )
+            ),
+
+        MotivoSeguimiento =
+            COALESCE(
+                NULLIF(MotivoSeguimiento, ''),
+                N'Seguimiento comercial de consulta por WhatsApp.'
+            ),
+
+        -- La sincronización masiva no cambia una decisión manual
+        -- de seguimiento. Solamente los mensajes en vivo pueden reactivarla.
+        RequiereSeguimiento =
+            RequiereSeguimiento,
+
+        FechaUltimoMensajeCliente =
+            CASE
+                WHEN @FechaUltimoMensajeCliente IS NOT NULL
+                 AND
+                 (
+                     FechaUltimoMensajeCliente IS NULL
+                     OR @FechaUltimoMensajeCliente > FechaUltimoMensajeCliente
+                 )
+                    THEN @FechaUltimoMensajeCliente
+                ELSE FechaUltimoMensajeCliente
+            END,
+
+        FechaUltimaRespuesta =
+            CASE
+                WHEN @FechaUltimaRespuesta IS NOT NULL
+                 AND
+                 (
+                     FechaUltimaRespuesta IS NULL
+                     OR @FechaUltimaRespuesta > FechaUltimaRespuesta
+                 )
+                    THEN @FechaUltimaRespuesta
+                ELSE FechaUltimaRespuesta
+            END,
+
+        FechaUltimaInteraccion =
+            CASE
+                WHEN @FechaUltimaInteraccion IS NOT NULL
+                 AND
+                 (
+                     FechaUltimaInteraccion IS NULL
+                     OR @FechaUltimaInteraccion > FechaUltimaInteraccion
+                 )
+                    THEN @FechaUltimaInteraccion
+                ELSE FechaUltimaInteraccion
+            END,
+
+        UltimoMensajeCliente =
+            CASE
+                WHEN @FechaUltimoMensajeCliente IS NOT NULL
+                 AND
+                 (
+                     FechaUltimoMensajeCliente IS NULL
+                     OR @FechaUltimoMensajeCliente >= FechaUltimoMensajeCliente
+                 )
+                    THEN COALESCE(
+                        NULLIF(LEFT(@UltimoMensajeCliente, 1000), ''),
+                        UltimoMensajeCliente
+                    )
+                ELSE UltimoMensajeCliente
+            END,
+
+        UltimaRespuesta =
+            CASE
+                WHEN @FechaUltimaRespuesta IS NOT NULL
+                 AND
+                 (
+                     FechaUltimaRespuesta IS NULL
+                     OR @FechaUltimaRespuesta >= FechaUltimaRespuesta
+                 )
+                    THEN COALESCE(
+                        NULLIF(LEFT(@UltimaRespuesta, 1000), ''),
+                        UltimaRespuesta
+                    )
+                ELSE UltimaRespuesta
+            END
+
+    WHERE Id = @IdInteresado;
+END;
+
+SELECT
+    @IdInteresado AS IdInteresado,
+    @EsNuevo AS EsNuevo,
+    CASE
+        WHEN @TelefonoReal IS NOT NULL THEN CAST(1 AS BIT)
+        ELSE CAST(0 AS BIT)
+    END AS TieneTelefonoReal;
+";
+
+            var resultado =
+                await conn.QuerySingleAsync<
+                    SincronizarContactoWhatsAppResultadoDto>(
+                    sql,
+                    request,
+                    transaction);
+
+            transaction.Commit();
+
+            return resultado;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error sincronizando contacto de WhatsApp. Identificador={Identificador}",
+                request.IdentificadorExterno);
+
+            throw new RepositoryException(
+                "Error sincronizando contacto de WhatsApp.",
+                ex);
+        }
+    }
+
+
+    // =========================================================
+    // SEGUIMIENTOS MANUALES
+    // =========================================================
+
+    public async Task<int> InsertarSeguimiento(
+        SeguimientoDto seguimiento)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+INSERT INTO dbo.Seguimientos
+(
+    IdInteresado,
+    Fecha,
+    Comentario,
+    Usuario
+)
+VALUES
+(
+    @IdInteresado,
+    @Fecha,
+    @Comentario,
+    @Usuario
+);
+
+SELECT CAST(SCOPE_IDENTITY() AS INT);";
+
+            var id =
+                await conn.ExecuteScalarAsync<int>(
+                    sql,
+                    seguimiento);
+
+            _logger.LogInformation(
+                "Seguimiento agregado a interesado {IdInteresado} por {Usuario}",
+                seguimiento.IdInteresado,
+                seguimiento.Usuario);
+
+            return id;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al insertar seguimiento {@Seguimiento}",
+                seguimiento);
+
+            throw new RepositoryException(
+                "Error al insertar seguimiento",
+                ex);
+        }
+    }
+
+
+    // =========================================================
+    // LISTADO DE INTERESADOS
+    // =========================================================
+
+    public async Task<(List<InteresadoDto> Items, int TotalRegistros)>
+        ObtenerInteresados(
+            FiltroInteresadosRequest filtro)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            var sqlSinRespuesta =
+                SqlSinRespuesta(
+                    "i");
+
+            var where =
+                new StringBuilder(@"
+FROM dbo.Interesados i
+WHERE 1 = 1
+");
+
+            if (!string.IsNullOrWhiteSpace(filtro.Nombre))
             {
-                TotalRegistros =
-                    total,
+                where.AppendLine(@"
+AND
+(
+    i.Nombre LIKE '%' + @Nombre + '%'
+    OR i.Telefono LIKE '%' + @Nombre + '%'
+    OR i.ProductoInteres LIKE '%' + @Nombre + '%'
+    OR i.MarcaInteres LIKE '%' + @Nombre + '%'
+    OR i.ModeloInteres LIKE '%' + @Nombre + '%'
+    OR i.CodigoReferencia LIKE '%' + @Nombre + '%'
+)");
+            }
 
-                PaginaActual =
-                    filtro.NumeroPagina,
+            if (!string.IsNullOrWhiteSpace(filtro.Estado)
+                && !filtro.Estado.Equals(
+                    "Todos",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                where.AppendLine(
+                    "AND i.Estado = @Estado");
+            }
 
-                RegistrosPorPagina =
+            if (!string.IsNullOrWhiteSpace(filtro.Origen)
+                && !filtro.Origen.Equals(
+                    "Todos",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                where.AppendLine(
+                    "AND i.Origen = @Origen");
+            }
+
+            if (!string.IsNullOrWhiteSpace(filtro.EstadoConsulta)
+                && !filtro.EstadoConsulta.Equals(
+                    "Todos",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                if (filtro.EstadoConsulta.Equals(
+                    "SIN_RESPUESTA",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    where.AppendLine($@"
+AND {sqlSinRespuesta} = 1");
+                }
+                else
+                {
+                    where.AppendLine(
+                        "AND i.EstadoConsulta = @EstadoConsulta");
+                }
+            }
+
+            if (filtro.SoloSeguimiento)
+            {
+                where.AppendLine(
+                    "AND i.RequiereSeguimiento = 1");
+            }
+
+            if (filtro.SoloSinRespuesta)
+            {
+                where.AppendLine($@"
+AND {sqlSinRespuesta} = 1");
+            }
+
+            if (filtro.SoloSeguimientoVencido)
+            {
+                where.AppendLine(@"
+AND i.RequiereSeguimiento = 1
+AND i.FechaProximoContacto IS NOT NULL
+AND i.FechaProximoContacto <= GETDATE()");
+            }
+
+            if (filtro.FechaRegistroDesde.HasValue)
+            {
+                where.AppendLine(@"
+AND CONVERT(date, i.FechaRegistro)
+    >= CONVERT(date, @FechaRegistroDesde)");
+            }
+
+            if (filtro.FechaRegistroHasta.HasValue)
+            {
+                where.AppendLine(@"
+AND CONVERT(date, i.FechaRegistro)
+    <= CONVERT(date, @FechaRegistroHasta)");
+            }
+
+            if (filtro.FechaProximoContactoDesde.HasValue)
+            {
+                where.AppendLine(@"
+AND CONVERT(date, i.FechaProximoContacto)
+    >= CONVERT(date, @FechaProximoContactoDesde)");
+            }
+
+            if (filtro.FechaProximoContactoHasta.HasValue)
+            {
+                where.AppendLine(@"
+AND CONVERT(date, i.FechaProximoContacto)
+    <= CONVERT(date, @FechaProximoContactoHasta)");
+            }
+
+            var sqlCount =
+                "SELECT COUNT(1) " + where;
+
+            var sqlData =
+                new StringBuilder($@"
+SELECT
+    i.Id,
+    i.Nombre,
+    i.Telefono,
+    i.Email,
+    i.Ciudad,
+    i.ProductoInteres,
+    i.AportaIPS,
+    i.CantidadAportes,
+    i.Estado,
+    i.FechaRegistro,
+    i.FechaProximoContacto,
+    i.Descripcion,
+    i.ArchivoUrl,
+    i.UsuarioResponsable,
+
+    i.Origen,
+    i.IdentificadorExterno,
+    i.IdConversacion,
+    i.IdModeloProducto,
+    i.IdPublicacion,
+    i.MarcaInteres,
+    i.ModeloInteres,
+    i.CodigoReferencia,
+    i.EstadoConsulta,
+
+    CASE
+        WHEN {sqlSinRespuesta} = 1
+            THEN 'SIN_RESPUESTA'
+        ELSE ISNULL(i.EstadoConsulta, 'REGISTRADO')
+    END AS EstadoGestion,
+
+    i.TipoOperacion,
+    i.IdSolicitudOperacion,
+    i.PasoOperacion,
+    i.RequiereSeguimiento,
+    i.MotivoSeguimiento,
+    i.FechaUltimoMensajeCliente,
+    i.FechaUltimaRespuesta,
+    i.FechaUltimaInteraccion,
+    i.UltimoMensajeCliente,
+    i.UltimaRespuesta,
+    ISNULL(i.CantidadInteracciones, 0)
+        AS CantidadInteracciones,
+
+    CAST(
+        {sqlSinRespuesta}
+        AS BIT
+    ) AS SinRespuesta,
+
+    CAST(
+        CASE
+            WHEN i.RequiereSeguimiento = 1
+             AND i.FechaProximoContacto IS NOT NULL
+             AND i.FechaProximoContacto <= GETDATE()
+                THEN 1
+            ELSE 0
+        END
+        AS BIT
+    ) AS SeguimientoVencido
+");
+
+            sqlData.Append(where);
+
+            sqlData.AppendLine(@"
+ORDER BY
+    CASE
+        WHEN i.FechaUltimoMensajeCliente IS NOT NULL
+         AND CAST(i.FechaUltimoMensajeCliente AS DATE) = CAST(GETDATE() AS DATE)
+            THEN 0
+        ELSE 1
+    END,
+    CASE
+        WHEN i.FechaUltimoMensajeCliente IS NOT NULL
+         AND CAST(i.FechaUltimoMensajeCliente AS DATE) = CAST(GETDATE() AS DATE)
+            THEN i.FechaUltimoMensajeCliente
+        ELSE NULL
+    END DESC,
+    CASE
+        WHEN i.FechaUltimoMensajeCliente IS NULL
+          OR CAST(i.FechaUltimoMensajeCliente AS DATE) <> CAST(GETDATE() AS DATE)
+        THEN
+            CASE
+                WHEN i.RequiereSeguimiento = 1
+                 AND i.FechaProximoContacto IS NOT NULL
+                 AND i.FechaProximoContacto <= GETDATE()
+                    THEN 0
+                ELSE 1
+            END
+        ELSE 0
+    END,
+    COALESCE(
+        i.FechaUltimaInteraccion,
+        i.FechaRegistro
+    ) DESC,
+    i.Id DESC
+
+OFFSET (@Offset) ROWS
+FETCH NEXT (@Limit) ROWS ONLY;");
+
+            var numeroPagina =
+                Math.Max(1, filtro.NumeroPagina);
+
+            var registrosPorPagina =
+                Math.Clamp(
                     filtro.RegistrosPorPagina,
+                    1,
+                    100);
 
-                Items =
-                    items
-            };
+            var parametros =
+                new
+                {
+                    filtro.Nombre,
+                    filtro.Estado,
+                    filtro.Origen,
+                    filtro.EstadoConsulta,
+                    filtro.FechaRegistroDesde,
+                    filtro.FechaRegistroHasta,
+                    filtro.FechaProximoContactoDesde,
+                    filtro.FechaProximoContactoHasta,
+                    Offset =
+                        (numeroPagina - 1)
+                        *
+                        registrosPorPagina,
+                    Limit =
+                        registrosPorPagina
+                };
 
-        return Ok(
-            new Response<object>
-            {
-                Success = true,
-                Data = resultado,
-                Message =
-                    "Interesados obtenidos correctamente",
-                StatusCode = 200
-            });
+            var total =
+                await conn.ExecuteScalarAsync<int>(
+                    sqlCount,
+                    parametros);
+
+            var items =
+                await conn.QueryAsync<InteresadoDto>(
+                    sqlData.ToString(),
+                    parametros);
+
+            return (
+                items.ToList(),
+                total
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al obtener interesados filtrados");
+
+            throw new RepositoryException(
+                "Error al obtener interesados filtrados",
+                ex);
+        }
     }
 
 
-    [HttpGet("resumen-interesados")]
-    [SwaggerOperation(
-        Summary = "Resumen comercial de interesados para dashboard")]
-    public async Task<IActionResult> ObtenerResumen(
-        [FromQuery] DateTime? fecha = null)
-    {
-        var data =
-            await _service.ObtenerResumenInteresados(
-                fecha);
+    // =========================================================
+    // RESUMEN PARA DASHBOARD
+    // =========================================================
 
-        return Ok(
-            new Response<InteresadosResumenDto>
-            {
-                Success = true,
-                Data = data,
-                Message =
-                    "Resumen de interesados obtenido correctamente.",
-                StatusCode = 200
-            });
+    public async Task<InteresadosResumenDto>
+        ObtenerResumenInteresados(
+            DateTime? fecha)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+SELECT
+    SUM(
+        CASE
+            WHEN i.Estado = 'Activo'
+                THEN 1
+            ELSE 0
+        END
+    ) AS TotalActivos,
+
+    SUM(
+        CASE
+            WHEN i.FechaRegistro >= @DesdeUtc
+             AND i.FechaRegistro < @HastaUtc
+                THEN 1
+            ELSE 0
+        END
+    ) AS NuevosDelDia,
+
+    SUM(
+        CASE
+            WHEN i.FechaUltimoMensajeCliente >= @DesdeUtc
+             AND i.FechaUltimoMensajeCliente < @HastaUtc
+                THEN 1
+            ELSE 0
+        END
+    ) AS InteraccionesDelDia,
+
+    SUM(
+        CASE
+            WHEN i.Estado = 'Activo'
+             AND i.RequiereSeguimiento = 1
+                THEN 1
+            ELSE 0
+        END
+    ) AS PendientesSeguimiento,
+
+    SUM(
+        CASE
+            WHEN i.Estado = 'Activo'
+             AND i.RequiereSeguimiento = 1
+             AND i.FechaProximoContacto IS NOT NULL
+             AND i.FechaProximoContacto <= GETDATE()
+                THEN 1
+            ELSE 0
+        END
+    ) AS SeguimientosVencidos,
+
+    SUM(
+        CASE
+            WHEN i.Estado = 'Activo'
+             AND
+             i.RequiereSeguimiento = 1
+             AND i.FechaUltimaRespuesta IS NOT NULL
+             AND
+             (
+                 i.FechaUltimoMensajeCliente IS NULL
+                 OR i.FechaUltimaRespuesta
+                    >= i.FechaUltimoMensajeCliente
+             )
+             AND i.FechaUltimaRespuesta
+                 <= DATEADD(HOUR, -24, GETDATE())
+             AND ISNULL(i.EstadoConsulta, '')
+                 NOT IN
+                 (
+                     'CREDITO_EN_PROCESO',
+                     'CONTADO_EN_PROCESO',
+                     'DERIVADO_HUMANO',
+                     'CERRADO'
+                 )
+                THEN 1
+            ELSE 0
+        END
+    ) AS SinRespuesta,
+
+    SUM(
+        CASE
+            WHEN i.Estado = 'Activo'
+             AND ISNULL(i.EstadoConsulta, '')
+                 IN
+                 (
+                     'CONSULTANDO',
+                     'ESPERANDO_MODELO',
+                     'CONSULTA_PROMO'
+                 )
+                THEN 1
+            ELSE 0
+        END
+    ) AS Consultando,
+
+    SUM(
+        CASE
+            WHEN i.Estado = 'Activo'
+             AND i.EstadoConsulta = 'COTIZADO'
+                THEN 1
+            ELSE 0
+        END
+    ) AS Cotizados,
+
+    SUM(
+        CASE
+            WHEN i.Estado = 'Activo'
+             AND i.EstadoConsulta = 'CREDITO_EN_PROCESO'
+                THEN 1
+            ELSE 0
+        END
+    ) AS CreditoEnProceso,
+
+    SUM(
+        CASE
+            WHEN i.Estado = 'Activo'
+             AND i.EstadoConsulta = 'CONTADO_EN_PROCESO'
+                THEN 1
+            ELSE 0
+        END
+    ) AS ContadoEnProceso,
+
+    SUM(
+        CASE
+            WHEN i.Estado = 'Activo'
+             AND i.EstadoConsulta = 'DERIVADO_HUMANO'
+                THEN 1
+            ELSE 0
+        END
+    ) AS DerivadosHumano
+
+FROM dbo.Interesados i;";
+
+            var fechaReferencia =
+                fecha ??
+                TimeZoneInfo.ConvertTimeFromUtc(
+                    DateTime.UtcNow,
+                    ZonaHorariaParaguay);
+
+            var (desdeUtc, hastaUtc) =
+                ObtenerRangoUtcDiaParaguay(
+                    fechaReferencia);
+
+            return
+                await conn.QueryFirstAsync<InteresadosResumenDto>(
+                    sql,
+                    new
+                    {
+                        DesdeUtc = desdeUtc,
+                        HastaUtc = hastaUtc
+                    });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error obteniendo resumen de interesados");
+
+            throw new RepositoryException(
+                "Error obteniendo resumen de interesados",
+                ex);
+        }
     }
 
 
-    [HttpGet("detalle-interesado/{id:int}")]
-    [SwaggerOperation(
-        Summary = "Detalle completo del interesado, modelos consultados y conversación")]
-    public async Task<IActionResult> ObtenerDetalle(
-        int id)
+    // =========================================================
+    // SEGUIMIENTOS
+    // =========================================================
+
+    public async Task<List<SeguimientoDto>>
+        ObtenerSeguimientosPorInteresado(
+            int idInteresado)
     {
-        var data =
-            await _service.ObtenerDetalleInteresado(
-                id);
+        using var conn = _conexion.CreateSqlConnection();
 
-        return Ok(
-            new Response<InteresadoDetalleDto>
-            {
-                Success = true,
-                Data = data,
-                Message =
-                    "Detalle del interesado obtenido correctamente.",
-                StatusCode = 200
-            });
-    }
+        try
+        {
+            const string sql = @"
+SELECT
+    s.Id,
+    s.IdInteresado,
+    s.Fecha,
+    s.Comentario,
 
+    COALESCE(
+        u.NombreUsuario,
+        s.Usuario
+    ) AS Usuario
 
-    [HttpGet("obtener-seguimientos")]
-    [SwaggerOperation(
-        Summary = "Obtiene los seguimientos de un interesado")]
-    public async Task<IActionResult> ObtenerSeguimientos(
-        [FromQuery] int idInteresado)
-    {
-        var lista =
-            await _service.ObtenerSeguimientosPorInteresado(
+FROM dbo.Seguimientos s
+
+LEFT JOIN dbo.Usuarios u
+    ON u.Id = TRY_CONVERT(INT, s.Usuario)
+
+WHERE s.IdInteresado = @Id
+
+ORDER BY
+    s.Fecha DESC,
+    s.Id DESC;";
+
+            var result =
+                await conn.QueryAsync<SeguimientoDto>(
+                    sql,
+                    new
+                    {
+                        Id = idInteresado
+                    });
+
+            return result.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al obtener seguimientos del interesado {Id}",
                 idInteresado);
 
-        return Ok(
-            new Response<List<SeguimientoDto>>
-            {
-                Success = true,
-                Data = lista,
-                Message =
-                    "Seguimientos obtenidos correctamente",
-                StatusCode = 200
-            });
+            throw new RepositoryException(
+                "Error al obtener seguimientos",
+                ex);
+        }
     }
 
 
-    [HttpPut("actualizar-interesado/{id}")]
-    [Consumes("multipart/form-data")]
-    [SwaggerOperation(
-        Summary = "Actualizar datos de un interesado existente")]
-    public async Task<IActionResult> Actualizar(
-        int id,
-        [FromForm] InteresadoRequest request)
-    {
-        var idUsuario =
-            _userContext.IdUsuario;
+    // =========================================================
+    // OBTENER INTERESADO
+    // =========================================================
 
-        if (idUsuario is null or 0)
+    public async Task<InteresadoDto?>
+        ObtenerInteresadoPorId(
+            int id)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
         {
-            return Unauthorized(
-                new Response<object>
+            var sqlSinRespuesta =
+                SqlSinRespuesta(
+                    "i");
+
+            var sql = $@"
+SELECT TOP (1)
+    i.Id,
+    i.Nombre,
+    i.Telefono,
+    i.Email,
+    i.Ciudad,
+    i.ProductoInteres,
+    i.AportaIPS,
+    i.CantidadAportes,
+    i.Estado,
+    i.FechaRegistro,
+    i.FechaProximoContacto,
+    i.Descripcion,
+    i.ArchivoUrl,
+    i.UsuarioResponsable,
+
+    i.Origen,
+    i.IdentificadorExterno,
+    i.IdConversacion,
+    i.IdModeloProducto,
+    i.IdPublicacion,
+    i.MarcaInteres,
+    i.ModeloInteres,
+    i.CodigoReferencia,
+    i.EstadoConsulta,
+
+    CASE
+        WHEN {sqlSinRespuesta} = 1
+            THEN 'SIN_RESPUESTA'
+        ELSE ISNULL(i.EstadoConsulta, 'REGISTRADO')
+    END AS EstadoGestion,
+
+    i.TipoOperacion,
+    i.IdSolicitudOperacion,
+    i.PasoOperacion,
+    i.RequiereSeguimiento,
+    i.MotivoSeguimiento,
+    i.FechaUltimoMensajeCliente,
+    i.FechaUltimaRespuesta,
+    i.FechaUltimaInteraccion,
+    i.UltimoMensajeCliente,
+    i.UltimaRespuesta,
+    ISNULL(i.CantidadInteracciones, 0)
+        AS CantidadInteracciones,
+
+    CAST(
+        {sqlSinRespuesta}
+        AS BIT
+    ) AS SinRespuesta,
+
+    CAST(
+        CASE
+            WHEN i.RequiereSeguimiento = 1
+             AND i.FechaProximoContacto IS NOT NULL
+             AND i.FechaProximoContacto <= GETDATE()
+                THEN 1
+            ELSE 0
+        END
+        AS BIT
+    ) AS SeguimientoVencido
+
+FROM dbo.Interesados i
+
+WHERE i.Id = @Id;";
+
+            return
+                await conn.QueryFirstOrDefaultAsync<InteresadoDto>(
+                    sql,
+                    new
+                    {
+                        Id = id
+                    });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error obteniendo interesado {Id}",
+                id);
+
+            throw new RepositoryException(
+                "Error obteniendo interesado",
+                ex);
+        }
+    }
+
+
+    // =========================================================
+    // DETALLE COMPLETO
+    // =========================================================
+
+    public async Task<InteresadoDetalleDto?>
+        ObtenerDetalleInteresado(
+            int id)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            var interesado =
+                await ObtenerInteresadoPorId(id);
+
+            if (interesado is null)
+            {
+                return null;
+            }
+
+            const string sql = @"
+SELECT
+    q.Id,
+    q.IdInteresado,
+    q.IdConversacion,
+    q.IdModeloProducto,
+    q.IdPublicacion,
+    q.Marca,
+    q.Modelo,
+    q.CodigoReferencia,
+    q.TipoConsulta,
+    q.EstadoConsulta,
+    q.TipoOperacion,
+    q.IdSolicitudOperacion,
+    q.PasoOperacion,
+    q.UltimoMensajeCliente,
+    q.UltimaRespuesta,
+    q.FechaPrimeraConsulta,
+    q.FechaUltimaConsulta,
+    q.CantidadInteracciones
+FROM dbo.InteresadoConsultasMoto q
+WHERE q.IdInteresado = @IdInteresado
+ORDER BY
+    q.FechaUltimaConsulta DESC,
+    q.Id DESC;
+
+
+SELECT TOP (50)
+    m.Emisor,
+    m.Mensaje,
+    m.Fecha
+FROM dbo.MensajesConversacion m
+INNER JOIN dbo.Interesados i
+    ON i.IdConversacion = m.IdConversacion
+WHERE i.Id = @IdInteresado
+ORDER BY
+    m.Id DESC;
+
+
+SELECT
+    s.Id,
+    s.IdInteresado,
+    s.Fecha,
+    s.Comentario,
+    COALESCE(
+        u.NombreUsuario,
+        s.Usuario
+    ) AS Usuario
+FROM dbo.Seguimientos s
+LEFT JOIN dbo.Usuarios u
+    ON u.Id = TRY_CONVERT(INT, s.Usuario)
+WHERE s.IdInteresado = @IdInteresado
+ORDER BY
+    s.Fecha DESC,
+    s.Id DESC;";
+
+            using var multi =
+                await conn.QueryMultipleAsync(
+                    sql,
+                    new
+                    {
+                        IdInteresado = id
+                    });
+
+            var consultas =
+                (await multi.ReadAsync<InteresadoConsultaMotoDto>())
+                .ToList();
+
+            var mensajes =
+                (await multi.ReadAsync<MensajeConversacionHistorialDto>())
+                .Reverse()
+                .ToList();
+
+            var seguimientos =
+                (await multi.ReadAsync<SeguimientoDto>())
+                .ToList();
+
+            return new InteresadoDetalleDto
+            {
+                Interesado = interesado,
+                ConsultasMoto = consultas,
+                UltimosMensajes = mensajes,
+                Seguimientos = seguimientos
+            };
+        }
+        catch (RepositoryException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error obteniendo detalle del interesado {Id}",
+                id);
+
+            throw new RepositoryException(
+                "Error obteniendo detalle del interesado",
+                ex);
+        }
+    }
+
+
+    // =========================================================
+    // ACTUALIZAR REGISTRO MANUAL
+    // =========================================================
+
+    public async Task ActualizarInteresado(
+        InteresadoDto interesado)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        const string sql = @"
+UPDATE dbo.Interesados
+SET
+    Nombre = @Nombre,
+    Telefono = @Telefono,
+    Email = @Email,
+    Ciudad = @Ciudad,
+    ProductoInteres = @ProductoInteres,
+    AportaIPS = @AportaIPS,
+    CantidadAportes = @CantidadAportes,
+    Estado = @Estado,
+    FechaProximoContacto = @FechaProximoContacto,
+    Descripcion = @Descripcion,
+    ArchivoUrl = @ArchivoUrl
+WHERE Id = @Id;";
+
+        try
+        {
+            await conn.ExecuteAsync(
+                sql,
+                interesado);
+
+            _logger.LogInformation(
+                "Interesado {Id} actualizado correctamente",
+                interesado.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error al actualizar interesado {@Interesado}",
+                interesado);
+
+            throw new RepositoryException(
+                "Error al actualizar interesado",
+                ex);
+        }
+    }
+
+
+    // =========================================================
+    // ACTUALIZAR SEGUIMIENTO SIN OBLIGAR A EDITAR TODO EL CLIENTE
+    // =========================================================
+
+    public async Task ActualizarSeguimientoInteresado(
+        int idInteresado,
+        ActualizarSeguimientoInteresadoRequest request)
+    {
+        using var conn = _conexion.CreateSqlConnection();
+
+        try
+        {
+            const string sql = @"
+UPDATE dbo.Interesados
+SET
+    FechaProximoContacto =
+        CASE
+            WHEN @FechaProximoContacto IS NOT NULL
+                THEN @FechaProximoContacto
+            ELSE FechaProximoContacto
+        END,
+
+    RequiereSeguimiento =
+        COALESCE(
+            @RequiereSeguimiento,
+            RequiereSeguimiento
+        ),
+
+    MotivoSeguimiento =
+        COALESCE(
+            NULLIF(@MotivoSeguimiento, ''),
+            MotivoSeguimiento
+        ),
+
+    EstadoConsulta =
+        COALESCE(
+            NULLIF(@EstadoConsulta, ''),
+            EstadoConsulta
+        ),
+
+    FechaUltimaInteraccion =
+        GETDATE()
+
+WHERE Id = @IdInteresado;
+
+IF @@ROWCOUNT = 0
+BEGIN
+    THROW 51001, 'No se encontró el interesado.', 1;
+END;";
+
+            await conn.ExecuteAsync(
+                sql,
+                new
                 {
-                    Success = false,
-                    Errors =
-                        new List<string>
-                        {
-                            "Usuario no autenticado."
-                        },
-                    StatusCode = 401
+                    IdInteresado = idInteresado,
+                    request.FechaProximoContacto,
+                    request.RequiereSeguimiento,
+                    request.MotivoSeguimiento,
+                    request.EstadoConsulta
                 });
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error actualizando seguimiento del interesado {Id}",
+                idInteresado);
 
-        await _service.ActualizarInteresado(
-            id,
-            request,
-            idUsuario.Value);
-
-        return Ok(
-            new Response<object>
-            {
-                Success = true,
-                Message =
-                    "Interesado actualizado correctamente",
-                StatusCode = 200
-            });
+            throw new RepositoryException(
+                "Error actualizando seguimiento del interesado",
+                ex);
+        }
     }
-}
-// Solicitud del panel CRM; no expuesta a los mensajes de clientes.
-public sealed class ModoAtencionWhatsappRequest
-{
-    public string? Modo { get; set; }
+
+
+    private static string SqlSinRespuesta(
+        string alias)
+    {
+        return $@"
+CASE
+    WHEN {alias}.Estado = 'Activo'
+     AND {alias}.RequiereSeguimiento = 1
+     AND {alias}.FechaUltimaRespuesta IS NOT NULL
+     AND
+     (
+         {alias}.FechaUltimoMensajeCliente IS NULL
+         OR {alias}.FechaUltimaRespuesta
+            >= {alias}.FechaUltimoMensajeCliente
+     )
+     AND {alias}.FechaUltimaRespuesta
+         <= DATEADD(HOUR, -24, GETDATE())
+     AND ISNULL({alias}.EstadoConsulta, '')
+         NOT IN
+         (
+             'CREDITO_EN_PROCESO',
+             'CONTADO_EN_PROCESO',
+             'DERIVADO_HUMANO',
+             'CERRADO'
+         )
+        THEN 1
+    ELSE 0
+END";
+    }
+
+    // =========================================================
+    // FECHAS OPERATIVAS - PARAGUAY / UTC
+    // =========================================================
+
+    private static (DateTime DesdeUtc, DateTime HastaUtc)
+        ObtenerRangoUtcDiaParaguay(
+            DateTime fechaParaguay)
+    {
+        var inicioLocal =
+            DateTime.SpecifyKind(
+                fechaParaguay.Date,
+                DateTimeKind.Unspecified);
+
+        var finLocal =
+            inicioLocal.AddDays(1);
+
+        return
+        (
+            TimeZoneInfo.ConvertTimeToUtc(
+                inicioLocal,
+                ZonaHorariaParaguay),
+            TimeZoneInfo.ConvertTimeToUtc(
+                finLocal,
+                ZonaHorariaParaguay)
+        );
+    }
+
+
+    private static TimeZoneInfo
+        ObtenerZonaHorariaParaguay()
+    {
+        try
+        {
+            // Linux / contenedores Docker.
+            return TimeZoneInfo.FindSystemTimeZoneById(
+                "America/Asuncion");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            // Windows / desarrollo local.
+            return TimeZoneInfo.FindSystemTimeZoneById(
+                "Paraguay Standard Time");
+        }
+    }
+
 }
