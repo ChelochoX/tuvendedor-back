@@ -427,7 +427,9 @@ public class PublicacionRepository : IPublicacionRepository
     public async Task<IReadOnlyList<ProductoSharePreviewDto>>
         BuscarPublicacionesMarketplaceParaIA(
             IReadOnlyCollection<string> terminos,
-            int limite = 5)
+            int limite = 5,
+            string? rubroSolicitado = null,
+            string? zonaSolicitada = null)
     {
         using var conn = _conexion.CreateSqlConnection();
 
@@ -480,6 +482,39 @@ public class PublicacionRepository : IPublicacionRepository
             var filtroTexto = string.Join(" OR ", predicados);
             var puntaje = string.Join(" + ", puntajes);
 
+            // El OR de palabras sirve para puntuar, pero NO define el rubro.
+            // Categoría y título verificables evitan devolver un anuncio
+            // genérico que solo diga "Areguá" en la descripción.
+            var rubro = (rubroSolicitado ?? "").ToUpperInvariant();
+            var filtroRubro = rubro switch
+            {
+                "TERRENO" => @" AND (
+                    ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%terreno%'
+                    OR ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%lote%'
+                    OR ISNULL(p.Categoria, '') COLLATE Latin1_General_CI_AI LIKE '%terreno%'
+                    OR ISNULL(p.Categoria, '') COLLATE Latin1_General_CI_AI LIKE '%lote%')",
+                "CASA" => @" AND (
+                    ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%casa%'
+                    OR ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%duplex%'
+                    OR ISNULL(p.Categoria, '') COLLATE Latin1_General_CI_AI LIKE '%casa%')",
+                "DEPARTAMENTO" => @" AND (
+                    ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%departamento%'
+                    OR ISNULL(p.Categoria, '') COLLATE Latin1_General_CI_AI LIKE '%departamento%')",
+                "INMUEBLE" => @" AND (
+                    ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%terreno%'
+                    OR ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%lote%'
+                    OR ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%casa%'
+                    OR ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%departamento%'
+                    OR ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE '%duplex%')",
+                _ => ""
+            };
+            var zona = string.IsNullOrWhiteSpace(zonaSolicitada) ? null : zonaSolicitada.Trim();
+            // La ubicación solicitada es OBLIGATORIA, no basta compartir rubro.
+            var filtroZona = zona is null ? "" : @" AND (
+                ISNULL(p.Ubicacion, '') COLLATE Latin1_General_CI_AI LIKE @Zona
+                OR ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI LIKE @Zona)";
+            if (zona is not null) parametros.Add("Zona", "%" + zona + "%");
+
             var sql = $@"
 SELECT TOP (@Limite)
     p.Id,
@@ -518,6 +553,8 @@ WHERE p.Estado = 'Activo'
         AND mp.Estado = 'Activo'
         AND UPPER(LTRIM(RTRIM(ISNULL(mp.Rubro, '')))) = 'MOTO'
   )
+  {filtroRubro}
+  {filtroZona}
   AND ({filtroTexto})
 ORDER BY
     ({puntaje}) DESC,

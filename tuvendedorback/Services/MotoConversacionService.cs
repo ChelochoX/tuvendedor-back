@@ -5,6 +5,7 @@ using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Helpers;
 using tuvendedorback.Repositories.Interfaces;
+using tuvendedorback.Repositories;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
 
@@ -44,6 +45,8 @@ public class MotoConversacionService
     private readonly IOllamaService
         _ollamaService;
 
+    private readonly PanambiPromptsEditorRepository _editorPrompts;
+
     private readonly ISolicitudMotoService
         _solicitudMotoService;
 
@@ -65,6 +68,7 @@ public class MotoConversacionService
         IPublicacionRepository publicacionRepository,
         IMotoOfertaService motoOfertaService,
         IOllamaService ollamaService,
+        PanambiPromptsEditorRepository editorPrompts,
         ISolicitudMotoService solicitudMotoService,
         IClientesService clientesService,
         IClientesRepository clientesRepository,
@@ -82,6 +86,7 @@ public class MotoConversacionService
 
         _ollamaService =
             ollamaService;
+        _editorPrompts = editorPrompts;
 
         _solicitudMotoService =
             solicitudMotoService;
@@ -1850,11 +1855,17 @@ public class MotoConversacionService
             return null;
         }
 
+        // La intención y la ubicación son condiciones OBLIGATORIAS cuando
+        // el cliente las mencionó; jamás ofrecer anuncios por compartir la ciudad.
+        var rubroSolicitado = InferirRubroBusquedaMarketplace(mensaje);
+        var zonaSolicitada = ExtraerZonaBusquedaMarketplace(mensaje);
         var publicaciones =
             await _publicacionRepository
                 .BuscarPublicacionesMarketplaceParaIA(
                     terminos,
-                    5);
+                    5,
+                    rubroSolicitado,
+                    zonaSolicitada);
 
         if (publicaciones.Count > 0)
         {
@@ -1869,7 +1880,7 @@ public class MotoConversacionService
                     idContexto);
 
             var respuesta =
-                ConstruirRespuestaPublicacionesMarketplace(
+                await ConstruirRespuestaPublicacionesMarketplace(
                     publicaciones);
 
             await _repository
@@ -1915,10 +1926,21 @@ public class MotoConversacionService
                 idConversacion,
                 null);
 
-        var respuestaSinResultados =
-            ConstruirRespuestaMarketplaceSinResultados(
-                terminos,
-                categoriasDisponibles);
+        var introduccionSinResultados = await _editorPrompts.ObtenerPublicado("MARKETPLACE_SIN_RESULTADOS")
+            ?? "¡Hola! 😊 Revisé las publicaciones activas de TuVendedor.";
+        var descripcionBuscada = rubroSolicitado switch
+        {
+            "TERRENO" => "terrenos",
+            "CASA" => "casas",
+            "DEPARTAMENTO" => "departamentos",
+            "INMUEBLE" => "inmuebles",
+            _ => "productos"
+        };
+        var busquedaSolicitada = descripcionBuscada
+            + (string.IsNullOrWhiteSpace(zonaSolicitada) ? "" : $" en {zonaSolicitada.ToLowerInvariant()}");
+        var respuestaSinResultados = introduccionSinResultados.Trim()
+            + $"\nNo encontré publicaciones activas de {busquedaSolicitada} que coincidan con lo que pediste."
+            + "\nPodés ver el catálogo en https://tuvendedor.com.py o decirme otra zona para buscar.";
 
         await _repository
             .RegistrarMensaje(
@@ -2167,10 +2189,31 @@ public class MotoConversacionService
     // Solo liberar el producto fijado cuando se pide explícitamente otro.
     // Preguntas sobre precio, ubicación, superficie, título, pagos y
     // disponibilidad continúan sobre la publicación seleccionada.
+    private static string? InferirRubroBusquedaMarketplace(string mensaje)
+    {
+        var t = NormalizarTexto(mensaje);
+        if (Regex.IsMatch(t, @"\b(TERRENO|TERRENOS|LOTE|LOTES)\b")) return "TERRENO";
+        if (Regex.IsMatch(t, @"\b(CASA|CASAS|DUPLEX)\b")) return "CASA";
+        if (Regex.IsMatch(t, @"\b(DEPARTAMENTO|DEPARTAMENTOS)\b")) return "DEPARTAMENTO";
+        if (Regex.IsMatch(t, @"\b(INMUEBLE|INMUEBLES|PROPIEDAD|PROPIEDADES)\b")) return "INMUEBLE";
+        return null;
+    }
+
+    private static string? ExtraerZonaBusquedaMarketplace(string mensaje)
+    {
+        var t = NormalizarTexto(mensaje);
+        // "terrenos por Areguá", "casas en Luque": zona explícita, no inferida.
+        var match = Regex.Match(t, @"\b(?:POR|EN|CERCA DE|ZONA DE)\s+([A-Z]{3,25})\b");
+        if (!match.Success) return null;
+        var zona = match.Groups[1].Value;
+        return zona is "EL" or "LA" or "LOS" or "LAS" or "UN" or "UNA" or "VENTA" or "OFERTA" or "CUOTAS" or "CREDITO" ? null : zona;
+    }
+
     private static bool SolicitaNuevaBusquedaMarketplace(string mensaje)
     {
         var texto = NormalizarTexto(mensaje);
         return EsConsultaGeneralMarketplace(mensaje)
+            || Regex.IsMatch(texto, @"\b(?:QUE|CUALES|MOSTRAME|MOSTRAR|TENES|TIENEN|QUIERO)\b.{0,50}\b(?:OPCIONES|TERRENOS|CASAS|LOTES|INMUEBLES|PROPIEDADES)\b")
             || texto.StartsWith("BUSCO ", StringComparison.Ordinal)
             || texto.StartsWith("ESTOY BUSCANDO ", StringComparison.Ordinal)
             || texto.StartsWith("BUSCANDO ", StringComparison.Ordinal)
@@ -2371,15 +2414,14 @@ public class MotoConversacionService
     }
 
 
-    private static string ConstruirRespuestaPublicacionesMarketplace(
+    private async Task<string> ConstruirRespuestaPublicacionesMarketplace(
         IReadOnlyList<ProductoSharePreviewDto> publicaciones)
     {
         var sb = new StringBuilder();
-
-        sb.AppendLine(
-            publicaciones.Count == 1
-                ? "Sí, encontré esta publicación activa en TuVendedor:"
-                : "Sí, encontré estas publicaciones activas en TuVendedor:");
+        var saludo = await _editorPrompts.ObtenerPublicado("MARKETPLACE_SALUDO")
+            ?? "¡Hola! 😊 Encontré {opciones} en TuVendedor que coinciden con tu búsqueda:";
+        saludo = saludo.Replace("{opciones}", publicaciones.Count == 1 ? "esta opción" : "estas opciones", StringComparison.OrdinalIgnoreCase);
+        sb.AppendLine(saludo.Trim());
 
         sb.AppendLine();
 
@@ -2410,10 +2452,9 @@ public class MotoConversacionService
 
         sb.AppendLine();
 
-        sb.Append(
-            publicaciones.Count == 1
-                ? "Si querés, preguntame por el precio, la ubicación o los detalles de esta publicación."
-                : "Decime cuál te interesa, por ejemplo “el primero”, y seguimos con esa publicación.");
+        var cierre = await _editorPrompts.ObtenerPublicado("MARKETPLACE_CIERRE")
+            ?? "¿Cuál te interesa? Decime el número y te cuento los detalles. 😊";
+        sb.Append(cierre.Trim());
 
         return sb.ToString().Trim();
     }
@@ -2711,8 +2752,10 @@ public class MotoConversacionService
         var respuestaIA =
             await _ollamaService
                 .GenerarRespuesta(
-                    ConstruirPromptConversacionAbierta(
-                        modelos),
+                    ConstruirPromptConversacionAbierta(modelos)
+                    + "\n\nESTILO EDITABLE ADMINISTRADOR (sin alterar políticas ni catálogo):\n"
+                    + (await _editorPrompts.ObtenerPublicado("CONVERSACION_GENERAL")
+                        ?? "Saludá amablemente, respondé de forma directa y no inventes publicaciones."),
                     historial,
                     cancellationToken);
 
@@ -3197,10 +3240,8 @@ public class MotoConversacionService
         // PROMPT BASE
         // =====================================================
 
-        var promptBase =
-            await _repository
-                .ObtenerPromptActivo(
-                    CODIGO_PROMPT_BASE);
+        var promptBase = await _editorPrompts.ObtenerPublicado(CODIGO_PROMPT_BASE)
+            ?? await _repository.ObtenerPromptActivo(CODIGO_PROMPT_BASE);
 
 
         if (
@@ -3217,10 +3258,8 @@ public class MotoConversacionService
         // PROMPT MARCA
         // =====================================================
 
-        var promptMarca =
-            await _repository
-                .ObtenerPromptActivo(
-                    codigoPromptMarca);
+        var promptMarca = await _editorPrompts.ObtenerPublicado(codigoPromptMarca)
+            ?? await _repository.ObtenerPromptActivo(codigoPromptMarca);
 
 
         if (

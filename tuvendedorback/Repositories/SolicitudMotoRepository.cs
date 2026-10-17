@@ -882,6 +882,13 @@ public class SolicitudMotoRepository : ISolicitudMotoRepository
 
         try
         {
+            // Preferir el texto publicado desde el panel; mantener el prompt
+            // original si aún no se publicó una personalización.
+            var editado = await conn.QueryFirstOrDefaultAsync<string?>(@"
+SELECT TOP (1) Contenido FROM dbo.PanambiPromptsEditor
+WHERE Codigo = @Codigo AND Estado = 'PUBLICADO'
+ORDER BY Version DESC;", new { Codigo = codigo });
+            if (!string.IsNullOrWhiteSpace(editado)) return editado;
             const string sql = @"
 SELECT TOP (1)
     PromptBase

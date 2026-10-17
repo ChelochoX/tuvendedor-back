@@ -23,7 +23,9 @@ public interface IPublicacionRepository
     Task<IReadOnlyList<ProductoSharePreviewDto>>
         BuscarPublicacionesMarketplaceParaIA(
             IReadOnlyCollection<string> terminos,
-            int limite = 5);
+            int limite = 5,
+            string? rubroSolicitado = null,
+            string? zonaSolicitada = null);
 
     Task<ProductoSharePreviewDto?>
         ObtenerPublicacionMarketplaceParaIA(
