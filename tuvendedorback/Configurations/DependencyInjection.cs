@@ -27,8 +27,8 @@ public static class DependencyInjection
         services.AddScoped<ICompartirRepository, CompartirRepository>();
         services.AddScoped<ISolicitudVisitaRepository, SolicitudVisitaRepository>();
         services.AddScoped<IPublicacionInteraccionRepository, PublicacionInteraccionRepository>();
-        services.AddScoped<IServicioPremiumRepository,ServicioPremiumRepository>();       
-        services.AddScoped<IBannerPublicitarioRepository,BannerPublicitarioRepository>();
+        services.AddScoped<IServicioPremiumRepository, ServicioPremiumRepository>();
+        services.AddScoped<IBannerPublicitarioRepository, BannerPublicitarioRepository>();
         services.AddScoped<IComercialDashboardRepository, ComercialDashboardRepository>();
 
         // ERP
@@ -36,11 +36,11 @@ public static class DependencyInjection
 
         //IA
         services.AddScoped<IMotoOfertaRepository, MotoOfertaRepository>();
-        services.AddScoped<IIAConversacionRepository,IAConversacionRepository>();
+        services.AddScoped<IIAConversacionRepository, IAConversacionRepository>();
         services.AddScoped<ISolicitudMotoRepository, SolicitudMotoRepository>();
         services.AddScoped<ICreditoMotoGestionRepository, CreditoMotoGestionRepository>();
-        services.AddScoped<IDescuentoContadoMotoRepository,DescuentoContadoMotoRepository>();
-        services.AddScoped<IContadoMotoGestionRepository,ContadoMotoGestionRepository>();
+        services.AddScoped<IDescuentoContadoMotoRepository, DescuentoContadoMotoRepository>();
+        services.AddScoped<IContadoMotoGestionRepository, ContadoMotoGestionRepository>();
         services.AddScoped<ISeguimientoWhatsappRepository, SeguimientoWhatsappRepository>();
 
         return services;
@@ -67,9 +67,9 @@ public static class DependencyInjection
         services.AddScoped<ISolicitudVisitaService, SolicitudVisitaService>();
         services.AddScoped<IWhatsAppNotificationService, WhatsAppNotificationService>();
         services.AddScoped<IPublicacionInteraccionService, PublicacionInteraccionService>();
-        services.AddScoped<IServicioPremiumService,ServicioPremiumService>();
+        services.AddScoped<IServicioPremiumService, ServicioPremiumService>();
         services.AddHostedService<PremiumVencimientosBackgroundService>();
-        services.AddScoped<IBannerPublicitarioService,BannerPublicitarioService>();
+        services.AddScoped<IBannerPublicitarioService, BannerPublicitarioService>();
         services.AddScoped<IComercialDashboardService, ComercialDashboardService>();
 
         // ERP
@@ -77,15 +77,16 @@ public static class DependencyInjection
 
         //IA
         services.AddScoped<IMotoOfertaService, MotoOfertaService>();
-        services.AddScoped<IMotoConversacionService,MotoConversacionService>();
-        services.AddHttpClient<IOllamaService,OllamaService>();
+        services.AddScoped<IMotoConversacionService, MotoConversacionService>();
+        services.AddHttpClient<IOllamaService, OllamaService>();
         services.AddScoped<ISolicitudMotoService, SolicitudMotoService>();
         services.AddScoped<ICreditoMotoGestionService, CreditoMotoGestionService>();
-        services.AddScoped<IDescuentoContadoMotoService,DescuentoContadoMotoService>();
-        services.AddScoped<IContadoMotoGestionService,ContadoMotoGestionService>();
-        services.AddScoped<ICreditoMotoPdfService,CreditoMotoPdfService>();
+        services.AddScoped<IDescuentoContadoMotoService, DescuentoContadoMotoService>();
+        services.AddScoped<IContadoMotoGestionService, ContadoMotoGestionService>();
+        services.AddScoped<ICreditoMotoPdfService, CreditoMotoPdfService>();
         services.AddScoped<ISeguimientoWhatsappService, SeguimientoWhatsappService>();
         services.AddHttpClient<ISeguimientoWhatsappSender, SeguimientoWhatsappSender>();
+        services.AddHttpClient<tuvendedorback.Controllers.CanalesWhatsappController>();
         services.AddHostedService<SeguimientoWhatsappBackgroundService>();
 
         return services;

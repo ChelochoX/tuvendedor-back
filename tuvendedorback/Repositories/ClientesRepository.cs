@@ -241,6 +241,9 @@ WHERE
     OR
     (
         @TelefonoReal IS NOT NULL
+        -- En canales adicionales NO fusionar oportunidades por teléfono:
+        -- se mezclaría el IdConversacion/modo HUMANO del canal principal.
+        AND ISNULL(@Identificador, '') NOT LIKE 'WA:%'
         AND
         REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', '')
         =
@@ -332,6 +335,7 @@ BEGIN
         NULLIF(@PasoOperacion, ''),
         CASE WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1
                     OR @PausaIndefinida = 1 OR @PausaHasta IS NOT NULL
+                    OR @Identificador LIKE 'WA:%'
              THEN 0 ELSE 1 END,
         CASE
             WHEN @DecisionNoContactar = 1 THEN N'NO_CONTACTAR_SOLICITADO'
@@ -447,7 +451,7 @@ BEGIN
             CASE
                 WHEN @DecisionNoContactar = 1 OR @DecisionDesiste = 1 OR
                      @PausaIndefinida = 1 OR @PausaHasta IS NOT NULL OR
-                     @EsPublicacionOtroRubro = 1 THEN 0
+                     @EsPublicacionOtroRubro = 1 OR @Identificador LIKE 'WA:%' THEN 0
                 WHEN ISNULL(NoContactarWhatsapp, 0) = 1 OR
                      EstadoConsulta IN ('CERRADO', 'CREDITO_EN_PROCESO',
                                         'CONTADO_EN_PROCESO', 'DERIVADO_HUMANO')
@@ -565,6 +569,29 @@ BEGIN
         FechaInicioProceso = NULL
     FROM dbo.SeguimientoWhatsappEnvios e
     WHERE e.IdInteresado = @IdInteresado
+      AND e.Estado = 'PENDIENTE';
+END;
+
+-- La baja EXPLÍCITA de WhatsApp abarca todos los canales del mismo
+-- teléfono. No enviar seguimientos desde otro número de TuVendedor.
+IF @DecisionNoContactar = 1 AND @TelefonoReal IS NOT NULL
+BEGIN
+    UPDATE i
+    SET NoContactarWhatsapp = 1,
+        RequiereSeguimiento = 0,
+        FechaProximoContacto = NULL,
+        MotivoSeguimiento = N'NO_CONTACTAR_SOLICITADO'
+    FROM dbo.Interesados i
+    WHERE REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono, ''), ' ', ''), '-', ''), '+', '')
+        = REPLACE(REPLACE(REPLACE(@TelefonoReal, ' ', ''), '-', ''), '+', '');
+
+    UPDATE e
+    SET Estado = 'CANCELADO',
+        MotivoCancelacion = N'Cliente solicitó no ser contactado en ningún canal.',
+        FechaInicioProceso = NULL
+    FROM dbo.SeguimientoWhatsappEnvios e
+    INNER JOIN dbo.Interesados i ON i.Id = e.IdInteresado
+    WHERE ISNULL(i.NoContactarWhatsapp, 0) = 1
       AND e.Estado = 'PENDIENTE';
 END;
 
@@ -2150,6 +2177,24 @@ CASE
         THEN 1
     ELSE 0
 END";
+    }
+
+    /// <summary>
+    /// La baja de contacto es global por teléfono, no por canal receptor.
+    /// Se consulta mediante el DbConnections original del proyecto.
+    /// </summary>
+    public async Task<bool> ExisteBajaGlobalWhatsapp(string numero)
+    {
+        var digitos = new string((numero ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (digitos.Length < 8 || digitos.Length > 15) return false;
+        using var conn = _conexion.CreateSqlConnection();
+        const string sql = @"
+SELECT CAST(CASE WHEN EXISTS (
+    SELECT 1 FROM dbo.Interesados i
+    WHERE ISNULL(i.NoContactarWhatsapp,0) = 1
+      AND REPLACE(REPLACE(REPLACE(ISNULL(i.Telefono,''),' ',''),'-',''),'+','') = @Telefono
+) THEN 1 ELSE 0 END AS bit);";
+        return await conn.ExecuteScalarAsync<bool>(sql, new { Telefono = digitos });
     }
 
     // =========================================================

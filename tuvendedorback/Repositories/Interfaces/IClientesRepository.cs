@@ -5,6 +5,7 @@ namespace tuvendedorback.Repositories.Interfaces;
 
 public interface IClientesRepository
 {
+    Task<bool> ExisteBajaGlobalWhatsapp(string numero);
     Task<int> InsertarInteresado(InteresadoDto interesado);
 
     Task<int> InsertarSeguimiento(SeguimientoDto seguimiento);

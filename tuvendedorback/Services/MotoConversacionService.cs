@@ -50,6 +50,9 @@ public class MotoConversacionService
     private readonly IClientesService
         _clientesService;
 
+    private readonly IClientesRepository
+        _clientesRepository;
+
     private readonly ILogger<MotoConversacionService>
         _logger;
 
@@ -64,6 +67,7 @@ public class MotoConversacionService
         IOllamaService ollamaService,
         ISolicitudMotoService solicitudMotoService,
         IClientesService clientesService,
+        IClientesRepository clientesRepository,
         IConfiguration configuration,
         ILogger<MotoConversacionService> logger)
     {
@@ -84,6 +88,8 @@ public class MotoConversacionService
 
         _clientesService =
             clientesService;
+
+        _clientesRepository = clientesRepository;
 
         _logger =
             logger;
@@ -124,10 +130,37 @@ public class MotoConversacionService
                 "No se pudo identificar el contacto.");
         }
 
+        // Multicanal: dos números receptores nunca deben compartir el mismo
+        // contexto, historial ni modo HUMANO. El bridge actual sin CanalWhatsapp
+        // conserva literalmente su identificador histórico y no se altera.
+        // Los dígitos del teléfono siguen disponibles en NumeroWhatsapp.
+        if (!string.IsNullOrWhiteSpace(request.CanalWhatsapp))
+        {
+            var canal = request.CanalWhatsapp.Trim();
+            if (!System.Text.RegularExpressions.Regex.IsMatch(canal, @"^[a-zA-Z0-9_-]{1,40}$"))
+                throw new ReglasdeNegocioException("Canal WhatsApp no válido.");
+            identificador = $"WA:{canal}:{identificador}";
+        }
+
         var idConversacion =
             await _repository
                 .ObtenerOCrearConversacion(
                     identificador);
+
+        // Respetar una baja global aunque el mismo cliente escriba desde
+        // otro canal. El mensaje queda en el historial, sin nuevas ofertas.
+        // Se verifica solo si el bridge resolvió el teléfono real.
+        if (!string.IsNullOrWhiteSpace(request.NumeroWhatsapp) &&
+            await _clientesRepository.ExisteBajaGlobalWhatsapp(request.NumeroWhatsapp))
+        {
+            await _repository.RegistrarMensaje(idConversacion, "CLIENTE", MensajeParaHistorial(request));
+            return new MotoConversacionResponseDto
+            {
+                IdConversacion = idConversacion,
+                Respuesta = string.Empty,
+                RequierePublicacion = false
+            };
+        }
 
         var idPublicacionExplicita =
             request.IdPublicacion

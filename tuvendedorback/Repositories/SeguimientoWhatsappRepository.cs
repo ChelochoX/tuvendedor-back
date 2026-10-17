@@ -294,6 +294,9 @@ WHERE
     ISNULL(i.Estado, 'Activo') <> 'Inactivo'
     AND UPPER(ISNULL(i.Origen, '')) = 'WHATSAPP'
     AND ISNULL(i.NoContactarWhatsapp, 0) = 0
+    -- Evitar que los canales adicionales manden seguimientos desde
+    -- el número principal. Se requiere ruteo saliente explícito futuro.
+    AND ISNULL(i.IdentificadorExterno, '') NOT LIKE 'WA:%'
     -- Ya no se exige RequiereSeguimiento=1: se incorpora automáticamente a
     -- consultas de motos elegibles desde FechaDesdeElegibilidad.
     -- Pero se respetan todas las exclusiones explícitas y manuales.

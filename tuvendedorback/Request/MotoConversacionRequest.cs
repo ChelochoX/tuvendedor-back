@@ -6,6 +6,10 @@ public class MotoConversacionRequest
 {
     public string Telefono { get; set; } = string.Empty;
 
+    /// <summary>Id del canal receptor. Null para el bridge original, que conserva las conversaciones existentes.</summary>
+    public string? CanalWhatsapp { get; set; }
+
+
     public string Mensaje { get; set; } = string.Empty;
 
     public int? IdPublicacion { get; set; }
@@ -44,6 +48,11 @@ public class MotoConversacionRequestValidator
 {
     public MotoConversacionRequestValidator()
     {
+        RuleFor(x => x.CanalWhatsapp)
+            .Matches(@"^[a-zA-Z0-9_-]{1,40}$")
+            .When(x => !string.IsNullOrWhiteSpace(x.CanalWhatsapp))
+            .WithMessage("El identificador de canal no es válido.");
+
         RuleFor(x => x.Telefono)
             .NotEmpty()
             .WithMessage("El identificador del contacto es obligatorio.")
