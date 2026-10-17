@@ -1767,16 +1767,21 @@ public class MotoConversacionService
                 mensaje);
         }
 
+        // Distinguir una búsqueda NUEVA de una consulta a la ficha anterior.
+        // "Me podrías dar opciones de terrenos en Areguá" debe buscar en
+        // el catálogo real, incluso si el contexto guardado es la publicación 37.
+        var solicitaBusquedaNueva = SolicitaNuevaBusquedaMarketplace(mensaje);
+
         // Si ya tenemos una publicación no-moto en contexto, permitimos
         // seguimientos naturales: "cuánto cuesta", "dónde queda", "pasame",
-        // "me interesa", etc.
+        // "me interesa", etc., pero NO cuando solicita nuevas opciones.
         if (
             contextoActual?.IdPublicacion
                 is int idPublicacionContexto
             &&
             !contextoActual.IdModeloProductoActual.HasValue
             &&
-            !SolicitaNuevaBusquedaMarketplace(mensaje)
+            !solicitaBusquedaNueva
         )
         {
             var esMotoContexto =
@@ -1891,12 +1896,12 @@ public class MotoConversacionService
                 .ObtenerCategoriasMarketplaceActivasParaIA();
 
         var esConsultaOtroProducto =
-            EsConsultaComercialEvidenteOtroProducto(
-                mensaje)
-            ||
-            MensajeMencionaCategoriaMarketplace(
-                mensaje,
-                categoriasDisponibles);
+            // Si pidió opciones de un rubro específico y la búsqueda devolvió
+            // 0 resultados, el sistema DEBE informarlo. No pasar a Ollama,
+            // ni reciclar una publicación anterior por no hallar coincidencias.
+            (solicitaBusquedaNueva && !string.IsNullOrWhiteSpace(rubroSolicitado))
+            || EsConsultaComercialEvidenteOtroProducto(mensaje)
+            || MensajeMencionaCategoriaMarketplace(mensaje, categoriasDisponibles);
 
         if (!esConsultaOtroProducto)
         {
@@ -2194,8 +2199,34 @@ public class MotoConversacionService
     private static bool SolicitaNuevaBusquedaMarketplace(string mensaje)
     {
         var texto = NormalizarTexto(mensaje);
-        return EsConsultaGeneralMarketplace(mensaje)
-            || Regex.IsMatch(texto, @"\b(?:QUE|CUALES|MOSTRAME|MOSTRAR|TENES|TIENEN|QUIERO)\b.{0,50}\b(?:OPCIONES|TERRENOS|CASAS|LOTES|INMUEBLES|PROPIEDADES)\b")
+
+        if (string.IsNullOrWhiteSpace(texto))
+            return false;
+
+        // Prioridad comercial: una solicitud de OPCIONES/ALTERNATIVAS de un
+        // rubro inicia una búsqueda nueva, aunque exista una publicación vieja
+        // seleccionada. Ejemplo real: "Me podrías dar opciones de terrenos en
+        // Areguá". La versión anterior no reconocía "me podrías dar" y
+        // volvía a mostrar la publicación antigua (#37).
+        const string rubros =
+            @"(?:TERRENOS?|LOTES?|CASAS?|DUPLEX|DEPARTAMENTOS?|INMUEBLES?|PROPIEDADES?|CHACRAS?|PARCELAS?)";
+
+        var solicitaOpciones = Regex.IsMatch(
+            texto,
+            @"\b(?:OPCIONES?|ALTERNATIVAS?|LISTADO|CATALOGO)\b.{0,70}\b" + rubros + @"\b")
+            || Regex.IsMatch(
+                texto,
+                @"\b(?:PODRIAS|PODES|PUEDE|PUEDEN|PUEDO|ME MOSTRAS|ME MOSTRARIAS)\b.{0,75}\b" + rubros + @"\b")
+            || Regex.IsMatch(
+                texto,
+                @"\b" + rubros + @"\s+(?:EN|POR|CERCA DE|ZONA DE)\b")
+            || Regex.IsMatch(
+                texto,
+                @"\b(?:BUSCO|BUSCABA|BUSCANDO|NECESITO|NECESITARIA)\b.{0,75}\b" + rubros + @"\b");
+
+        return solicitaOpciones
+            || EsConsultaGeneralMarketplace(mensaje)
+            || Regex.IsMatch(texto, @"\b(?:QUE|CUALES|MOSTRAME|MOSTRAR|TENES|TIENEN|QUIERO)\b.{0,70}\b(?:OPCIONES|TERRENOS|CASAS|LOTES|INMUEBLES|PROPIEDADES)\b")
             || texto.StartsWith("BUSCO ", StringComparison.Ordinal)
             || texto.StartsWith("ESTOY BUSCANDO ", StringComparison.Ordinal)
             || texto.StartsWith("BUSCANDO ", StringComparison.Ordinal)

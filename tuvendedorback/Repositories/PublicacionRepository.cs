@@ -541,6 +541,11 @@ OUTER APPLY
 ) img
 WHERE p.Estado = 'Activo'
   AND p.CanalPublicacion = 'MARKETPLACE'
+  -- Los avisos de autopromoción de la plataforma NO son inventario de venta.
+  -- No usar un Id fijo: se excluyen por su naturaleza promocional.
+  AND ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI NOT LIKE '%publica tu negocio%'
+  AND ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI NOT LIKE '%marketplace y vitrina propia%'
+  AND ISNULL(p.Titulo, '') COLLATE Latin1_General_CI_AI NOT LIKE '%promociona tu negocio%'
   AND UPPER(ISNULL(p.Categoria, '')) NOT LIKE '%MOTO%'
   AND NOT EXISTS
   (
