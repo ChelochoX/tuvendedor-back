@@ -484,6 +484,55 @@ public class MotoConversacionService
         }
 
         // =====================================================
+        // 5B. SALUDO CASUAL: PRIORIDAD ANTES DEL MARKETPLACE
+        //
+        // Si el cliente sólo saluda, NO se ejecuta la búsqueda de
+        // publicaciones y NO se reutiliza un inmueble anterior.
+        // La solicitud activa de crédito, el modo HUMANO y los cierres
+        // comerciales ya se comprobaron antes de llegar aquí.
+        // Un enlace/ID de publicación explícito no es un saludo casual.
+        // =====================================================
+
+        if (!idPublicacionExplicita.HasValue && EsSaludoSimple(request.Mensaje))
+        {
+            var respuestaSaludo =
+                await _editorPrompts.ObtenerPublicado("SALUDO_CASUAL");
+
+            if (string.IsNullOrWhiteSpace(respuestaSaludo))
+                respuestaSaludo =
+                    "¡Hola! 😊 ¿Qué tal? Soy Panambí, asistente de TuVendedor. " +
+                    "¿En qué puedo ayudarte hoy?";
+
+            // Un texto editorial no debe inyectar un enlace o una ficha
+            // comercial en la respuesta a un simple saludo.
+            if (respuestaSaludo.Length > 500 ||
+                Regex.IsMatch(respuestaSaludo,
+                    @"https?://|\bTV_PRODUCTO\b|/share/producto/",
+                    RegexOptions.IgnoreCase))
+            {
+                _logger.LogWarning(
+                    "SALUDO_CASUAL contiene enlace/referencia comercial " +
+                    "o supera el límite de 500 caracteres; se aplica texto seguro.");
+                respuestaSaludo =
+                    "¡Hola! 😊 ¿Qué tal? Soy Panambí, asistente de TuVendedor. " +
+                    "¿En qué puedo ayudarte hoy?";
+            }
+
+            await _repository.RegistrarMensaje(
+                idConversacion, "IA", respuestaSaludo);
+
+            return new MotoConversacionResponseDto
+            {
+                IdConversacion = idConversacion,
+                IdPublicacion = null,
+                Marca = null,
+                Modelo = null,
+                Respuesta = respuestaSaludo,
+                RequierePublicacion = false
+            };
+        }
+
+        // =====================================================
         // 5B. PUBLICACION DE PRODUCTO QUE NO ES MOTO
         // =====================================================
 
@@ -817,48 +866,8 @@ public class MotoConversacionService
             };
         }
 
-        // =====================================================
-        // 7B. SALUDO / CONSULTA GENERAL SIN MODELO
-        //
-        // Un saludo o una pregunta general NO debe reutilizar
-        // el modelo viejo que quedó en contexto.
-        //
-        // Ejemplos:
-        // "hola"
-        // "que tienen?"
-        // "quiero ver motos"
-        // =====================================================
-
-        if (
-            coincidencias.Count == 0
-            &&
-            EsSaludoSimple(
-                request.Mensaje)
-        )
-        {
-            await _repository
-                .LimpiarProductoContexto(
-                    idConversacion);
-
-            const string respuestaSaludo =
-                "¡Hola! ¿Qué tal? Soy Panambí, asistente de TuVendedor. Puedo ayudarte a buscar productos reales del Marketplace y, si buscás una moto, también puedo darte precios, cuotas y promociones cargadas en el sistema. ¿Qué estás buscando?";
-
-            await _repository
-                .RegistrarMensaje(
-                    idConversacion,
-                    "IA",
-                    respuestaSaludo);
-
-            return new MotoConversacionResponseDto
-            {
-                IdConversacion = idConversacion,
-                IdPublicacion = null,
-                Marca = null,
-                Modelo = null,
-                Respuesta = respuestaSaludo,
-                RequierePublicacion = false
-            };
-        }
+        // Los saludos exclusivamente sociales se resolvieron en 5B.
+        // Consultas reales de catálogo continúan por este router.
 
         if (
             coincidencias.Count == 0
@@ -1423,34 +1432,7 @@ public class MotoConversacionService
             };
         }
 
-        // =====================================================
-        // 13. SALUDO SIMPLE
-        // =====================================================
-
-        if (
-            EsSaludoSimple(
-                request.Mensaje)
-        )
-        {
-            const string respuestaSaludo =
-                "¡Hola! ¿Qué tal?  Soy Panambí, asistente de TuVendedor. ¿Qué modelo de moto tenés en mente?";
-
-            await _repository
-                .RegistrarMensaje(
-                    idConversacion,
-                    "IA",
-                    respuestaSaludo);
-
-            return new MotoConversacionResponseDto
-            {
-                IdConversacion = idConversacion,
-                IdPublicacion = null,
-                Marca = null,
-                Modelo = null,
-                Respuesta = respuestaSaludo,
-                RequierePublicacion = false
-            };
-        }
+        // El saludo casual ya se resolvió al comienzo (etapa 5B).
 
         // =====================================================
         // 14. CONVERSACION ABIERTA / ROUTER GENERAL
@@ -5459,70 +5441,30 @@ public class MotoConversacionService
     // SALUDO SIMPLE
     // =========================================================
 
-    private static bool EsSaludoSimple(
-        string mensaje)
+    private static bool EsSaludoSimple(string? mensaje)
     {
-        var texto =
-            NormalizarTexto(
-                mensaje);
-
-        if (
-            string.IsNullOrWhiteSpace(
-                texto)
-        )
-        {
+        var texto = NormalizarTexto(mensaje);
+        if (string.IsNullOrWhiteSpace(texto) || texto.Length > 70)
             return false;
-        }
 
-        /*
-         * No exigimos coincidencia exacta.
-         * La gente escribe de muchas formas en WhatsApp:
-         *
-         * hola
-         * holaa
-         * holla
-         * ola
-         * hola otra vez
-         * buenas
-         * buen dia
-         * que tal
-         * como estas
-         */
-        var iniciosSaludo =
-            new[]
-            {
-                "HOLA",
-                "HOLAA",
-                "HOLAAA",
-                "HOLI",
-                "HOLIS",
-                "HOLLA",
-                "OLA",
-                "BUEN DIA",
-                "BUENOS DIAS",
-                "BUENAS",
-                "BUENAS TARDES",
-                "BUENAS NOCHES",
-                "QUE TAL",
-                "COMO ESTAS",
-                "COMO ESTA",
-                "COMO ANDAS",
-                "COMO VA",
-                "HEY",
-                "EY",
-                "SALUDOS"
-            };
-
-        return iniciosSaludo.Any(
-            saludo =>
-                string.Equals(
-                    texto,
-                    saludo,
-                    StringComparison.OrdinalIgnoreCase)
-                ||
-                texto.StartsWith(
-                    saludo + " ",
-                    StringComparison.OrdinalIgnoreCase));
+        // Intención exclusivamente social. No usar StartsWith("HOLA"):
+        // "Hola, ¿qué terrenos tenés en Areguá?" debe buscar terrenos.
+        // NormalizarTexto ya unifica tildes, puntuación y espacios.
+        return texto is
+            "HOLA" or "HOLAA" or "HOLAAA" or "HOLI" or "HOLIS" or
+            "HOLLA" or "OLA" or "BUENAS" or "BUEN DIA" or
+            "BUENOS DIAS" or "BUENAS TARDES" or "BUENAS NOCHES" or
+            "QUE TAL" or "COMO ESTAS" or "COMO ESTA" or
+            "COMO ANDAS" or "COMO VA" or "TODO BIEN" or
+            "HEY" or "EY" or "SALUDOS" or
+            "HOLA QUE TAL" or "HOLA COMO ESTAS" or
+            "HOLA COMO ESTA" or "HOLA COMO ANDAS" or
+            "HOLA COMO VA" or "HOLA TODO BIEN" or
+            "HOLA QUE TAL COMO ESTAS" or "HOLA QUE TAL TODO BIEN" or
+            "HOLA BUEN DIA" or "HOLA BUENOS DIAS" or
+            "HOLA BUENAS" or "HOLA BUENAS TARDES" or
+            "HOLA BUENAS NOCHES" or "BUENAS COMO ESTAS" or
+            "BUENAS QUE TAL" or "QUE TAL TODO BIEN";
     }
 
 

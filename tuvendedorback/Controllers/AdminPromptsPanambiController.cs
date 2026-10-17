@@ -35,6 +35,7 @@ public sealed class AdminPromptsPanambiController : ControllerBase
     }
     private static readonly Dictionary<string, (string Titulo, string Descripcion)> Predefinidos = new()
     {
+        ["SALUDO_CASUAL"] = ("Saludo casual", "Respuesta exclusiva para saludos sin consulta comercial. No incluir enlaces ni productos."),
         ["MARKETPLACE_SALUDO"] = ("Saludo para búsquedas", "Se muestra antes de las opciones encontradas; la lista siempre proviene de SQL Server."),
         ["MARKETPLACE_CIERRE"] = ("Cierre de resultados", "Texto al final de opciones reales. No prometer visitas confirmadas."),
         ["MARKETPLACE_SIN_RESULTADOS"] = ("Sin resultados", "Aviso breve cuando SQL Server no encontró coincidencias."),
@@ -115,6 +116,7 @@ public sealed class AdminPromptsPanambiController : ControllerBase
 
     private static string ValoresPorDefecto(string codigo) => codigo switch
     {
+        "SALUDO_CASUAL" => "¡Hola! 😊 ¿Qué tal? Soy Panambí, asistente de TuVendedor. ¿En qué puedo ayudarte hoy?",
         "MARKETPLACE_SALUDO" => "¡Hola! 😊 Encontré {opciones} en TuVendedor que coinciden con tu búsqueda:",
         "MARKETPLACE_CIERRE" => "¿Cuál te interesa? Decime el número y te cuento los detalles. 😊",
         "MARKETPLACE_SIN_RESULTADOS" => "¡Hola! 😊 Revisé las publicaciones activas de TuVendedor.",
