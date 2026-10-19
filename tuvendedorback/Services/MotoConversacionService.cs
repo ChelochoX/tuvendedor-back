@@ -493,43 +493,55 @@ public class MotoConversacionService
         // Un enlace/ID de publicación explícito no es un saludo casual.
         // =====================================================
 
-        if (!idPublicacionExplicita.HasValue && EsSaludoSimple(request.Mensaje))
+        // Intenciones sociales editables desde la pantalla de prompts.
+        // La clasificación solo puede interrumpir la búsqueda cuando NO hay
+        // una petición comercial explícita ni una publicación enlazada.
+        if (!idPublicacionExplicita.HasValue &&
+            !ContieneSolicitudComercialExplicita(request.Mensaje))
         {
-            var respuestaSaludo =
-                await _editorPrompts.ObtenerPublicado("SALUDO_CASUAL");
-
-            if (string.IsNullOrWhiteSpace(respuestaSaludo))
-                respuestaSaludo =
-                    "¡Hola! 😊 ¿Qué tal? Soy Panambí, asistente de TuVendedor. " +
-                    "¿En qué puedo ayudarte hoy?";
-
-            // Un texto editorial no debe inyectar un enlace o una ficha
-            // comercial en la respuesta a un simple saludo.
-            if (respuestaSaludo.Length > 500 ||
-                Regex.IsMatch(respuestaSaludo,
-                    @"https?://|\bTV_PRODUCTO\b|/share/producto/",
-                    RegexOptions.IgnoreCase))
+            var diccionario = await _editorPrompts.ObtenerPublicado("DICCIONARIO_SOCIAL");
+            var intencion = DetectarIntencionSocial(request.Mensaje, diccionario);
+            // Contingencia conservadora para charla no reconocida: no buscar
+            // inmuebles por una pregunta social o mensaje ambiguo.
+            if (intencion is null && EsMensajeSocialAmbiguo(request.Mensaje))
+                intencion = "ACLARACION";
+            if (intencion is not null)
             {
-                _logger.LogWarning(
-                    "SALUDO_CASUAL contiene enlace/referencia comercial " +
-                    "o supera el límite de 500 caracteres; se aplica texto seguro.");
-                respuestaSaludo =
-                    "¡Hola! 😊 ¿Qué tal? Soy Panambí, asistente de TuVendedor. " +
-                    "¿En qué puedo ayudarte hoy?";
+                var codigoRespuesta = intencion switch
+                {
+                    "SALUDO" => "SALUDO_CASUAL",
+                    "RESPONSE" => "RESPUESTA_SOCIAL",
+                    "RESPUESTA_SOCIAL" => "RESPUESTA_SOCIAL",
+                    "AGRADECIMIENTO" => "RESPUESTA_AGRADECIMIENTO",
+                    "DESPEDIDA" => "RESPUESTA_DESPEDIDA",
+                    "ACLARACION" => "RESPUESTA_ACLARACION",
+                    _ => "SALUDO_CASUAL"
+                };
+                var respuestaSocial = await _editorPrompts.ObtenerPublicado(codigoRespuesta);
+                if (string.IsNullOrWhiteSpace(respuestaSocial) || respuestaSocial.Length > 500 ||
+                    Regex.IsMatch(respuestaSocial, @"https?://|\bTV_PRODUCTO\b|/share/producto/", RegexOptions.IgnoreCase))
+                {
+                    respuestaSocial = intencion switch
+                    {
+                        "SALUDO" => "¡Hola! 😊 Soy Panambí, asistente de TuVendedor. ¿Cómo estás?",
+                        "RESPUESTA_SOCIAL" or "RESPONSE" => "¡Qué bueno! 😊 ¿En qué puedo ayudarte hoy? Si querés, también puedo contarte qué ofrecemos en TuVendedor.",
+                        "AGRADECIMIENTO" => "¡Con mucho gusto! 😊 Estoy por acá cuando me necesites.",
+                        "DESPEDIDA" => "¡Hasta luego! 😊 Que tengas un excelente día.",
+                        _ => "Disculpame 😊 ¿Podés contarme un poco más qué necesitás?"
+                    };
+                }
+                _logger.LogInformation("Panambi intención social {Intencion} conversación {Conversacion}", intencion, idConversacion);
+                await _repository.RegistrarMensaje(idConversacion, "IA", respuestaSocial);
+                return new MotoConversacionResponseDto
+                {
+                    IdConversacion = idConversacion,
+                    IdPublicacion = null,
+                    Marca = null,
+                    Modelo = null,
+                    Respuesta = respuestaSocial,
+                    RequierePublicacion = false
+                };
             }
-
-            await _repository.RegistrarMensaje(
-                idConversacion, "IA", respuestaSaludo);
-
-            return new MotoConversacionResponseDto
-            {
-                IdConversacion = idConversacion,
-                IdPublicacion = null,
-                Marca = null,
-                Modelo = null,
-                Respuesta = respuestaSaludo,
-                RequierePublicacion = false
-            };
         }
 
         // =====================================================
@@ -5472,30 +5484,52 @@ public class MotoConversacionService
     // SALUDO SIMPLE
     // =========================================================
 
-    private static bool EsSaludoSimple(string? mensaje)
+    // DICCIONARIO_SOCIAL: una expresión por línea, TIPO|EXPRESION.
+    // No usa coincidencias parciales: "hola" nunca intercepta "hola, precio del terreno".
+    private static string? DetectarIntencionSocial(string? mensaje, string? diccionario)
     {
         var texto = NormalizarTexto(mensaje);
-        if (string.IsNullOrWhiteSpace(texto) || texto.Length > 70)
-            return false;
+        if (texto.Length == 0 || texto.Length > 120 || string.IsNullOrWhiteSpace(diccionario))
+            return null;
+        foreach (var linea in diccionario.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var partes = linea.Trim().Split('|', 2);
+            if (partes.Length != 2) continue;
+            var categoria = partes[0].Trim().ToUpperInvariant();
+            if (categoria is not ("SALUDO" or "RESPUESTA_SOCIAL" or "AGRADECIMIENTO" or "DESPEDIDA" or "ACLARACION"))
+                continue;
+            var expresion = NormalizarTexto(partes[1]);
+            if (expresion.Length < 2) continue;
+            // Coincidencia exacta, o saludo seguido del nombre/apodo de la persona
+            // (hasta dos palabras); se evita interceptar preguntas de negocio.
+            if (texto == expresion) return categoria;
+            if (categoria == "SALUDO" && texto.StartsWith(expresion + " ", StringComparison.Ordinal))
+            {
+                var resto = texto[(expresion.Length + 1)..];
+                if (resto.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length <= 2 &&
+                    Regex.IsMatch(resto, @"^[A-Z]{2,25}( [A-Z]{2,25})?$") &&
+                    !ContieneSolicitudComercialExplicita(resto) &&
+                    !Regex.IsMatch(resto, @"\b(QUE|COMO|CUANTO|DONDE|TIENEN|VENDEN|BUSCO|QUIERO|PRECIO|TERRENO|MOTO|INMUEBLE|CASA|CUOTAS|DISPONIBLE|PRODUCTOS|OFRECEN)\b"))
+                    return categoria;
+            }
+        }
+        return null;
+    }
 
-        // Intención exclusivamente social. No usar StartsWith("HOLA"):
-        // "Hola, ¿qué terrenos tenés en Areguá?" debe buscar terrenos.
-        // NormalizarTexto ya unifica tildes, puntuación y espacios.
-        return texto is
-            "HOLA" or "HOLAA" or "HOLAAA" or "HOLI" or "HOLIS" or
-            "HOLLA" or "OLA" or "BUENAS" or "BUEN DIA" or
-            "BUENOS DIAS" or "BUENAS TARDES" or "BUENAS NOCHES" or
-            "QUE TAL" or "COMO ESTAS" or "COMO ESTA" or
-            "COMO ANDAS" or "COMO VA" or "TODO BIEN" or
-            "HEY" or "EY" or "SALUDOS" or
-            "HOLA QUE TAL" or "HOLA COMO ESTAS" or
-            "HOLA COMO ESTA" or "HOLA COMO ANDAS" or
-            "HOLA COMO VA" or "HOLA TODO BIEN" or
-            "HOLA QUE TAL COMO ESTAS" or "HOLA QUE TAL TODO BIEN" or
-            "HOLA BUEN DIA" or "HOLA BUENOS DIAS" or
-            "HOLA BUENAS" or "HOLA BUENAS TARDES" or
-            "HOLA BUENAS NOCHES" or "BUENAS COMO ESTAS" or
-            "BUENAS QUE TAL" or "QUE TAL TODO BIEN";
+    private static bool EsMensajeSocialAmbiguo(string? mensaje)
+    {
+        var texto = NormalizarTexto(mensaje);
+        if (texto.Length < 3 || texto.Length > 95) return false;
+        // Nunca interrumpir respuestas a una publicación, cotización o negociación.
+        if (Regex.IsMatch(texto, @"\b(ME INTERESA|INTERESA|ESE|ESA|AQUEL|AQUELLA|PRIMERO|SEGUNDO|TERCERO|QUIERO|BUSCO|NECESITO|TENES|TIENEN|PASAME|MANDAME|COTIZ|SIMUL|CUANTO|CUANTOS|DONDE|ENTREGA|MODELO|VERSION|DISPONIBLE|VISITAR|MOSTRAME|VER|COMPRAR|RESERVAR|PAGAR|COMO HAGO|QUE OFRECEN|QUE TIENEN|QUE VENDEN|PREPARA|OFERTA|PROMOCION|OK|DALE|SI|NO)\b"))
+            return false;
+        return Regex.IsMatch(texto, @"\b(HOLA|HOLI|HOLIS|BUENAS|SALUDOS|QUE TAL|COMO ESTAS|COMO ANDAS|QUE CONTAS|TODO BIEN|TODO TRANQUI|MBAEICHAPA|MBAETEKO|MAITEI|GRACIAS|AGUYJE|BIEN Y VOS|Y VOS|CHE AMIGO|CHE AMIGA|NO ENTIENDO)\b");
+    }
+
+    private static bool ContieneSolicitudComercialExplicita(string? mensaje)
+    {
+        var texto = NormalizarTexto(mensaje);
+        return Regex.IsMatch(texto, @"\b(MOTO|MOTOS|TERRENO|TERRENOS|INMUEBLE|INMUEBLES|CASA|CASAS|DEPARTAMENTO|DEPARTAMENTOS|LOTE|LOTES|PRECIO|PRECIOS|CUESTA|SALE|CUOTA|CUOTAS|CREDITO|CONTADO|COMPRA|COMPRAR|VENDEN|VENDER|OFRECEN|PRODUCTO|PRODUCTOS|CATALOGO|PUBLICACION|PUBLICACIONES|FINANCIACION|COTIZACION|DISPONIBLE|DISPONIBILIDAD)\b");
     }
 
 

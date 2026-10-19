@@ -35,6 +35,11 @@ public sealed class AdminPromptsPanambiController : ControllerBase
     }
     private static readonly Dictionary<string, (string Titulo, string Descripcion)> Predefinidos = new()
     {
+        ["DICCIONARIO_SOCIAL"] = ("Diccionario social (Paraguay)", "Una expresión por línea: SALUDO|hola, RESPUESTA_SOCIAL|bien y vos, AGRADECIMIENTO|aguyje, DESPEDIDA|jajotopata, ACLARACION|no entendí. Se aplica sin redeploy."),
+        ["RESPUESTA_SOCIAL"] = ("Respuesta a cortesía", "Se utiliza cuando el cliente responde cómo está, sin intención de compra."),
+        ["RESPUESTA_AGRADECIMIENTO"] = ("Respuesta a agradecimientos", "Agradece sin ofrecer productos fuera de contexto."),
+        ["RESPUESTA_DESPEDIDA"] = ("Respuesta a despedidas", "Despide sin insistir en la venta."),
+        ["RESPUESTA_ACLARACION"] = ("Aclaración de dudas", "Pide aclaración de forma natural."),
         ["SALUDO_CASUAL"] = ("Saludo casual", "Respuesta exclusiva para saludos sin consulta comercial. No incluir enlaces ni productos."),
         ["MARKETPLACE_SALUDO"] = ("Saludo para búsquedas", "Se muestra antes de las opciones encontradas; la lista siempre proviene de SQL Server."),
         ["MARKETPLACE_CIERRE"] = ("Cierre de resultados", "Texto al final de opciones reales. No prometer visitas confirmadas."),
@@ -86,8 +91,8 @@ public sealed class AdminPromptsPanambiController : ControllerBase
         codigo = codigo.Trim().ToUpperInvariant();
         if (codigo.Contains("AUTORIZACION", StringComparison.OrdinalIgnoreCase))
             return BadRequest(new { message = "Los textos legales de autorización no se editan desde este panel." });
-        if (!CodigoValido(codigo) || string.IsNullOrWhiteSpace(request.Contenido) || request.Contenido.Length > 12000)
-            return BadRequest(new { message = "Código inválido o contenido vacío/demasiado largo (máximo 12.000 caracteres)." });
+        if (!CodigoValido(codigo) || string.IsNullOrWhiteSpace(request.Contenido) || request.Contenido.Length > 30000)
+            return BadRequest(new { message = "Código inválido o contenido vacío/demasiado largo (máximo 30.000 caracteres)." });
         try
         {
             var resultado = await _prompts.Publicar(codigo, request.Contenido.Trim(), _user.IdUsuario!.Value, request.VersionEsperada);
@@ -116,6 +121,10 @@ public sealed class AdminPromptsPanambiController : ControllerBase
 
     private static string ValoresPorDefecto(string codigo) => codigo switch
     {
+        "RESPUESTA_SOCIAL" => "¡Qué bueno! 😊 ¿En qué puedo ayudarte hoy? Si querés, también puedo contarte qué ofrecemos en TuVendedor.",
+        "RESPUESTA_AGRADECIMIENTO" => "¡Con mucho gusto! 😊 Estoy por acá cuando me necesites.",
+        "RESPUESTA_DESPEDIDA" => "¡Hasta luego! 😊 Que tengas un excelente día.",
+        "RESPUESTA_ACLARACION" => "Disculpame 😊 ¿Podés contarme un poco más qué necesitás?",
         "SALUDO_CASUAL" => "¡Hola! 😊 ¿Qué tal? Soy Panambí, asistente de TuVendedor. ¿En qué puedo ayudarte hoy?",
         "MARKETPLACE_SALUDO" => "¡Hola! 😊 Encontré {opciones} en TuVendedor que coinciden con tu búsqueda:",
         "MARKETPLACE_CIERRE" => "¿Cuál te interesa? Decime el número y te cuento los detalles. 😊",
