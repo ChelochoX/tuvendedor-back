@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using tuvendedorback.Prospeccion;
+using Microsoft.AspNetCore.Identity;
 using tuvendedorback.ERP.ERPRepositories;
 using tuvendedorback.ERP.ERPRepositories.Interfaces;
 using tuvendedorback.ERP.ERPServices;
@@ -43,6 +44,8 @@ public static class DependencyInjection
         services.AddScoped<IDescuentoContadoMotoRepository, DescuentoContadoMotoRepository>();
         services.AddScoped<IContadoMotoGestionRepository, ContadoMotoGestionRepository>();
         services.AddScoped<ISeguimientoWhatsappRepository, SeguimientoWhatsappRepository>();
+
+        services.AddScoped<ProspeccionRepository>();
 
         return services;
     }
@@ -89,6 +92,10 @@ public static class DependencyInjection
         services.AddHttpClient<ISeguimientoWhatsappSender, SeguimientoWhatsappSender>();
         services.AddHttpClient<tuvendedorback.Controllers.CanalesWhatsappController>();
         services.AddHostedService<SeguimientoWhatsappBackgroundService>();
+
+        services.AddHttpClient<GoogleProspeccionReader>();
+        services.AddScoped<ProspeccionService>();
+        services.AddHostedService<ProspeccionBackgroundService>();
 
         return services;
     }
