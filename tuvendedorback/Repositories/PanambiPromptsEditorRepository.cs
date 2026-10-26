@@ -30,6 +30,34 @@ WHERE Codigo = @codigo AND Estado = 'PUBLICADO'
 ORDER BY Version DESC;", new { codigo });
     }
 
+    /// <summary>Plantilla publicada obligatoria. Nunca emplea textos de respuesta incrustados en C#.</summary>
+    public async Task<string> ObtenerObligatorio(string codigo)
+    {
+        var contenido = await ObtenerPublicado(codigo);
+        if (string.IsNullOrWhiteSpace(contenido))
+            throw new InvalidOperationException($"No existe una versión publicada de la plantilla {codigo}. Ejecutá la migración SQL y publicala desde Prompts de Panambí.");
+        return contenido;
+    }
+
+    public sealed class PlantillaCatalogo
+    {
+        public string Codigo { get; set; } = "";
+        public string Titulo { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+        public string Categoria { get; set; } = "";
+    }
+
+    public async Task<IReadOnlyList<PlantillaCatalogo>> ListarCatalogo()
+    {
+        using var conn = _conexion.CreateSqlConnection();
+        var items = await conn.QueryAsync<PlantillaCatalogo>(@"
+SELECT Codigo, Titulo, Descripcion, Categoria
+FROM dbo.PanambiPlantillasCatalogo
+WHERE Activo = 1
+ORDER BY Categoria, Titulo, Codigo;");
+        return items.ToList();
+    }
+
     public async Task<IReadOnlyList<VersionPrompt>> ListarPublicados()
     {
         using var conn = _conexion.CreateSqlConnection();

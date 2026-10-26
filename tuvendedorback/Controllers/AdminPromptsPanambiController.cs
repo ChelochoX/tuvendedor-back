@@ -33,40 +33,28 @@ public sealed class AdminPromptsPanambiController : ControllerBase
         public int Version { get; set; }
         public int? VersionEsperada { get; set; }
     }
-    private static readonly Dictionary<string, (string Titulo, string Descripcion)> Predefinidos = new()
-    {
-        ["DICCIONARIO_SOCIAL"] = ("Diccionario social (Paraguay)", "Una expresión por línea: SALUDO|hola, RESPUESTA_SOCIAL|bien y vos, AGRADECIMIENTO|aguyje, DESPEDIDA|jajotopata, ACLARACION|no entendí. Se aplica sin redeploy."),
-        ["RESPUESTA_SOCIAL"] = ("Respuesta a cortesía", "Se utiliza cuando el cliente responde cómo está, sin intención de compra."),
-        ["RESPUESTA_AGRADECIMIENTO"] = ("Respuesta a agradecimientos", "Agradece sin ofrecer productos fuera de contexto."),
-        ["RESPUESTA_DESPEDIDA"] = ("Respuesta a despedidas", "Despide sin insistir en la venta."),
-        ["RESPUESTA_ACLARACION"] = ("Aclaración de dudas", "Pide aclaración de forma natural."),
-        ["SALUDO_CASUAL"] = ("Saludo casual", "Respuesta exclusiva para saludos sin consulta comercial. No incluir enlaces ni productos."),
-        ["MARKETPLACE_SALUDO"] = ("Saludo para búsquedas", "Se muestra antes de las opciones encontradas; la lista siempre proviene de SQL Server."),
-        ["MARKETPLACE_CIERRE"] = ("Cierre de resultados", "Texto al final de opciones reales. No prometer visitas confirmadas."),
-        ["MARKETPLACE_SIN_RESULTADOS"] = ("Sin resultados", "Aviso breve cuando SQL Server no encontró coincidencias."),
-        ["CONVERSACION_GENERAL"] = ("Conversación general", "Instrucciones adicionales para Ollama fuera de las fichas verificadas."),
-        ["MOTO_VENTAS_BASE"] = ("Ventas de motos", "Reemplaza la redacción base del motor de motos, no sus reglas de seguridad.")
-    };
-
     [HttpGet]
     public async Task<IActionResult> Listar()
     {
         if (!await EsAdmin()) return Forbid();
         var publicados = await _prompts.ListarPublicados();
         var legados = await _prompts.ListarLegados();
-        var codigos = Predefinidos.Keys.Concat(legados.Where(x => !x.Codigo.Contains("AUTORIZACION", StringComparison.OrdinalIgnoreCase)).Select(x => x.Codigo))
-            .Concat(publicados.Select(x => x.Codigo)).Distinct().OrderBy(x => x).ToArray();
+        var catalogo = await _prompts.ListarCatalogo();
+        var codigos = catalogo.Select(x => x.Codigo)
+            .Concat(legados.Where(x => !x.Codigo.Contains("AUTORIZACION", StringComparison.OrdinalIgnoreCase)).Select(x => x.Codigo))
+            .Concat(publicados.Where(x => !x.Codigo.Contains("AUTORIZACION", StringComparison.OrdinalIgnoreCase)).Select(x => x.Codigo))
+            .Distinct().OrderBy(x => x).ToArray();
         var lista = codigos.Select(codigo =>
         {
             var publicado = publicados.FirstOrDefault(x => x.Codigo == codigo);
             var legado = legados.FirstOrDefault(x => x.Codigo == codigo);
-            var meta = Predefinidos.TryGetValue(codigo, out var p) ? p : (codigo, "Prompt de estrategia comercial por marca");
-            var contenido = publicado?.Contenido ?? legado?.Contenido ?? ValoresPorDefecto(codigo);
+            var meta = catalogo.FirstOrDefault(x => x.Codigo == codigo);
+            var contenido = publicado?.Contenido ?? legado?.Contenido ?? string.Empty;
             return new
             {
                 codigo,
-                titulo = meta.Item1,
-                descripcion = meta.Item2,
+                titulo = meta?.Titulo ?? codigo,
+                descripcion = meta?.Descripcion ?? "Plantilla comercial por marca (heredada)",
                 contenido,
                 version = publicado?.Version ?? 0,
                 origen = publicado is not null ? "EDITOR" : legado is not null ? "LEGADO" : "PREDETERMINADO"
@@ -93,6 +81,17 @@ public sealed class AdminPromptsPanambiController : ControllerBase
             return BadRequest(new { message = "Los textos legales de autorización no se editan desde este panel." });
         if (!CodigoValido(codigo) || string.IsNullOrWhiteSpace(request.Contenido) || request.Contenido.Length > 30000)
             return BadRequest(new { message = "Código inválido o contenido vacío/demasiado largo (máximo 30.000 caracteres)." });
+        // Variables de contexto necesarias para mantener un enrutamiento determinista.
+        if (codigo == "CONVERSACION_ROUTER_BASE" &&
+            (!request.Contenido.Contains("{MARCAS_PERMITIDAS}") ||
+             !request.Contenido.Contains("{MARCADOR_MOTO_NO_RECONOCIDA}")))
+            return BadRequest(new { message = "Debés conservar {MARCAS_PERMITIDAS} y {MARCADOR_MOTO_NO_RECONOCIDA}." });
+        if (codigo == "MARKETPLACE_SALUDO" && !request.Contenido.Contains("{opciones}"))
+            return BadRequest(new { message = "Debés conservar la variable {opciones}." });
+        if ((codigo == "ENLACE_SIN_ACCESO" || codigo == "ENLACE_ACLARACION") &&
+            (Regex.IsMatch(request.Contenido, @"https?://(?:www\.)?(?:facebook|instagram|tiktok)\.com", RegexOptions.IgnoreCase) ||
+             request.Contenido.Length > 1500))
+            return BadRequest(new { message = "La respuesta de enlace no debe redirigir a redes sociales ni superar 1500 caracteres." });
         try
         {
             var resultado = await _prompts.Publicar(codigo, request.Contenido.Trim(), _user.IdUsuario!.Value, request.VersionEsperada);
@@ -119,17 +118,4 @@ public sealed class AdminPromptsPanambiController : ControllerBase
         catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
     }
 
-    private static string ValoresPorDefecto(string codigo) => codigo switch
-    {
-        "RESPUESTA_SOCIAL" => "¡Qué bueno! 😊 ¿En qué puedo ayudarte hoy? Si querés, también puedo contarte qué ofrecemos en TuVendedor.",
-        "RESPUESTA_AGRADECIMIENTO" => "¡Con mucho gusto! 😊 Estoy por acá cuando me necesites.",
-        "RESPUESTA_DESPEDIDA" => "¡Hasta luego! 😊 Que tengas un excelente día.",
-        "RESPUESTA_ACLARACION" => "Disculpame 😊 ¿Podés contarme un poco más qué necesitás?",
-        "SALUDO_CASUAL" => "¡Hola! 😊 ¿Qué tal? Soy Panambí, asistente de TuVendedor. ¿En qué puedo ayudarte hoy?",
-        "MARKETPLACE_SALUDO" => "¡Hola! 😊 Encontré {opciones} en TuVendedor que coinciden con tu búsqueda:",
-        "MARKETPLACE_CIERRE" => "¿Cuál te interesa? Decime el número y te cuento los detalles. 😊",
-        "MARKETPLACE_SIN_RESULTADOS" => "¡Hola! 😊 Revisé las publicaciones activas de TuVendedor.",
-        "CONVERSACION_GENERAL" => "Saludá amablemente cuando corresponda. Respondé únicamente a la consulta actual, de forma breve, sin repetir enlaces ni ofrecer productos que no estén verificados.",
-        _ => ""
-    };
 }
