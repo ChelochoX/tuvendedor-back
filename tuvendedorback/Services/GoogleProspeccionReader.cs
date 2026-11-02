@@ -1,4 +1,5 @@
-﻿using System.Net.Http.Headers;
+﻿using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -95,11 +96,26 @@ public sealed class GoogleProspeccionReader
 
     private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await TokenAsync(ct));
-        using var response = await _http.SendAsync(req, ct);
-        response.EnsureSuccessStatusCode();
-        return JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        // Dos reintentos como máximo ante cuota temporal de Google; no reintentar otros 4xx.
+        for (var intento = 0; ; intento++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await TokenAsync(ct));
+            using var response = await _http.SendAsync(req, ct);
+            if (response.StatusCode == HttpStatusCode.TooManyRequests && intento < 2)
+            {
+                // Respetar Retry-After si Google lo proporciona; limitar la espera.
+                var retry = response.Headers.RetryAfter;
+                var espera = retry?.Delta
+                    ?? (retry?.Date is { } fecha ? fecha - DateTimeOffset.UtcNow : TimeSpan.FromSeconds(15 * (intento + 1)));
+                if (espera < TimeSpan.FromSeconds(1)) espera = TimeSpan.FromSeconds(1);
+                if (espera > TimeSpan.FromSeconds(60)) espera = TimeSpan.FromSeconds(60);
+                await Task.Delay(espera, ct);
+                continue;
+            }
+            response.EnsureSuccessStatusCode();
+            return JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        }
     }
 
     private sealed record GoogleSheetFile(string Id, string Name, string Url);
