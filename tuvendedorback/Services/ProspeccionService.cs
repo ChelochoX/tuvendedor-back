@@ -35,7 +35,8 @@ public sealed class ProspeccionService
         {
             logId = await _repo.IniciarSincronizacionAsync();
             // Falla completa si Google no responde: jamás se convierten errores de lectura en datos vacíos.
-            var (items, archivos, leidas, omitidas) = await _google.LeerAsync(ct);
+            var ultimaExitosa = await _repo.UltimaSincronizacionExitosaUtcAsync();
+            var (items, archivos, leidas, omitidas) = await _google.LeerAsync(ultimaExitosa, ct);
             var (nuevos, repetidos) = await _repo.GuardarLoteAsync(items, ct);
             var resultado = new ResultadoSincronizacion
             {

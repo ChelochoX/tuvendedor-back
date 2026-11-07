@@ -96,6 +96,8 @@ public static class DependencyInjection
 
         services.AddHttpClient<GoogleProspeccionReader>();
         services.AddScoped<ProspeccionService>();
+        services.AddSingleton<ProspeccionSyncCoordinator>();
+        services.AddHostedService<ProspeccionSyncWorker>();
         services.AddHostedService<ProspeccionBackgroundService>();
 
         return services;

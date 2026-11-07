@@ -16,6 +16,7 @@ public sealed class GoogleProspeccionReader
 {
     private readonly HttpClient _http;
     private readonly IConfiguration _config;
+    private readonly ILogger<GoogleProspeccionReader> _log;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private string? _token;
     private DateTime _tokenExpiresUtc;
@@ -27,11 +28,12 @@ public sealed class GoogleProspeccionReader
         [JsonPropertyName("token_uri")] public string TokenUri { get; set; } = "https://oauth2.googleapis.com/token";
     }
 
-    public GoogleProspeccionReader(HttpClient http, IConfiguration config)
+    public GoogleProspeccionReader(HttpClient http, IConfiguration config, ILogger<GoogleProspeccionReader> log)
     {
         _http = http;
         _http.Timeout = TimeSpan.FromSeconds(35);
         _config = config;
+        _log = log;
     }
 
     private ServiceAccount LeerCredenciales()
@@ -96,20 +98,25 @@ public sealed class GoogleProspeccionReader
 
     private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct)
     {
-        // Dos reintentos como máximo ante cuota temporal de Google; no reintentar otros 4xx.
+        // Las cuotas de Sheets suelen restablecerse por minuto; no insistir cada 15 s.
+        // El token proviene del worker, no de la petición HTTP del navegador.
+        const int maxReintentos = 5;
         for (var intento = 0; ; intento++)
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await TokenAsync(ct));
             using var response = await _http.SendAsync(req, ct);
-            if (response.StatusCode == HttpStatusCode.TooManyRequests && intento < 2)
+            if ((response.StatusCode == HttpStatusCode.TooManyRequests ||
+                 response.StatusCode == HttpStatusCode.ServiceUnavailable) && intento < maxReintentos)
             {
-                // Respetar Retry-After si Google lo proporciona; limitar la espera.
                 var retry = response.Headers.RetryAfter;
                 var espera = retry?.Delta
-                    ?? (retry?.Date is { } fecha ? fecha - DateTimeOffset.UtcNow : TimeSpan.FromSeconds(15 * (intento + 1)));
-                if (espera < TimeSpan.FromSeconds(1)) espera = TimeSpan.FromSeconds(1);
-                if (espera > TimeSpan.FromSeconds(60)) espera = TimeSpan.FromSeconds(60);
+                    ?? (retry?.Date is { } fecha ? fecha - DateTimeOffset.UtcNow :
+                        TimeSpan.FromSeconds(Math.Min(300, 60 * (intento + 1))));
+                if (espera < TimeSpan.FromSeconds(10)) espera = TimeSpan.FromSeconds(10);
+                if (espera > TimeSpan.FromMinutes(5)) espera = TimeSpan.FromMinutes(5);
+                _log.LogWarning("Cuota de Google ({Codigo}). Reintento {Intento}/{Max} en {Segundos}s.",
+                    (int)response.StatusCode, intento + 1, maxReintentos, espera.TotalSeconds);
                 await Task.Delay(espera, ct);
                 continue;
             }
@@ -118,7 +125,7 @@ public sealed class GoogleProspeccionReader
         }
     }
 
-    private sealed record GoogleSheetFile(string Id, string Name, string Url);
+    private sealed record GoogleSheetFile(string Id, string Name, string Url, DateTimeOffset? ModificadoUtc);
 
     private async Task<List<GoogleSheetFile>> ListarPlanillasAsync(string folderId, CancellationToken ct)
     {
@@ -128,8 +135,9 @@ public sealed class GoogleProspeccionReader
         {
             var q = $"'{folderId.Replace("'", "")}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.spreadsheet'";
             var url = "https://www.googleapis.com/drive/v3/files?q=" + Uri.EscapeDataString(q)
-                + "&fields=" + Uri.EscapeDataString("nextPageToken,files(id,name,webViewLink)")
-                + "&pageSize=100" + (pageToken == null ? "" : "&pageToken=" + Uri.EscapeDataString(pageToken));
+                + "&fields=" + Uri.EscapeDataString("nextPageToken,files(id,name,webViewLink,modifiedTime)")
+                + "&pageSize=100&orderBy=" + Uri.EscapeDataString("modifiedTime desc")
+                + (pageToken == null ? "" : "&pageToken=" + Uri.EscapeDataString(pageToken));
             using var doc = await GetJsonAsync(url, ct);
             foreach (var file in doc.RootElement.GetProperty("files").EnumerateArray())
             {
@@ -137,8 +145,12 @@ public sealed class GoogleProspeccionReader
                 if (!name.StartsWith("prospeccion_", StringComparison.OrdinalIgnoreCase)) continue;
                 var id = file.GetProperty("id").GetString() ?? "";
                 if (id.Length == 0) continue;
+                DateTimeOffset? modificado = null;
+                if (file.TryGetProperty("modifiedTime", out var modified) &&
+                    DateTimeOffset.TryParse(modified.GetString(), out var parsed))
+                    modificado = parsed;
                 archivos.Add(new GoogleSheetFile(id, name,
-                    $"https://docs.google.com/spreadsheets/d/{id}/edit"));
+                    $"https://docs.google.com/spreadsheets/d/{id}/edit", modificado));
                 if (archivos.Count >= 250) return archivos;
             }
             pageToken = doc.RootElement.TryGetProperty("nextPageToken", out var token)
@@ -222,18 +234,31 @@ public sealed class GoogleProspeccionReader
         };
     }
 
-    internal async Task<(List<ProspectoImportado> items, int archivos, int leidas, int omitidas)> LeerAsync(CancellationToken ct)
+    internal async Task<(List<ProspectoImportado> items, int archivos, int leidas, int omitidas)> LeerAsync(DateTime? ultimaExitosaUtc, CancellationToken ct)
     {
         var folderId = _config["GoogleDriveProspectos:FolderId"];
         if (string.IsNullOrWhiteSpace(folderId) || !Regex.IsMatch(folderId, @"^[a-zA-Z0-9_-]{10,100}$"))
             throw new InvalidOperationException("GoogleDriveProspectos:FolderId no está configurado correctamente.");
         var archivos = await ListarPlanillasAsync(folderId, ct);
+        // Importación incremental: solo hojas modificadas desde la última ejecución exitosa.
+        // El margen cubre diferencias de timestamps; sin historial exitoso se hace carga completa.
+        if (_config.GetValue("GoogleDriveProspectos:IncrementalEnabled", true) && ultimaExitosaUtc.HasValue)
+        {
+            var umbral = new DateTimeOffset(DateTime.SpecifyKind(ultimaExitosaUtc.Value, DateTimeKind.Utc))
+                .AddHours(-_config.GetValue("GoogleDriveProspectos:LookbackHours", 48));
+            var total = archivos.Count;
+            archivos = archivos.Where(x => !x.ModificadoUtc.HasValue || x.ModificadoUtc.Value >= umbral).ToList();
+            _log.LogInformation("Importación incremental: {Seleccionadas}/{Total} planillas cambiadas desde {Umbral}.",
+                archivos.Count, total, umbral);
+        }
         // Preferir última ejecución al colapsar duplicados en un mismo lote.
         archivos.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
         var items = new Dictionary<string, ProspectoImportado>(StringComparer.Ordinal);
         var leidas = 0; var omitidas = 0;
+        var pausaMs = Math.Clamp(_config.GetValue("GoogleDriveProspectos:DelayBetweenSheetsMs", 1200), 0, 10000);
         foreach (var archivo in archivos)
         {
+            if (pausaMs > 0) await Task.Delay(pausaMs, ct);
             var range = Uri.EscapeDataString("'Prospectos'!A1:Z1000");
             using var doc = await GetJsonAsync($"https://sheets.googleapis.com/v4/spreadsheets/{archivo.Id}/values/{range}?valueRenderOption=FORMATTED_VALUE", ct);
             if (!doc.RootElement.TryGetProperty("values", out var values)) continue;

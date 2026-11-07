@@ -13,9 +13,10 @@ public sealed class AdminProspectosController : ControllerBase
     private readonly ProspeccionService _service;
     private readonly UserContext _user;
     private readonly IConfiguration _configuration;
+    private readonly ProspeccionSyncCoordinator _coordinator;
 
-    public AdminProspectosController(ProspeccionService service, UserContext user, IConfiguration configuration)
-    { _service = service; _user = user; _configuration = configuration; }
+    public AdminProspectosController(ProspeccionService service, UserContext user, IConfiguration configuration, ProspeccionSyncCoordinator coordinator)
+    { _service = service; _user = user; _configuration = configuration; _coordinator = coordinator; }
 
     private static string? ValidarRubro(string? rubro) =>
         rubro?.ToUpperInvariant() is "INMUEBLES" or "MOTOS" or "OTROS" ? rubro.ToUpperInvariant() : null;
@@ -47,19 +48,22 @@ public sealed class AdminProspectosController : ControllerBase
             ? Ok(new { success = true }) : NotFound(new { message = "Prospecto no encontrado." });
     }
 
+    [HttpGet("sincronizacion/estado")]
+    public async Task<IActionResult> EstadoSincronizacion()
+    {
+        await _service.ValidarAdminAsync(_user.IdUsuario);
+        return Ok(new { success = true, data = _coordinator.Estado() });
+    }
+
     [HttpPost("sincronizar")]
-    public async Task<IActionResult> Sincronizar(CancellationToken ct)
+    public async Task<IActionResult> Sincronizar()
     {
         await _service.ValidarAdminAsync(_user.IdUsuario);
         if (!_configuration.GetValue<bool>("GoogleDriveProspectos:Enabled"))
             return Conflict(new { message = "La sincronización Drive aún no está habilitada en el servidor." });
-        try
-        {
-            return Ok(new { success = true, data = await _service.SincronizarAsync(ct) });
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("en curso"))
-        { return Conflict(new { message = "La sincronización ya se está ejecutando." }); }
-        catch (Exception)
-        { return StatusCode(502, new { message = "No se pudo sincronizar Drive. Revisá la configuración y los logs del servidor." }); }
+        if (!_coordinator.Encolar("manual"))
+            return Conflict(new { message = "La sincronización ya se está ejecutando o está pendiente." });
+        return Accepted(new { success = true, message = "Sincronización iniciada en segundo plano.",
+            data = _coordinator.Estado() });
     }
 }

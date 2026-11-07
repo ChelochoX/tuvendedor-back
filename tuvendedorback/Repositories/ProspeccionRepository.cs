@@ -75,6 +75,14 @@ public sealed class ProspeccionRepository
             WHERE Id=@Id AND Rubro=@Rubro", new { Id = id, Rubro = rubro, Estado = estado, Notas = notas }) > 0;
     }
 
+    public async Task<DateTime?> UltimaSincronizacionExitosaUtcAsync()
+    {
+        using var conn = _db.CreateSqlConnection();
+        return await conn.ExecuteScalarAsync<DateTime?>(@"
+            SELECT MAX(FechaFinUtc) FROM dbo.ProspeccionSincronizaciones
+            WHERE Exito = 1 AND FechaFinUtc IS NOT NULL");
+    }
+
     public async Task<long> IniciarSincronizacionAsync()
     {
         using var conn = _db.CreateSqlConnection();

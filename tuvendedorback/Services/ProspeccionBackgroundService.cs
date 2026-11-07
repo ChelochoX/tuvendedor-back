@@ -6,12 +6,12 @@
 /// </summary>
 public sealed class ProspeccionBackgroundService : BackgroundService
 {
-    private readonly IServiceScopeFactory _scopes;
+    private readonly ProspeccionSyncCoordinator _coordinator;
     private readonly IConfiguration _config;
     private readonly ILogger<ProspeccionBackgroundService> _log;
 
-    public ProspeccionBackgroundService(IServiceScopeFactory scopes, IConfiguration config, ILogger<ProspeccionBackgroundService> log)
-    { _scopes = scopes; _config = config; _log = log; }
+    public ProspeccionBackgroundService(ProspeccionSyncCoordinator coordinator, IConfiguration config, ILogger<ProspeccionBackgroundService> log)
+    { _coordinator = coordinator; _config = config; _log = log; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -42,16 +42,10 @@ public sealed class ProspeccionBackgroundService : BackgroundService
             try { await Task.Delay(espera, stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
 
-            try
-            {
-                using var scope = _scopes.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<ProspeccionService>().SincronizarAsync(stoppingToken);
-                _log.LogInformation("Sincronización diaria de Drive finalizada.");
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("en curso"))
-            { _log.LogInformation("Sincronización diaria omitida: ya hay una sincronización manual en curso."); }
-            catch (Exception ex) { _log.LogWarning(ex, "Falló la sincronización diaria de Drive. No se reintentará hasta mañana o hasta una acción manual."); }
+            if (_coordinator.Encolar("automatico"))
+                _log.LogInformation("Sincronización diaria de Drive encolada.");
+            else
+                _log.LogInformation("Sincronización diaria omitida: existe otra pendiente o ejecutándose.");
         }
     }
 }
