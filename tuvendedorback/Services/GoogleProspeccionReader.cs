@@ -125,6 +125,18 @@ public sealed class GoogleProspeccionReader
         }
     }
 
+    // Consultar metadata SOLO cuando Sheets devuelve 400: evita duplicar llamadas para cada hoja válida.
+    private async Task<bool> TienePestanaProspectosAsync(string spreadsheetId, CancellationToken ct)
+    {
+        var url = $"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheetId}?fields=sheets(properties(title))";
+        using var doc = await GetJsonAsync(url, ct);
+        if (!doc.RootElement.TryGetProperty("sheets", out var sheets)) return false;
+        return sheets.EnumerateArray().Any(sheet =>
+            sheet.TryGetProperty("properties", out var properties) &&
+            properties.TryGetProperty("title", out var title) &&
+            string.Equals(title.GetString(), "Prospectos", StringComparison.Ordinal));
+    }
+
     private sealed record GoogleSheetFile(string Id, string Name, string Url, DateTimeOffset? ModificadoUtc);
 
     private async Task<List<GoogleSheetFile>> ListarPlanillasAsync(string folderId, CancellationToken ct)
@@ -260,11 +272,33 @@ public sealed class GoogleProspeccionReader
         {
             if (pausaMs > 0) await Task.Delay(pausaMs, ct);
             var range = Uri.EscapeDataString("'Prospectos'!A1:Z1000");
-            using var doc = await GetJsonAsync($"https://sheets.googleapis.com/v4/spreadsheets/{archivo.Id}/values/{range}?valueRenderOption=FORMATTED_VALUE", ct);
-            if (!doc.RootElement.TryGetProperty("values", out var values)) continue;
-            var rows = values.EnumerateArray().ToList();
-            if (rows.Count < 2) continue;
-            var headers = rows[0].EnumerateArray().Select(x => ClaveCabecera(x.ToString())).ToArray();
+            JsonDocument doc;
+            try
+            {
+                doc = await GetJsonAsync($"https://sheets.googleapis.com/v4/spreadsheets/{archivo.Id}/values/{range}?valueRenderOption=FORMATTED_VALUE", ct);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.BadRequest)
+            {
+                // Algunas ejecuciones anteriores solo contienen "Ejecucion_y_descartados".
+                // No son prospectos y no deben detener la importación de las demás planillas.
+                // Si "Prospectos" sí existe, el 400 tiene otra causa y debe propagarse.
+                if (await TienePestanaProspectosAsync(archivo.Id, ct)) throw;
+                _log.LogWarning("Se omite la planilla {Nombre} ({Id}): no tiene pestaña 'Prospectos'.", archivo.Name, archivo.Id);
+                continue;
+            }
+            using (doc)
+            {
+                if (!doc.RootElement.TryGetProperty("values", out var values)) continue;
+                var rows = values.EnumerateArray().ToList();
+                if (rows.Count < 1) continue;
+                var headers = rows[0].EnumerateArray().Select(x => ClaveCabecera(x.ToString())).ToArray();
+                // Las hojas de auditoría nunca deben convertirse en compradores.
+                if (!headers.Contains("solicitud_compra") ||
+                    (!headers.Contains("id_fuente") && !headers.Contains("url_original")))
+                {
+                    _log.LogWarning("Se omite la planilla {Nombre} ({Id}): encabezados incompatibles con el contrato 'Prospectos'.", archivo.Name, archivo.Id);
+                    continue;
+                }
             foreach (var row in rows.Skip(1))
             {
                 leidas++;
@@ -275,6 +309,7 @@ public sealed class GoogleProspeccionReader
                 var item = Mapear(d, archivo);
                 if (item == null) { omitidas++; continue; }
                 items[item.Rubro + ":" + item.ClaveFuente] = item;
+            }
             }
         }
         // Los duplicados internos al lote también se computan en repetidas.
