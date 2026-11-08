@@ -1,0 +1,16 @@
+# No publicar metadatos o secretos en el contexto Docker
+.git
+.github
+.env
+.env.*
+**/.env
+**/.env.*
+**/bin
+**/obj
+.vs
+.vscode
+**/node_modules
+**/secrets
+**/*credentials*.json
+**/*service-account*.json
+**/google-drive-prospectos.json

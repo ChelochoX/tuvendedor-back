@@ -1,0 +1,95 @@
+name: TuVendedor backend CI-CD
+
+on:
+  pull_request:
+    branches: [testing]
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: tuvendedor-backend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validar y construir backend
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v4
+
+      - name: Preparar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Definir imagen con versión del commit
+        id: image
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "name=ghcr.io/${REPOSITORY,,}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Autenticar en GHCR (solo testing)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/testing'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construir imagen y publicar solo desde testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/testing' }}
+          tags: ${{ steps.image.outputs.name }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+  deploy:
+    name: Desplegar backend en Hostinger
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/testing'
+    runs-on: ubuntu-latest
+    environment: tuvendedor-production
+    steps:
+      - name: Configurar SSH seguro
+        shell: bash
+        env:
+          KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          KNOWN: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$KEY" && test -n "$KNOWN"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Desplegar únicamente market_backend
+        shell: bash
+        env:
+          HOST: ${{ secrets.VPS_SSH_HOST }}
+          PORT: ${{ secrets.VPS_SSH_PORT }}
+          USER: ${{ secrets.VPS_SSH_USER }}
+          IMAGE: ${{ needs.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$USER" && test -n "$IMAGE"
+          PORT="${PORT:-22}"
+          [[ "$PORT" =~ ^[0-9]{1,5}$ ]]
+          ssh -p "$PORT" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 \
+            "$USER@$HOST" \
+            "/opt/Ecomerce/.deploy/deploy.sh market_backend '$IMAGE'"
