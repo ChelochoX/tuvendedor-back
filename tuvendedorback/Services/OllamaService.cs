@@ -404,12 +404,23 @@ public class OllamaService
             return null;
         }
 
+        // Modo aislado para el publicador. No altera el análisis de clientes.
+        var esPublicidad =
+            string.Equals(
+                textoAcompaniante?.Trim(),
+                "#PANAMBI_SOCIAL_PUBLICIDAD",
+                StringComparison.OrdinalIgnoreCase);
+
+        var dimensionObjetivo = esPublicidad
+            ? Math.Min(_visionMaxDimension, 768)
+            : _visionMaxDimension;
+
         try
         {
             imagenBase64 =
                 OptimizarImagenParaVision(
                     imagenBase64,
-                    _visionMaxDimension,
+                    dimensionObjetivo,
                     out var anchoOriginal,
                     out var altoOriginal,
                     out var anchoFinal,
@@ -459,7 +470,7 @@ public class OllamaService
                     ? "(sin texto adicional)"
                     : textoAcompaniante.Trim();
 
-            var prompt =
+            var promptGeneral =
                 $$"""
                 Analizá la imagen para clasificarla dentro de TuVendedor.
 
@@ -482,6 +493,18 @@ public class OllamaService
                 - confianza: número decimal entre 0 y 1.
                 - Mantené la respuesta breve para asegurar que el JSON cierre correctamente.
                 """;
+
+            var prompt = esPublicidad
+                ? """
+                  Leé el texto de este aviso publicitario de motocicletas.
+                  Identificá la marca y el nombre EXACTO del modelo y versión impresos.
+                  No deduzcas el modelo por la forma de la moto. No inventes.
+                  Respondé SOLO JSON válido, sin explicación ni markdown, con estas claves:
+                  {"esMoto":true,"tipoContenido":"MOTO","marca":"MARCA","modelo":"MODELO Y VERSION","textoVisible":"OTRO TEXTO BREVE","confianza":0.9}
+                  Si no se distingue el modelo, usa null y confianza baja.
+                  No verifiques precios ni promociones: eso corresponde a TuVendedor.
+                  """
+                : promptGeneral;
 
             var request =
                 new OllamaChatRequest
@@ -527,18 +550,39 @@ public class OllamaService
                                 0.0,
 
                             NumCtx =
-                                _visionNumCtx,
+                                esPublicidad
+                                    ? Math.Min(_visionNumCtx, 2048)
+                                    : _visionNumCtx,
 
                             NumPredict =
-                                _visionNumPredict
+                                esPublicidad
+                                    ? Math.Min(_visionNumPredict, 128)
+                                    : _visionNumPredict
                         }
                 };
 
-            var body =
-                await EjecutarChat(
-                    request,
-                    _visionTimeoutSegundos,
-                    cancellationToken);
+            var inicioVision =
+                System.Diagnostics.Stopwatch.StartNew();
+
+            string? body;
+            try
+            {
+                body =
+                    await EjecutarChat(
+                        request,
+                        _visionTimeoutSegundos,
+                        cancellationToken);
+            }
+            finally
+            {
+                inicioVision.Stop();
+                _logger.LogInformation(
+                    "Analisis visual finalizado. ModoPublicidad={ModoPublicidad}, DuracionMs={DuracionMs}, DimensionMaxima={Dimension}, NumPredict={NumPredict}",
+                    esPublicidad,
+                    inicioVision.ElapsedMilliseconds,
+                    dimensionObjetivo,
+                    request.Options.NumPredict);
+            }
 
             if (
                 string.IsNullOrWhiteSpace(

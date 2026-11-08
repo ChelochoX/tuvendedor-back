@@ -83,6 +83,7 @@ public static class DependencyInjection
         //IA
         services.AddScoped<IMotoOfertaService, MotoOfertaService>();
         services.AddScoped<IMotoConversacionService, MotoConversacionService>();
+        services.AddScoped<PanambiSocialBorradorService>();
         services.AddHttpClient<IOllamaService, OllamaService>();
         services.AddScoped<ISolicitudMotoService, SolicitudMotoService>();
         services.AddScoped<ICreditoMotoGestionService, CreditoMotoGestionService>();
