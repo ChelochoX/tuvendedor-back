@@ -246,6 +246,9 @@ public sealed class PanambiSocialController : ControllerBase
             .Where(plan => plan.CantidadCuotas > 0 && plan.ImporteCuota > 0)
             .ToList() ?? new List<MotoPlanOfertaDto>();
 
+        // Borrador separado de la ficha interna; nunca autoriza publicación.
+        var borradorComercial = PanambiSocialCopyService.Generar(modeloEncontrado.Id, oferta);
+
         return Ok(new
         {
             success = true,
@@ -295,6 +298,7 @@ public sealed class PanambiSocialController : ControllerBase
                     advertencia = advertenciaComercial ??
                         "La cuota impresa en la imagen aún no se compara con el catálogo. No publicar sin revisión."
                 },
+                borradorComercial,
                 puedePublicar = false
             }
         });
