@@ -12,6 +12,19 @@ namespace tuvendedorback.Controllers;
 [Route("api/admin/prompts-panambi")]
 public sealed class AdminPromptsPanambiController : ControllerBase
 {
+    // Estas plantillas del flujo de solicitud se exponen sin alterar el esquema SQL.
+    // La publicación se guarda en PanambiPromptsEditor y aplica en el siguiente mensaje.
+    private sealed record ExtraPrompt(string Codigo, string Titulo, string Descripcion, string Categoria, string Contenido);
+    private static readonly ExtraPrompt[] Extras =
+    {
+        new("SOLICITUD_DOMICILIO_PEDIR", "Solicitar domicilio del titular",
+            "Pregunta ciudad, barrio y calle/referencia en un solo mensaje. No mencionar controles internos.",
+            "SOLICITUD", "Gracias. Pasame tu domicilio: ciudad, barrio y calle o referencia, en un solo mensaje."),
+        new("SOLICITUD_DOMICILIO_RECIBIDO", "Domicilio recibido y siguiente paso",
+            "Confirma el domicilio recibido y pide la información laboral sin exigir datos completos.",
+            "SOLICITUD", "Gracias. Ahora seguimos con tus datos laborales. ¿Dónde trabajás actualmente?")
+    };
+
     private readonly PanambiPromptsEditorRepository _prompts;
     private readonly UserContext _user;
     private readonly IComercialDashboardRepository _permisos;
@@ -40,7 +53,7 @@ public sealed class AdminPromptsPanambiController : ControllerBase
         var publicados = await _prompts.ListarPublicados();
         var legados = await _prompts.ListarLegados();
         var catalogo = await _prompts.ListarCatalogo();
-        var codigos = catalogo.Select(x => x.Codigo)
+        var codigos = Extras.Select(x => x.Codigo).Concat(catalogo.Select(x => x.Codigo))
             .Concat(legados.Where(x => !x.Codigo.Contains("AUTORIZACION", StringComparison.OrdinalIgnoreCase)).Select(x => x.Codigo))
             .Concat(publicados.Where(x => !x.Codigo.Contains("AUTORIZACION", StringComparison.OrdinalIgnoreCase)).Select(x => x.Codigo))
             .Distinct().OrderBy(x => x).ToArray();
@@ -49,12 +62,14 @@ public sealed class AdminPromptsPanambiController : ControllerBase
             var publicado = publicados.FirstOrDefault(x => x.Codigo == codigo);
             var legado = legados.FirstOrDefault(x => x.Codigo == codigo);
             var meta = catalogo.FirstOrDefault(x => x.Codigo == codigo);
-            var contenido = publicado?.Contenido ?? legado?.Contenido ?? string.Empty;
+            var extra = Extras.FirstOrDefault(x => x.Codigo == codigo);
+            var contenido = publicado?.Contenido ?? legado?.Contenido ?? extra?.Contenido ?? string.Empty;
             return new
             {
                 codigo,
-                titulo = meta?.Titulo ?? codigo,
-                descripcion = meta?.Descripcion ?? "Plantilla comercial por marca (heredada)",
+                titulo = extra?.Titulo ?? meta?.Titulo ?? codigo,
+                descripcion = extra?.Descripcion ?? meta?.Descripcion ?? "Plantilla comercial por marca (heredada)",
+                categoria = extra?.Categoria ?? meta?.Categoria ?? "OTROS",
                 contenido,
                 version = publicado?.Version ?? 0,
                 origen = publicado is not null ? "EDITOR" : legado is not null ? "LEGADO" : "PREDETERMINADO"

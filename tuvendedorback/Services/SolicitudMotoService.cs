@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using tuvendedorback.DTOs;
 using tuvendedorback.Exceptions;
 using tuvendedorback.Repositories.Interfaces;
+using tuvendedorback.Repositories;
 using tuvendedorback.Request;
 using tuvendedorback.Services.Interfaces;
 
@@ -15,15 +16,18 @@ public class SolicitudMotoService : ISolicitudMotoService
     private const string VERSION_AUTORIZACION = "2026-10";
 
     private readonly ISolicitudMotoRepository _repository;
+    private readonly PanambiPromptsEditorRepository _promptsEditor;
     private readonly IConfiguration _configuration;
     private readonly ILogger<SolicitudMotoService> _logger;
 
     public SolicitudMotoService(
         ISolicitudMotoRepository repository,
+        PanambiPromptsEditorRepository promptsEditor,
         IConfiguration configuration,
         ILogger<SolicitudMotoService> logger)
     {
         _repository = repository;
+        _promptsEditor = promptsEditor;
         _configuration = configuration;
         _logger = logger;
     }
@@ -255,9 +259,9 @@ public class SolicitudMotoService : ISolicitudMotoService
             "NOMBRE_COMPLETO" => await ProcesarNombreCompleto(solicitud, request),
             "CORREGIR_NOMBRE_TITULAR" => await ProcesarCorreccionNombreTitular(solicitud, request),
             "CEDULA_NUMERO" => await ProcesarNumeroCedula(solicitud, request),
-            "DOMICILIO_CIUDAD" => await ProcesarCiudad(solicitud, request),
-            "DOMICILIO_BARRIO" => await ProcesarBarrio(solicitud, request),
-            "DOMICILIO_DIRECCION" => await ProcesarDireccionDomicilio(solicitud, request),
+            // Los pasos históricos convergen a un único domicilio no bloqueante.
+            "DOMICILIO" or "DOMICILIO_CIUDAD" or "DOMICILIO_BARRIO" or "DOMICILIO_DIRECCION" =>
+                await ProcesarDomicilio(solicitud, request),
             "LABORAL_EMPRESA" => await ProcesarEmpresa(solicitud, request),
             "LABORAL_DIRECCION" => await SaltarPasoLaboralAntiguo(solicitud),
             "LABORAL_TELEFONO" => await ProcesarTelefonoEmpresa(solicitud, request),
@@ -1174,15 +1178,16 @@ public class SolicitudMotoService : ISolicitudMotoService
                 solicitud.TipoOperacion,
                 solicitud.IdSolicitud,
                 solicitud.TipoOperacion.Equals("CREDITO", StringComparison.OrdinalIgnoreCase)
-                    ? "DOMICILIO_CIUDAD"
+                    ? "DOMICILIO"
                     : "ESTADO_CEDULA");
 
             return solicitud.TipoOperacion.Equals("CREDITO", StringComparison.OrdinalIgnoreCase)
                 ? Resultado(
                     solicitud,
-                    "Gracias. Ahora necesito tu domicilio. Primero, ¿en qué ciudad vivís?",
+                    await MensajeEditable("SOLICITUD_DOMICILIO_PEDIR",
+                        "Gracias. Pasame tu domicilio: ciudad, barrio y calle o referencia, en un solo mensaje."),
                     "DOCUMENTACION",
-                    "DOMICILIO_CIUDAD")
+                    "DOMICILIO")
                 : Resultado(
                     solicitud,
                     "Gracias. Antes de las fotos, confirmame si tu cédula está vigente y no vencida.",
@@ -1273,7 +1278,7 @@ public class SolicitudMotoService : ISolicitudMotoService
             numeroCedula: cedula);
 
         var esCredito = solicitud.TipoOperacion.Equals("CREDITO", StringComparison.OrdinalIgnoreCase);
-        var siguiente = esCredito ? "DOMICILIO_CIUDAD" : "ESTADO_CEDULA";
+        var siguiente = esCredito ? "DOMICILIO" : "ESTADO_CEDULA";
 
         await _repository.ActualizarPaso(
             solicitud.TipoOperacion,
@@ -1283,7 +1288,8 @@ public class SolicitudMotoService : ISolicitudMotoService
         return esCredito
             ? Resultado(
                 solicitud,
-                "Gracias. Ahora necesito tu domicilio. Primero, ¿en qué ciudad vivís?",
+                await MensajeEditable("SOLICITUD_DOMICILIO_PEDIR",
+                    "Gracias. Pasame tu domicilio: ciudad, barrio y calle o referencia, en un solo mensaje."),
                 "DOCUMENTACION",
                 siguiente)
             : Resultado(
@@ -1814,7 +1820,8 @@ public class SolicitudMotoService : ISolicitudMotoService
 
         return Resultado(
             solicitud,
-            "Cédula recibida . Ahora necesito tu domicilio particular: Ciudad | Barrio | Calle o dirección donde vivís.",
+            await MensajeEditable("SOLICITUD_DOMICILIO_PEDIR",
+                "Gracias. Pasame tu domicilio: ciudad, barrio y calle o referencia, en un solo mensaje."),
             "DOCUMENTACION",
             "DOMICILIO");
     }
@@ -1823,35 +1830,36 @@ public class SolicitudMotoService : ISolicitudMotoService
         SolicitudMotoProcesoDto solicitud,
         MotoConversacionRequest request)
     {
-        if (!TryParseTresCampos(
-                request.Mensaje,
-                out var ciudad,
-                out var barrio,
-                out var direccion))
+        // Recibimos la información tal como la comparte el cliente. Un domicilio
+        // incompleto nunca frena la solicitud: un asesor lo corroborará luego.
+        var texto = (request.Mensaje ?? string.Empty).Trim();
+        if (!EsDatoNoDisponible(texto) && texto.Length > 0)
         {
-            return Resultado(
-                solicitud,
-                "Enviame tu domicilio así: Ciudad | Barrio | Calle o dirección donde vivís.");
+            var campos = texto.Split(new[] { '|', ',', ';' },
+                StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            if (campos.Length >= 3)
+            {
+                await _repository.GuardarDatosContactoParciales(
+                    solicitud.IdContacto, ciudad: campos[0], barrio: campos[1],
+                    direccion: string.Join(", ", campos.Skip(2)));
+            }
+            else if (campos.Length == 2)
+            {
+                await _repository.GuardarDatosContactoParciales(
+                    solicitud.IdContacto, ciudad: campos[0], barrio: campos[1]);
+            }
+            else if (campos.Length == 1)
+            {
+                // Una referencia libre se preserva sin adivinar calle/barrio/ciudad.
+                await _repository.GuardarDatosContactoParciales(
+                    solicitud.IdContacto, direccion: campos[0]);
+            }
         }
-
-        await _repository.GuardarDomicilioContacto(
-            solicitud.IdContacto,
-            ciudad,
-            barrio,
-            direccion);
-
-        await _repository.ActualizarPaso(
-            "CREDITO",
-            solicitud.IdSolicitud,
-            "LABORAL_COMPLETO");
-
-        return Resultado(
-            solicitud,
-            "Domicilio guardado . Ahora completamos los datos laborales:\n" +
-            "Dirección de la empresa | Teléfono de la empresa | ¿El teléfono es celular? SI/NO | Nombre del jefe/encargado si es celular.\n\n" +
-            "Si el teléfono no es celular, podés dejar el último dato vacío.",
-            "DOCUMENTACION",
-            "LABORAL_COMPLETO");
+        await _repository.ActualizarPaso("CREDITO", solicitud.IdSolicitud, "LABORAL_EMPRESA");
+        return Resultado(solicitud,
+            await MensajeEditable("SOLICITUD_DOMICILIO_RECIBIDO",
+                "Gracias. Ahora seguimos con tus datos laborales. ¿Dónde trabajás actualmente?"),
+            "DOCUMENTACION", "LABORAL_EMPRESA");
     }
 
     private async Task<SolicitudMotoProcesoResultadoDto> ProcesarLaboralCompleto(
@@ -3169,6 +3177,20 @@ public class SolicitudMotoService : ISolicitudMotoService
         }
 
         return false;
+    }
+
+    private async Task<string> MensajeEditable(string codigo, string textoInicial)
+    {
+        try
+        {
+            var publicado = await _promptsEditor.ObtenerPublicado(codigo);
+            return string.IsNullOrWhiteSpace(publicado) ? textoInicial : publicado.Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error consultando plantilla editable {Codigo}", codigo);
+            return textoInicial;
+        }
     }
 
     private async Task<string> ObtenerMensajeFlujo(
