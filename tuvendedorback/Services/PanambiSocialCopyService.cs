@@ -17,13 +17,17 @@ public static class PanambiSocialCopyService
         public string LlamadoAccion { get; set; } = string.Empty;
         public List<string> Hashtags { get; set; } = new();
         public string TextoCompleto { get; set; } = string.Empty;
+        // WhatsApp acepta *negrita*; las redes reciben TextoCompleto sin asteriscos.
+        public string TextoWhatsApp { get; set; } = string.Empty;
+        public string? UrlWhatsApp { get; set; }
+        public string? UrlProducto { get; set; }
         public string Estado { get; set; } = "PENDIENTE_APROBACION";
         public bool PuedePublicar { get; set; } = false;
     }
 
     // Datos comerciales: SIEMPRE del catálogo, no del texto impreso en el flyer.
     // Esta clase únicamente redacta. No autoriza ni ejecuta publicaciones.
-    public static Borrador? Generar(int idModelo, MotoOfertaDto? oferta)
+    public static Borrador? Generar(int idModelo, MotoOfertaDto? oferta, string? numeroWhatsapp, string? urlSitio)
     {
         if (oferta is null) return null;
         var nombre = string.Join(" ", new[] { oferta.Modelo?.Marca, oferta.Modelo?.Nombre }
@@ -97,14 +101,39 @@ public static class PanambiSocialCopyService
             Hashtag(oferta.Modelo?.Marca), Hashtag(oferta.Modelo?.Nombre),
             aventura ? "#AventuraEnMoto" : "#MotoPropia", "#TuVendedor"
         }.Where(h => h.Length > 1).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // La ruta /producto/:id del frontend corresponde a PublicacionId,
+        // NO a Modelo.Id. Si no hay publicación asociada, no inventamos enlace.
+        var idPublicacion = oferta.PublicacionId;
+        var urlProducto = idPublicacion is > 0 && Uri.TryCreate(urlSitio, UriKind.Absolute, out var sitio)
+            && (sitio.Scheme == Uri.UriSchemeHttps || sitio.Scheme == Uri.UriSchemeHttp)
+            ? $"{sitio.GetLeftPart(UriPartial.Authority).TrimEnd('/')}/producto/{idPublicacion.Value}"
+            : null;
+
+        // wa.me necesita número internacional sin '+' y un mensaje precompletado.
+        var telefono = new string((numeroWhatsapp ?? string.Empty).Where(char.IsDigit).ToArray());
+        var urlWhatsApp = telefono.Length >= 10 && telefono.Length <= 15
+            ? $"https://wa.me/{telefono}?text={Uri.EscapeDataString($"Hola, quiero consultar por la {nombre}.")}"
+            : null;
+
         var titulo = titulos[indice];
         var mensaje = mensajes[(indice + 2) % mensajes.Length];
         var llamado = llamados[(indice + 3) % llamados.Length];
+        // Llamado y enlaces de consulta siempre separados del contenido técnico.
         var lineas = new[] {
             titulo, mensaje, cuota, entrega, contadoTexto,
             "Financiación sujeta a evaluación y condiciones vigentes.",
-            llamado, string.Join(" ", etiquetas)
-        }.Where(s => !string.IsNullOrWhiteSpace(s));
+            llamado,
+            urlWhatsApp is null ? null : $"📲 Consultá directamente: {urlWhatsApp}",
+            urlProducto is null ? null : $"🔗 Mirá la moto en TuVendedor: {urlProducto}",
+            string.Join(" ", etiquetas)
+        }.Where(s => !string.IsNullOrWhiteSpace(s)).ToArray();
+
+        // En el chat destacamos título y montos; en el post de Meta no enviamos
+        // marcadores de formato propios de WhatsApp.
+        var lineasWhatsApp = lineas.Select(linea =>
+            linea == titulo || linea == cuota || linea == contadoTexto
+                ? $"*{linea}*"
+                : linea);
 
         return new Borrador {
             Titulo = titulo,
@@ -113,6 +142,9 @@ public static class PanambiSocialCopyService
             LlamadoAccion = llamado,
             Hashtags = etiquetas,
             TextoCompleto = string.Join("\n\n", lineas),
+            TextoWhatsApp = string.Join("\n\n", lineasWhatsApp),
+            UrlWhatsApp = urlWhatsApp,
+            UrlProducto = urlProducto,
             Estado = "PENDIENTE_APROBACION",
             PuedePublicar = false
         };

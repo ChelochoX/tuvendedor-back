@@ -247,7 +247,11 @@ public sealed class PanambiSocialController : ControllerBase
             .ToList() ?? new List<MotoPlanOfertaDto>();
 
         // Borrador separado de la ficha interna; nunca autoriza publicación.
-        var borradorComercial = PanambiSocialCopyService.Generar(modeloEncontrado.Id, oferta);
+        // Teléfono comercial configurable; nunca se construye el enlace con el ID del modelo.
+        var telefonoPublico = _configuration["PanambiSocial:WhatsAppPublico"] ?? "595982121269";
+        var webPublica = _configuration["PanambiSocial:UrlPublica"] ?? "https://www.tuvendedor.com.py";
+        var borradorComercial = PanambiSocialCopyService.Generar(
+            modeloEncontrado.Id, oferta, telefonoPublico, webPublica);
 
         return Ok(new
         {
