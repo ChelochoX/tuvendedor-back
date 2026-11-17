@@ -84,6 +84,7 @@ public static class DependencyInjection
         services.AddScoped<IMotoOfertaService, MotoOfertaService>();
         services.AddScoped<IMotoConversacionService, MotoConversacionService>();
         services.AddScoped<PanambiSocialBorradorService>();
+        services.AddHttpClient<PanambiMetaPublishingService>();
         services.AddHttpClient<IOllamaService, OllamaService>();
         services.AddScoped<ISolicitudMotoService, SolicitudMotoService>();
         services.AddScoped<ICreditoMotoGestionService, CreditoMotoGestionService>();
