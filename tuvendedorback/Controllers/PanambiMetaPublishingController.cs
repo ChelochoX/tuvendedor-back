@@ -59,7 +59,7 @@ public sealed class PanambiMetaPublishingController : ControllerBase
 
     private bool ClaveInternaValida()
     {
-        var esperada = _config["IA:InternalKey"];
+        var esperada = _config["IA:InternalKey"] ?? _config["TUVENDEDOR_INTERNAL_KEY"];
         var recibida = Request.Headers["X-TuVendedor-Internal-Key"].FirstOrDefault();
         if (string.IsNullOrWhiteSpace(esperada) || string.IsNullOrWhiteSpace(recibida)) return false;
         return CryptographicOperations.FixedTimeEquals(
