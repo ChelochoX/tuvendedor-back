@@ -183,10 +183,15 @@ public sealed class PanambiSocialController : ControllerBase
             null,
             true);
 
+        // Los motocarros TRANSPORTER pueden estar catalogados como TRICICLO,
+        // no necesariamente como MOTO.
         var modelosActivos = modelos
             .Where(modelo =>
-                Normalizar(modelo.Rubro)
-                    .Contains("MOTO", StringComparison.Ordinal))
+            {
+                var rubro = Normalizar(modelo.Rubro);
+                return rubro.Contains("MOTO", StringComparison.Ordinal) ||
+                       rubro.Contains("TRICICLO", StringComparison.Ordinal);
+            })
             .ToList();
 
         var nombreNormalizado = Normalizar(nombreDetectado);
@@ -204,6 +209,24 @@ public sealed class PanambiSocialController : ControllerBase
             .GroupBy(modelo => modelo.Id)
             .Select(grupo => grupo.First())
             .ToList();
+
+        // Segunda pasada controlada: el proveedor incluye el sufijo HD
+        // y el flyer puede mostrar solo TRANSPORTER 150.
+        // No se altera la marca ni el numero de cilindrada.
+        var coincidenciaSinSufijoHd = false;
+        if (coincidencias.Count == 0)
+        {
+            coincidencias = modelosActivos
+                .Where(modelo => CoincideModeloSinSufijoHd(
+                    modelo.Marca,
+                    modelo.NombreModelo,
+                    analisis.Marca,
+                    modeloNormalizado))
+                .GroupBy(modelo => modelo.Id)
+                .Select(grupo => grupo.First())
+                .ToList();
+            coincidenciaSinSufijoHd = coincidencias.Count == 1;
+        }
 
         if (coincidencias.Count != 1)
         {
@@ -263,6 +286,9 @@ public sealed class PanambiSocialController : ControllerBase
                 marca = modeloEncontrado.Marca,
                 modelo = modeloEncontrado.NombreModelo,
                 confianza = analisis.Confianza,
+                tipoCoincidencia = coincidenciaSinSufijoHd
+                    ? "NOMBRE_SIN_SUFIJO_HD"
+                    : "EXACTA",
                 reconocimiento = new
                 {
                     marcaDetectada = analisis.Marca,
@@ -410,6 +436,34 @@ public sealed class PanambiSocialController : ControllerBase
         return nombre == modeloNormalizado ||
                (!string.IsNullOrEmpty(marca) && nombre == marca + modeloNormalizado) ||
                Normalizar($"{marcaCatalogo} {nombreCatalogo}") == nombreNormalizado;
+    }
+
+    private static bool CoincideModeloSinSufijoHd(
+        string? marcaCatalogo,
+        string? nombreCatalogo,
+        string? marcaDetectada,
+        string modeloNormalizado)
+    {
+        var marca = Normalizar(marcaCatalogo);
+        var marcaImagen = Normalizar(marcaDetectada);
+        var nombre = Normalizar(nombreCatalogo);
+
+        if (string.IsNullOrEmpty(marcaImagen) || marcaImagen != marca ||
+            string.IsNullOrEmpty(modeloNormalizado))
+            return false;
+
+        // Soporta que el nombre del catalogo incluya la marca al principio.
+        if (nombre.StartsWith(marca, StringComparison.Ordinal))
+            nombre = nombre[marca.Length..];
+
+        // Solo se permite una diferencia conocida: sufijo HD en catalogo.
+        // Por ejemplo TRANSPORTER150HD -> TRANSPORTER150.
+        // No iguala TRANSPORTER150 con TRANSPORTER160/180/210.
+        if (!nombre.EndsWith("HD", StringComparison.Ordinal))
+            return false;
+
+        var nombreSinHd = nombre[..^2];
+        return nombreSinHd == modeloNormalizado;
     }
 
     private static string Normalizar(string? texto)
