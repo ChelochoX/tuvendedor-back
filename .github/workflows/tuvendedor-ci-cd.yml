@@ -75,6 +75,18 @@ jobs:
           printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Actualizar credenciales Meta desde GitHub Secrets
+        shell: bash
+        env:
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+          META_FACEBOOK_PAGE_TOKEN: ${{ secrets.META_FACEBOOK_PAGE_TOKEN }}
+          META_INSTAGRAM_TOKEN: ${{ secrets.META_INSTAGRAM_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/configure_meta_vps.py
+
       - name: Desplegar únicamente market_backend
         shell: bash
         env:
