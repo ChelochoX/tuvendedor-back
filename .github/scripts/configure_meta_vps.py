@@ -52,11 +52,11 @@ shutil.copy2(config, backup)
 os.chmod(backup, 0o600)
 try:
     config.write_text(content, encoding='utf-8')
-    os.chmod(config, 0o600)
+    # Permisos administrados mediante ACL en el VPS
     subprocess.run(['docker', 'compose', '-f', str(config), 'config', '--quiet'], cwd=str(config.parent), check=True)
 except Exception:
     shutil.copy2(backup, config)
-    os.chmod(config, 0o600)
+    # Permisos administrados mediante ACL en el VPS
     raise
 print('OK: credenciales Meta cargadas y Compose validado (sin mostrar secretos)')
 '''
