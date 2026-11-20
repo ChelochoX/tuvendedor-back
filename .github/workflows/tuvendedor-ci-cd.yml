@@ -60,6 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: tuvendedor-production
     steps:
+      - name: Obtener código para despliegue
+        uses: actions/checkout@v4
+
       - name: Configurar SSH seguro
         shell: bash
         env:
